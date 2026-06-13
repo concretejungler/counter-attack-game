@@ -160,9 +160,31 @@ function finishBite(ctx: SimCtx, cr: Critter, def: CritterDef): void {
   cr.state = 'flee';
 }
 
+/** A decoy in range? Ground critters can't resist beating up a smug gnome. */
+function findDecoy(ctx: SimCtx, cr: Critter): number | null {
+  for (const tw of ctx.state.towers.values()) {
+    if (tw.hp === undefined || tw.hp <= 0 || tw.carried) continue;
+    const def = ctx.content.towers[tw.def];
+    const radius = def?.tiers[tw.tier - 1].extra?.decoyRadius ?? 0;
+    if (radius <= 0) continue;
+    if (Math.abs(tw.pos.y - cr.pos.y) > 1.2) continue;
+    if (Math.hypot(tw.pos.x - cr.pos.x, tw.pos.z - cr.pos.z) <= radius) return tw.id;
+  }
+  return null;
+}
+
 /** Walking brain: follow the cake flow field; climb, chew, or bite as the path demands. */
 function walkBrain(ctx: SimCtx, cr: Critter, def: CritterDef, speed: number, dt: number): void {
   const grid = ctx.grid;
+
+  if (!cr.flying) {
+    const decoy = findDecoy(ctx, cr);
+    if (decoy !== null) {
+      cr.state = 'chew';
+      cr.decoyTarget = decoy;
+      return;
+    }
+  }
   if (cr.flying) {
     // fliers beeline for the cake in the air
     const cake = grid.worldOf(ctx.level.cakeTile);
@@ -317,7 +339,8 @@ export function updateCritters(ctx: SimCtx, dt: number): void {
         break;
       }
       case 'chew': {
-        chewClutter(ctx, cr, def, dt);
+        if (cr.decoyTarget !== undefined) attackDecoy(ctx, cr, def, dt);
+        else chewClutter(ctx, cr, def, dt);
         break;
       }
       case 'fall':
@@ -362,10 +385,70 @@ export function updateCritters(ctx: SimCtx, dt: number): void {
         break;
       }
     }
+    // boss auras: shed crumbs / hoover them back up
+    const traits = def.traits;
+    if (traits?.includes('crumbShed') && cr.state !== 'flee') {
+      cr.shedT = (cr.shedT ?? 0) + dt;
+      if (cr.shedT >= 2) {
+        cr.shedT = 0;
+        ctx.dropCrumbs({ ...cr.pos }, cr.surface, 3);
+      }
+    }
+    if (traits?.includes('crumbHeal') && cr.hp < cr.maxHp) {
+      for (const [id, ent] of ctx.state.crumbEnts) {
+        if (ent.surface !== cr.surface) continue;
+        if (Math.hypot(ent.pos.x - cr.pos.x, ent.pos.z - cr.pos.z) > 1.0) continue;
+        cr.hp = Math.min(cr.maxHp, cr.hp + ent.value * 3);
+        ctx.state.crumbEnts.delete(id);
+        ctx.emit({ t: 'crumbEaten', critterId: cr.id, at: { ...ent.pos } });
+      }
+    }
+
     if (cr.hp <= 0 && cr.state !== 'playDead') dead.push(cr);
   }
   for (const cr of dead) {
     if (ctx.state.critters.has(cr.id)) killCritter(ctx, cr, 'tower');
+  }
+}
+
+function attackDecoy(ctx: SimCtx, cr: Critter, def: CritterDef, dt: number): void {
+  const tw = cr.decoyTarget !== undefined ? ctx.state.towers.get(cr.decoyTarget) : undefined;
+  if (!tw || tw.hp === undefined || tw.hp <= 0 || tw.carried) {
+    cr.decoyTarget = undefined;
+    cr.state = cr.bitesDone > 0 || cr.carriedSlice ? 'flee' : 'walk';
+    return;
+  }
+  // shuffle up close, then whale on it
+  const d = Math.hypot(tw.pos.x - cr.pos.x, tw.pos.z - cr.pos.z);
+  if (d > 0.55) {
+    steerToward(cr, tw.pos, def.speed * 0.9, dt);
+    return;
+  }
+  const dps = def.chewDps ?? 4;
+  const before = tw.hp;
+  tw.hp -= dps * dt;
+  if (Math.floor(before / 8) !== Math.floor(tw.hp / 8)) {
+    const towerDef = ctx.content.towers[tw.def];
+    const maxHp = towerDef?.tiers[tw.tier - 1].extra?.decoyHp ?? 1;
+    ctx.emit({ t: 'towerHit', id: tw.id, hpPct: Math.max(0, tw.hp / maxHp) });
+  }
+  if (tw.hp <= 0) {
+    // ceramic martyrdom
+    const towerDef = ctx.content.towers[tw.def];
+    const tier = towerDef?.tiers[tw.tier - 1];
+    const aoe = tier?.extra?.explodeAoe ?? 1.3;
+    const dmg = tier?.dmg ?? 30;
+    ctx.emit({ t: 'towerGone', id: tw.id, at: { ...tw.pos } });
+    ctx.state.towers.delete(tw.id);
+    for (const victim of [...ctx.state.critters.values()]) {
+      if (Math.hypot(victim.pos.x - tw.pos.x, victim.pos.z - tw.pos.z) <= aoe && Math.abs(victim.pos.y - tw.pos.y) < 1.2) {
+        damageCritter(ctx, victim, dmg, towerDef?.dmgType ?? 'heat', 'tower', { towerDef: tw.def });
+      }
+    }
+    cr.decoyTarget = undefined;
+    if (ctx.state.critters.has(cr.id)) {
+      cr.state = cr.bitesDone > 0 || cr.carriedSlice ? 'flee' : 'walk';
+    }
   }
 }
 
@@ -447,6 +530,16 @@ export function killCritter(
 ): void {
   const def = critterDef(ctx, cr.def);
   ctx.state.critters.delete(cr.id);
+
+  // stink bombs: disable nearby towers on death
+  if (def.traits?.includes('deathGas')) {
+    for (const tw of ctx.state.towers.values()) {
+      if (Math.hypot(tw.pos.x - cr.pos.x, tw.pos.z - cr.pos.z) <= 1.6 && Math.abs(tw.pos.y - cr.pos.y) < 1.5) {
+        tw.disabled = Math.max(tw.disabled, 4);
+        ctx.emit({ t: 'towerDisabled', id: tw.id, seconds: 4 });
+      }
+    }
+  }
 
   // recovered slice!
   if (cr.carriedSlice) {

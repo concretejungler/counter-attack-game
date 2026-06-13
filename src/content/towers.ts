@@ -1,0 +1,201 @@
+import type { TowerDef } from '../sim/types';
+
+/**
+ * The Household Defense Force — Phase 1 roster (Kitchen campaign).
+ * Numbers are tuned by tools/balance.mjs runs; adjust tiers, not systems.
+ */
+export const TOWER_DEFS: Record<string, TowerDef> = {
+  'sgt-spritz': {
+    id: 'sgt-spritz',
+    name: 'Sgt. Spritz',
+    item: 'Spray Bottle',
+    role: 'Rapid single-target soaker',
+    dmgType: 'spray',
+    attack: 'projectile',
+    targeting: 'first',
+    hitsAir: true,
+    projSpeed: 14,
+    status: { id: 'soaked', dur: 1.2, chance: 0.6 },
+    tiers: [
+      { cost: 70, dmg: 7, rate: 1.8, range: 3.2 },
+      { cost: 55, dmg: 12, rate: 2.0, range: 3.4 },
+      { cost: 110, dmg: 19, rate: 2.2, range: 3.8 },
+    ],
+    branches: [
+      { id: 'vinegar-vendetta', name: 'Vinegar Vendetta', desc: 'Shots sear with acid over time.', cost: 140, mod: { burnDps: 9, burnDur: 2.5 } },
+      { id: 'arctic-mist', name: 'Arctic Mist', desc: 'Ice-cold spray chills targets to the bone.', cost: 130, mod: { frozenDur: 0.5, soakedDur: 2 } },
+      { id: 'power-washer', name: 'Power Washer', desc: 'Industrial pressure. Critters become projectiles.', cost: 150, mod: { knockback: 1.1, dmgPct: 0.25 } },
+    ],
+    desc: 'Did basic training in the cleaning cupboard. Sees every smudge as a personal insult.',
+    barks: ['Spritz first, ask later!', 'Hydrate THIS.', 'You missed a spot. It was you.'],
+  },
+
+  'old-smacky': {
+    id: 'old-smacky',
+    name: 'Old Smacky',
+    item: 'Fly Swatter',
+    role: 'Melee slam, big knockback',
+    dmgType: 'swat',
+    attack: 'slam',
+    targeting: 'close',
+    hitsAir: true,
+    aoe: 1.3,
+    knockback: 0.8,
+    tiers: [
+      { cost: 90, dmg: 16, rate: 0.9, range: 1.9 },
+      { cost: 70, dmg: 26, rate: 1.0, range: 2.0 },
+      { cost: 130, dmg: 40, rate: 1.1, range: 2.2 },
+    ],
+    branches: [
+      { id: 'grand-slam', name: 'Grand Slam', desc: 'Wind up. Follow through. Leave a crater.', cost: 160, mod: { dmgPct: 0.35, knockback: 0.4 } },
+      { id: 'multi-smack', name: 'Multi-Smack', desc: 'The forbidden flurry technique.', cost: 150, mod: { ratePct: 0.6 } },
+      { id: 'edge-lord', name: 'Edge Lord', desc: 'Specializes in yeeting critters off counters.', cost: 140, mod: { knockback: 1.4 } },
+    ],
+    desc: 'Veteran of a thousand summer afternoons. Has a tally carved into the handle. Nobody asks about August.',
+    barks: ['SMACK o\'clock.', 'Get off my counter!', 'I\'ve seen things. Squished most of them.'],
+  },
+
+  'sir-toastsalot': {
+    id: 'sir-toastsalot',
+    name: 'Sir Toastsalot',
+    item: 'Toaster',
+    role: 'Mortar — flaming toast, splash burn',
+    dmgType: 'heat',
+    attack: 'projectile',
+    targeting: 'first',
+    groundOnly: true,
+    arc: true,
+    projSpeed: 7,
+    aoe: 1.2,
+    status: { id: 'burnt', dur: 1.5, chance: 1 },
+    tiers: [
+      { cost: 140, dmg: 22, rate: 0.55, range: 4.5 },
+      { cost: 90, dmg: 34, rate: 0.6, range: 5.0 },
+      { cost: 160, dmg: 50, rate: 0.65, range: 5.5 },
+    ],
+    branches: [
+      { id: 'bagel-barrage', name: 'Bagel Barrage', desc: 'Twin slots, twice the breakfast violence.', cost: 170, mod: { ratePct: 0.5 } },
+      { id: 'poptart-napalm', name: 'Pop-Tart Napalm', desc: 'Frosted. Sprinkled. Unquenchable.', cost: 180, mod: { burnDps: 11, burnDur: 3 } },
+      { id: 'butter-side-down', name: 'Butter-Side Down', desc: 'Greases the floor. Critters slip on turns.', cost: 160, mod: { butteredDur: 2.5, dmgPct: 0.15 } },
+    ],
+    desc: 'A noble knight who believes every problem can be solved with sufficiently hot bread. He is usually right.',
+    barks: ['FOR THE CRUMBPIRE— wait, no.', 'Breakfast is served. VIOLENTLY.', 'They never expect the second slice.'],
+  },
+
+  'big-blow': {
+    id: 'big-blow',
+    name: 'Big Blow',
+    item: 'Desk Fan',
+    role: 'Pushback control, edge engineer',
+    dmgType: 'sonic',
+    attack: 'push',
+    targeting: 'first',
+    hitsAir: true,
+    knockback: 1.1,
+    tiers: [
+      { cost: 80, dmg: 0, rate: 0.7, range: 3.0 },
+      { cost: 60, dmg: 0, rate: 0.8, range: 3.4, extra: { knockback: 0.3 } },
+      { cost: 120, dmg: 0, rate: 0.9, range: 3.8, extra: { knockback: 0.6 } },
+    ],
+    branches: [
+      { id: 'cyclone-mode', name: 'Cyclone Mode', desc: 'The setting the manual warns about.', cost: 130, mod: { ratePct: 0.5 } },
+      { id: 'crosswind', name: 'Crosswind', desc: 'Wider reach. Owns the whole hallway.', cost: 120, mod: { rangePct: 0.5 } },
+      { id: 'gale-force', name: 'Gale Force', desc: 'Critters experience brief, terrifying flight.', cost: 150, mod: { knockback: 1.0 } },
+    ],
+    desc: 'Three settings: breeze, gust, and "why is the cat on the ceiling." Dreams of being a wind turbine.',
+    barks: ['Blowing through!', 'Forecast: critters, leaving.', 'I\'m a big fan of me too.'],
+  },
+
+  'stick-rick': {
+    id: 'stick-rick',
+    name: 'Stick Rick',
+    item: 'Tape Dispenser',
+    role: 'Floor glue zone — heavy slow',
+    dmgType: 'spray',
+    attack: 'aura',
+    targeting: 'close',
+    floorMount: true,
+    tiers: [
+      { cost: 60, dmg: 0, rate: 1, range: 1.2, extra: { slowPct: 0.5 } },
+      { cost: 45, dmg: 0, rate: 1, range: 1.4, extra: { slowPct: 0.6 } },
+      { cost: 90, dmg: 1, rate: 1, range: 1.6, extra: { slowPct: 0.7 } },
+    ],
+    branches: [
+      { id: 'double-sided', name: 'Double-Sided', desc: 'The sticky side has a sticky side.', cost: 100, mod: { slowPct: 0.15 } },
+      { id: 'industrial-epoxy', name: 'Industrial Epoxy', desc: 'Technically a war crime in three counties.', cost: 130, mod: { slowPct: 0.22, rangePct: 0.2 } },
+      { id: 'wide-roll', name: 'Wide Roll', desc: 'Covers more floor than your in-laws.', cost: 110, mod: { rangePct: 0.6 } },
+    ],
+    desc: 'Knows 437 uses for tape. Use #88: justice. Slow-talking, slower-walking, makes everything else slow too.',
+    barks: ['Stiiiick around.', 'That\'s a wrap.', 'Nobody escapes the adhesive.'],
+  },
+
+  'gnomeo': {
+    id: 'gnomeo',
+    name: 'Gnomeo',
+    item: 'Garden Gnome',
+    role: 'Taunt decoy — explodes on death',
+    dmgType: 'heat',
+    attack: 'none',
+    targeting: 'close',
+    floorMount: true,
+    tiers: [
+      { cost: 60, dmg: 32, rate: 1, range: 1.4, extra: { decoyHp: 110, decoyRadius: 1.5, explodeAoe: 1.4 } },
+      { cost: 45, dmg: 52, rate: 1, range: 1.4, extra: { decoyHp: 220, decoyRadius: 1.7, explodeAoe: 1.5 } },
+      { cost: 80, dmg: 84, rate: 1, range: 1.4, extra: { decoyHp: 400, decoyRadius: 1.9, explodeAoe: 1.7 } },
+    ],
+    branches: [
+      { id: 'martyrdom', name: 'Martyrdom', desc: 'Goes out with a truly unreasonable bang.', cost: 110, mod: { dmgPct: 0.8 } },
+      { id: 'thick-ceramic', name: 'Thick Ceramic', desc: 'Kiln-fired twice. Out of spite.', cost: 120, mod: { decoyHp: 250 } },
+      { id: 'creepy-stare', name: 'Creepy Stare', desc: 'Wider lure radius. They can feel him watching.', cost: 100, mod: { decoyRadius: 0.8 } },
+    ],
+    desc: 'Smiles. Always smiles. The critters hate the smile. The critters attack the smile. The smile is load-bearing.',
+    barks: ['*smiles menacingly*', '*ceramic noises*', 'Hm.'],
+  },
+
+  'the-coldfather': {
+    id: 'the-coldfather',
+    name: 'The Coldfather',
+    item: 'Mini-Fridge',
+    role: 'Slow aura + cold-blast pulses',
+    dmgType: 'cold',
+    attack: 'aura',
+    targeting: 'close',
+    hitsAir: true,
+    tiers: [
+      { cost: 130, dmg: 8, rate: 0.18, range: 2.4, extra: { slowPct: 0.35 } },
+      { cost: 90, dmg: 13, rate: 0.2, range: 2.7, extra: { slowPct: 0.42 } },
+      { cost: 170, dmg: 20, rate: 0.22, range: 3.1, extra: { slowPct: 0.5 } },
+    ],
+    branches: [
+      { id: 'deep-freeze', name: 'Deep Freeze', desc: 'Pulses flash-freeze everything nearby.', cost: 200, mod: { frozenDur: 0.8 } },
+      { id: 'open-door-policy', name: 'Open Door Policy', desc: 'Mom would be furious. The critters already are.', cost: 160, mod: { slowPct: 0.12, rangePct: 0.25 } },
+      { id: 'leftover-power', name: 'Leftover Power', desc: 'Powered by mystery tupperware. Hits harder.', cost: 180, mod: { dmgPct: 0.8 } },
+    ],
+    desc: 'Runs the counter like a family business. Keeps his enemies close and his enemies-of-enemies crisper.',
+    barks: ['You come to MY counter...', 'Stay cool. Permanently.', 'It\'s strictly business.'],
+  },
+
+  'bandolero': {
+    id: 'bandolero',
+    name: 'Bandolero',
+    item: 'Rubber-Band Ballista',
+    role: 'Cross-room sniper, giant-slayer',
+    dmgType: 'swat',
+    attack: 'projectile',
+    targeting: 'strong',
+    hitsAir: true,
+    projSpeed: 22,
+    tiers: [
+      { cost: 200, dmg: 60, rate: 0.4, range: 7.5 },
+      { cost: 130, dmg: 95, rate: 0.45, range: 8.5 },
+      { cost: 240, dmg: 150, rate: 0.5, range: 10 },
+    ],
+    branches: [
+      { id: 'the-long-goodbye', name: 'The Long Goodbye', desc: 'One band. One critter. One legend.', cost: 260, mod: { dmgPct: 1.0, ratePct: -0.3 } },
+      { id: 'quickdraw', name: 'Quickdraw', desc: 'Fastest bands in the west wing.', cost: 240, mod: { ratePct: 0.5 } },
+      { id: 'heavy-gauge', name: 'Heavy Gauge', desc: 'Office-supply artillery. Sends them flying.', cost: 220, mod: { knockback: 1.6 } },
+    ],
+    desc: 'A drifter from the junk drawer. Speaks rarely. Twangs often. Has never missed anything except retirement.',
+    barks: ['*meaningful squint*', 'This counter ain\'t big enough.', 'Twang.'],
+  },
+};

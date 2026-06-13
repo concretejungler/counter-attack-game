@@ -51,7 +51,7 @@ export function tryPlaceTower(ctx: SimCtx, defId: string, at: TileRef): boolean 
   if (!ctx.grid.inBounds(at)) return false;
 
   let mountClutter: number | null = null;
-  if (def.attack === 'trap') {
+  if (def.attack === 'trap' || def.floorMount) {
     if (ctx.grid.isStaticBlocked(at) || ctx.grid.isClutter(at)) return false;
     if (sameTile(at, ctx.level.cakeTile)) return false;
     if (ctx.level.spawns.some((sp) => sameTile(sp.tile, at))) return false;
@@ -86,6 +86,8 @@ export function tryPlaceTower(ctx: SimCtx, defId: string, at: TileRef): boolean 
     ageWaves: 0,
     aim: 0,
   };
+  const decoyHp = def.tiers[0].extra?.decoyHp;
+  if (decoyHp) tower.hp = decoyHp;
   ctx.state.towers.set(tower.id, tower);
   if (mountClutter !== null) ctx.state.clutter.get(mountClutter)!.mounted.push(tower.id);
   ctx.state.crumbs -= cost;
@@ -102,6 +104,8 @@ export function tryUpgradeTower(ctx: SimCtx, id: number): boolean {
   ctx.state.crumbs -= cost;
   tw.invested += cost;
   tw.tier = (tw.tier + 1) as 1 | 2 | 3;
+  const decoyHp = def.tiers[tw.tier - 1].extra?.decoyHp;
+  if (decoyHp) tw.hp = decoyHp; // decoys re-armor on upgrade
   ctx.emit({ t: 'towerUpgrade', id, tier: tw.tier });
   return true;
 }
@@ -228,6 +232,8 @@ export function updateTowers(ctx: SimCtx, dt: number): void {
       }
       continue;
     }
+
+    if (def.attack === 'none') continue; // decoys don't shoot; they absorb
 
     tw.cooldown -= dt;
     if (tw.cooldown > 0) continue;

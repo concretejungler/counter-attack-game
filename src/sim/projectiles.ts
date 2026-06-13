@@ -111,6 +111,15 @@ function impactAt(ctx: SimCtx, p: Projectile, primary: Critter | null | undefine
   }
 }
 
+const MOD_STATUSES = [
+  ['soakedDur', 'soaked'],
+  ['stickyDur', 'sticky'],
+  ['frozenDur', 'frozen'],
+  ['fearedDur', 'feared'],
+  ['butteredDur', 'buttered'],
+  ['stunnedDur', 'stunned'],
+] as const;
+
 function hitOne(ctx: SimCtx, p: Projectile, cr: Critter, factor: number): void {
   damageCritter(ctx, cr, p.dmg * factor, p.dmgType, 'tower', {
     towerId: p.tower,
@@ -118,11 +127,16 @@ function hitOne(ctx: SimCtx, p: Projectile, cr: Critter, factor: number): void {
     statusId: p.statusId,
     statusDur: p.statusDur,
   });
-  if (p.mods.burnDps && ctx.state.critters.has(cr.id)) {
+  if (!ctx.state.critters.has(cr.id)) return;
+  if (p.mods.burnDps) {
     cr.statuses.burnt = Math.max(cr.statuses.burnt ?? 0, p.mods.burnDur ?? 2);
     cr.burnDps = Math.max(cr.burnDps ?? 0, p.mods.burnDps);
   }
-  if (p.knockback > 0 && ctx.state.critters.has(cr.id)) {
+  for (const [modKey, status] of MOD_STATUSES) {
+    const dur = p.mods[modKey];
+    if (dur) cr.statuses[status] = Math.max(cr.statuses[status] ?? 0, dur);
+  }
+  if (p.knockback > 0) {
     applyKnockback(ctx, cr, cr.pos.x - p.pos.x, cr.pos.z - p.pos.z, p.knockback);
   }
 }

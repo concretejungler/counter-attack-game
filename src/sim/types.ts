@@ -85,7 +85,9 @@ export type CritterTrait =
   | 'pheromone'     // ants: trail buffs followers
   | 'glueImmune'
   | 'scatter'       // changes direction erratically
-  | 'lampMoth';     // detours to disable lamp towers
+  | 'lampMoth'      // detours to disable lamp towers
+  | 'crumbShed'     // boss: constantly drops crumbs (scent pressure)
+  | 'crumbHeal';    // boss: eats board crumbs to heal
 
 export interface CritterDef {
   id: string;
@@ -141,6 +143,7 @@ export interface TowerDef {
   branches: TowerBranch[];  // choose ONE at tier 3
   hitsAir?: boolean;
   groundOnly?: boolean;     // cannot hit fliers (default: can hit both unless set)
+  floorMount?: boolean;     // places on walkable floor like a trap (tape strips, decoys)
   knockback?: number;       // tiles of shove on hit
   aoe?: number;             // splash radius in tiles
   status?: { id: StatusId; dur: number; chance?: number };
@@ -222,6 +225,8 @@ export interface Critter {
   extraPlaysUsed?: number;  // mutation-granted extra playDead uses consumed
   burnDps?: number;         // damage/sec while 'burnt' status active
   chewTarget?: number;      // clutter id
+  decoyTarget?: number;     // tower id being attacked (gnomes)
+  shedT?: number;           // crumbShed accumulator
   wobble: number;           // render phase
   spawnedAt: number;        // tick
 }
@@ -244,6 +249,7 @@ export interface Tower {
   moraleT: number;              // high-five buff seconds remaining
   ageWaves: number;             // waves since placed/moved (Old Stinky scaling)
   aim: number;                  // yaw for render
+  hp?: number;                  // decoys only — critters can break them
 }
 
 export interface Projectile {
@@ -346,6 +352,8 @@ export type SimEvent =
   | { t: 'towerSell'; id: number }
   | { t: 'towerDisabled'; id: number; seconds: number }
   | { t: 'towerDropped'; id: number; at: Vec3 }   // clutter collapsed under it
+  | { t: 'towerHit'; id: number; hpPct: number }  // decoy taking a beating
+  | { t: 'towerGone'; id: number; at: Vec3 }      // decoy destroyed (explosion!)
   | { t: 'clutterPlace'; id: number; shape: string }
   | { t: 'clutterChew'; id: number; hpPct: number; at: Vec3 }
   | { t: 'clutterGone'; id: number }
