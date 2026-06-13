@@ -8,11 +8,12 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run --exclude tests/balance.test.ts",
+    "test:all": "vitest run",
     "test:watch": "vitest",
     "smoke": "node tools/smoke.mjs",
     "shot": "node tools/shot.mjs",
-    "balance": "node tools/balance.mjs"
+    "balance": "vitest run tests/balance.test.ts"
   },
   "dependencies": {
     "three": "^0.165.0"
