@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { serve, launchBrowser } from './serve.mjs';
 
 mkdirSync('shots', { recursive: true });
-const scenes = process.argv[2] ? process.argv[2].split(',') : ['build', 'battle', 'boss'];
+const scenes = process.argv[2] ? process.argv[2].split(',') : ['title', 'levels', 'hud', 'battle', 'boss', 'mutation', 'recap'];
 
 const { url, stop } = await serve();
 const browser = await launchBrowser();

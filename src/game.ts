@@ -1,202 +1,844 @@
 import { Vector3 } from 'three';
-import { Sim, SIM_DT } from './sim/sim';
-import type { DifficultyId, LevelDef, SimEvent } from './sim/types';
+import { DIFFICULTY, Sim, SIM_DT } from './sim/sim';
+import type { LevelDef, SimEvent, TileRef } from './sim/types';
+import { rotateCells } from './sim/clutter';
 import { CONTENT, ALL_LEVELS, levelById } from './content';
 import { GameRenderer } from './render/renderer';
+import { UI } from './ui/ui';
+import { AudioMan } from './audio/audio';
+import { Sfx } from './audio/sfx';
+import { Music } from './audio/music';
+import { loadSave, persistSave, type SaveData } from './meta/save';
 
-/**
- * Game shell: owns the Sim + Renderer, runs the fixed-step loop.
- * (The diegetic UI layer mounts on top — src/ui — and drives commands.)
- */
+type Mode =
+  | { kind: 'idle' }
+  | { kind: 'placeTower'; def: string }
+  | { kind: 'placeClutter'; shape: string; rot: 0 | 1 | 2 | 3 }
+  | { kind: 'spell'; id: string }
+  | { kind: 'carry'; towerId: number };
+
+interface Gesture {
+  type: 'critter' | 'sweep';
+  critterId?: number;
+  startX: number;
+  startY: number;
+  startT: number;
+  lastSweep: number;
+}
+
+const FIRE_SFX: Record<string, string> = {
+  'sgt-spritz': 'shoot-spray',
+  'old-smacky': 'slam',
+  'sir-toastsalot': 'shoot-toast',
+  'big-blow': 'push',
+  'bandolero': 'shoot-band',
+};
+
 export class Game {
   readonly renderer: GameRenderer;
+  readonly save: SaveData;
+  readonly ui: UI;
+  readonly audio = new AudioMan();
+  readonly sfx = new Sfx(this.audio);
+  readonly music = new Music(this.audio);
   sim: Sim | null = null;
   level: LevelDef | null = null;
   speedMult = 1;
   paused = false;
-  private acc = 0;
-  private last = 0;
-  private rafId = 0;
-  /** UI hooks subscribe here. */
-  onEvents: ((events: SimEvent[]) => void) | null = null;
-  onFrame: ((dt: number) => void) | null = null;
   screenshotReady = false;
 
-  constructor(canvas: HTMLCanvasElement) {
+  private mode: Mode = { kind: 'idle' };
+  private gesture: Gesture | null = null;
+  private acc = 0;
+  private last = 0;
+  private pointer = { x: 0, y: 0, ndcX: 0, ndcY: 0 };
+  private inspectedTower: number | null = null;
+  // star trackers
+  private towerIds = new Set<number>();
+  private edgeFalls = 0;
+  private stolen = 0;
+  private recovered = 0;
+  private maxScent = 0;
+  private bossAlive = false;
+  private toastsSeen = new Set<string>();
+
+  constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new GameRenderer(canvas);
-    this.bindCamera(canvas);
+    this.save = loadSave();
+    this.ui = new UI(CONTENT, this.save, {
+      onSelectTower: (def) => this.selectTower(def),
+      onSelectClutter: (shape) => this.selectClutter(shape),
+      onSelectSpell: (id) => this.selectSpell(id),
+      onCallWave: () => {
+        this.sim?.command({ type: 'callWave' });
+        this.sfx.play('ui-click');
+      },
+      onSpeed: (m) => {
+        this.speedMult = m;
+        this.sfx.play('ui-click');
+      },
+      onPause: () => this.togglePause(),
+      onUpgrade: (id) => {
+        this.sim?.command({ type: 'upgradeTower', id });
+        this.refreshInspectSoon();
+      },
+      onBranch: (id, branch) => {
+        this.sim?.command({ type: 'branchTower', id, branch });
+        this.refreshInspectSoon();
+      },
+      onSell: (id) => {
+        this.sim?.command({ type: 'sellTower', id });
+        this.closeInspect();
+      },
+      onMove: (id) => {
+        this.sim?.command({ type: 'carryStart', towerId: id });
+        this.mode = { kind: 'carry', towerId: id };
+        this.renderer.setHandPose('open');
+        this.closeInspect();
+      },
+      onHighFive: (id) => this.sim?.command({ type: 'highFive', towerId: id }),
+      onRearm: (id) => {
+        this.sim?.command({ type: 'rearmTrap', towerId: id });
+        this.refreshInspectSoon();
+      },
+      onClose: () => this.closeInspect(),
+      onStartLevel: (id) => this.startLevel(id),
+      onBackToTitle: () => this.showTitle(),
+      onToLevels: () => this.showLevels(),
+      onPickMutation: (id) => {
+        this.sim?.command({ type: 'pickMutation', id });
+        this.sfx.play('ui-click');
+      },
+      onSettingsChanged: (s) => {
+        this.audio.setVolumes(s.musicVol, s.sfxVol);
+        persistSave(this.save);
+      },
+      onResume: () => {
+        this.paused = false;
+      },
+    });
+
+    this.bindInput();
+    this.music.start();
     this.last = performance.now();
     const loop = (t: number) => {
-      this.rafId = requestAnimationFrame(loop);
+      requestAnimationFrame(loop);
       const dt = Math.min(0.1, (t - this.last) / 1000);
       this.last = t;
       this.update(dt);
     };
-    this.rafId = requestAnimationFrame(loop);
+    requestAnimationFrame(loop);
   }
 
-  loadLevel(id: string, difficulty: DifficultyId = 'houseguest', seed = 1337): void {
+  // ---------- screen flow ----------
+  showTitle(): void {
+    this.sim = null;
+    this.level = null;
+    this.music.intensity = 0;
+    this.music.heartbeat = false;
+    this.ui.showTitle();
+  }
+
+  showLevels(): void {
+    this.sim = null;
+    this.level = null;
+    this.paused = false;
+    this.music.intensity = 0;
+    this.music.heartbeat = false;
+    this.ui.showLevelSelect();
+  }
+
+  startLevel(id: string, seed?: number): void {
     this.level = levelById(id);
-    this.sim = new Sim(this.level, { seed, difficulty, content: CONTENT });
+    const difficulty = this.save.settings.difficulty;
+    this.sim = new Sim(this.level, { seed: seed ?? ((Date.now() % 100000) | 1), difficulty, content: CONTENT });
     this.renderer.loadLevel(this.level, CONTENT);
+    this.ui.showHud(this.level);
+    this.ui.hud?.refreshClutter(this.sim.state.clutterHand);
+    this.mode = { kind: 'idle' };
     this.acc = 0;
+    this.paused = false;
+    this.towerIds.clear();
+    this.edgeFalls = 0;
+    this.stolen = 0;
+    this.recovered = 0;
+    this.maxScent = 0;
+    this.bossAlive = false;
+    this.toastsSeen.clear();
+    this.updateForecast();
+    const intro = this.level.tutorial?.find((n) => n.wave === 0);
+    if (intro) this.ui.stickyNote(intro.text, `${id}-w0`);
+    this.sfx.play('ui-click');
   }
 
+  private endLevel(won: boolean, reason?: string): void {
+    if (!this.sim || !this.level) return;
+    const state = this.sim.state;
+    const bites = state.cakeMax - state.cakeSlices;
+    const challengeMet = this.evalChallenge();
+    const starDetail: [boolean, boolean, boolean] = [won, won && bites <= 2, won && challengeMet];
+    const stars = starDetail.filter(Boolean).length;
+    if (won) {
+      this.save.stars[this.level.id] = Math.max(this.save.stars[this.level.id] ?? 0, stars);
+      this.save.stats.wins++;
+    } else {
+      this.save.stats.losses++;
+    }
+    this.save.stats.kills += state.recap.kills;
+    this.save.stats.sweeps += state.recap.sweeps;
+    this.save.stats.crumbsBanked += state.recap.crumbsBanked;
+    persistSave(this.save);
+
+    this.sfx.play(won ? 'win' : 'lose');
+    this.music.intensity = 0;
+    this.music.heartbeat = false;
+
+    const idx = ALL_LEVELS.findIndex((l) => l.id === this.level!.id);
+    const next = won && idx >= 0 && idx + 1 < ALL_LEVELS.length ? ALL_LEVELS[idx + 1] : null;
+    const levelId = this.level.id;
+    this.ui.showRecap(
+      {
+        won,
+        lossReason: reason,
+        level: this.level,
+        state,
+        recap: state.recap,
+        stars,
+        starDetail,
+      },
+      () => {
+        this.ui.closeModal();
+        this.startLevel(levelId);
+      },
+      () => {
+        this.ui.closeModal();
+        this.showLevels();
+      },
+      next ? () => {
+        this.ui.closeModal();
+        this.startLevel(next.id);
+      } : null,
+    );
+  }
+
+  private evalChallenge(): boolean {
+    if (!this.sim || !this.level?.challenge) return false;
+    const state = this.sim.state;
+    switch (this.level.challenge.id) {
+      case 'perfect-cake': return state.cakeSlices === state.cakeMax;
+      case 'minimalist': return this.towerIds.size <= 4;
+      case 'edge-15': return this.edgeFalls >= 15;
+      case 'no-heists': return this.stolen > 0 ? this.stolen === this.recovered : true;
+      case 'clean-victory': return this.maxScent <= 50;
+      default: return false;
+    }
+  }
+
+  // ---------- main loop ----------
   private update(dt: number): void {
-    if (this.sim && !this.paused) {
+    if (this.sim && this.level && !this.paused && !this.ui.modalOpen) {
       this.acc += dt * this.speedMult;
       let guard = 0;
-      while (this.acc >= SIM_DT && guard++ < 8) {
+      while (this.acc >= SIM_DT && guard++ < 10) {
         const events = this.sim.tick();
         this.renderer.syncTick(this.sim.state, events);
-        if (events.length && this.onEvents) this.onEvents(events);
+        this.handleEvents(events);
         this.acc -= SIM_DT;
       }
       this.renderer.syncProjectiles(this.sim.state);
+      this.maxScent = Math.max(this.maxScent, this.sim.state.scent);
+      this.ui.setSwarmAlarm(this.sim.state.scent >= 99);
+      this.updateMusicMood();
+      this.ui.updateHud(this.sim.state, this.speedMult);
+      this.updateGhost();
     }
+    this.audio.setVolumes(this.save.settings.musicVol, this.save.settings.sfxVol);
     this.renderer.frame(dt);
-    this.onFrame?.(dt);
     this.screenshotReady = true;
   }
 
-  /** Run N sim ticks instantly (demo staging / debug). */
-  fastForward(ticks: number): void {
+  private updateMusicMood(): void {
     if (!this.sim) return;
-    for (let i = 0; i < ticks; i++) {
-      const events = this.sim.tick();
-      if (i === ticks - 1) this.renderer.syncTick(this.sim.state, events);
-    }
-    // snap views to current positions
-    this.renderer.syncTick(this.sim.state, []);
+    const st = this.sim.state;
+    this.music.heartbeat = st.cakeSlices === 1 && st.phase === 'assault';
+    if (st.phase === 'build') this.music.intensity = 1;
+    else if (st.phase === 'assault') this.music.intensity = this.bossAlive || st.cakeSlices <= 3 ? 3 : 2;
   }
 
-  private bindCamera(canvas: HTMLCanvasElement): void {
-    let dragging = false;
+  private handleEvents(events: SimEvent[]): void {
+    if (!this.sim || !this.level) return;
+    for (const ev of events) {
+      switch (ev.t) {
+        case 'waveStart': {
+          const wave = this.level.waves[ev.index];
+          const hasBoss = wave?.entries.some((e) => CONTENT.critters[e.critter]?.boss);
+          if (hasBoss) {
+            this.ui.banner('👑 THE CRUMB KING APPROACHES', true);
+            this.sfx.play('boss');
+            this.bossAlive = true;
+          } else {
+            this.ui.banner(`Wave ${ev.index + 1} of ${ev.total}`);
+            this.sfx.play('wave-start');
+          }
+          this.ui.hud?.hideForecast();
+          this.ui.dismissSticky();
+          break;
+        }
+        case 'waveClear':
+          this.sfx.play('wave-clear');
+          break;
+        case 'buildPhase': {
+          this.ui.hud?.refreshClutter(this.sim.state.clutterHand);
+          this.updateForecast();
+          const note = this.level.tutorial?.find((n) => n.wave === ev.index);
+          if (note) this.ui.stickyNote(note.text, `${this.level.id}-w${ev.index}`);
+          persistSave(this.save);
+          break;
+        }
+        case 'clutterPlace':
+          this.sfx.play('clutter');
+          this.ui.hud?.refreshClutter(this.sim.state.clutterHand);
+          break;
+        case 'mutationOffer':
+          this.sfx.play('mutation');
+          this.ui.showMutationDraft(ev.options);
+          break;
+        case 'cakeBite':
+          this.sfx.play('cake-bite');
+          break;
+        case 'sliceStolen':
+          this.stolen++;
+          this.sfx.play('slice-stolen');
+          this.toastOnce('stolen', '🐭 A MOUSE HAS A WHOLE SLICE!! Stop it before it escapes!!');
+          break;
+        case 'sliceRecovered':
+          this.recovered++;
+          this.sfx.play('slice-back');
+          this.ui.toast('🍰 Slice recovered!!');
+          break;
+        case 'die': {
+          this.sfx.play('die-poof', 70);
+          const def = CONTENT.critters[ev.def];
+          if (def?.boss) {
+            this.bossAlive = false;
+            this.ui.banner('👑 THE CRUMB KING CRUMBLES!');
+            this.ui.toast('sweep up his royal remains!!');
+          }
+          break;
+        }
+        case 'fire': {
+          const name = FIRE_SFX[ev.def];
+          if (name) this.sfx.play(name, 90);
+          if (CONTENT.towers[ev.def]?.attack === 'trap') this.sfx.play('trap-snap');
+          break;
+        }
+        case 'fakeDeath':
+          this.sfx.play('fakeout');
+          this.toastOnce('fakeout', '🪳 it\'s FAKING. keep shooting!!');
+          break;
+        case 'evolve':
+          this.sfx.play('evolve');
+          this.toastOnce('evolve', '😱 it ate crumbs off the floor and MOLTED!! SWEEP!');
+          break;
+        case 'scentThreshold':
+          if (ev.rising) {
+            this.sfx.play('sniff');
+            if (ev.threshold === 50) this.toastOnce('scent50', '👃 50% scent — scouts are sniffing around between waves!');
+            if (ev.threshold === 75) this.toastOnce('scent75', '👃👃 75% SCENT — waves are getting BIGGER. SWEEP THE FLOOR.');
+          }
+          break;
+        case 'swarmWarning':
+          this.sfx.play('klaxon');
+          this.ui.toast(`🚨 THE SWARM ARRIVES IN ${ev.secondsLeft}s — CLEAN. THE. FLOOR.`);
+          break;
+        case 'scoutSpawn':
+          this.sfx.play('scout');
+          break;
+        case 'crumbBank':
+          this.sfx.play('crumb-bank', 60);
+          break;
+        case 'squash':
+          this.sfx.play('squash');
+          break;
+        case 'flick':
+          this.sfx.play('flick');
+          break;
+        case 'fall':
+          if (ev.from > 1.2) this.edgeFalls++;
+          break;
+        case 'highFive':
+          this.sfx.play('highfive');
+          break;
+        case 'towerPlace':
+          this.towerIds.add(ev.id);
+          this.sfx.play('place');
+          break;
+        case 'towerUpgrade':
+          this.sfx.play('upgrade');
+          break;
+        case 'towerSell':
+          this.sfx.play('sell');
+          break;
+        case 'towerGone':
+          this.sfx.play('gnome-break');
+          this.toastOnce('gnome', '🍄 Gnomeo died as he lived: smiling, then exploding.');
+          break;
+        case 'towerDisabled':
+          this.toastOnce('stink', '🦨 stink gas!! that tower needs a minute.');
+          break;
+        case 'spellCast':
+          this.sfx.play(ev.spell === 'moooom' ? 'spell-mom' : ev.spell === 'forbidden-slipper' ? 'spell-slipper' : 'spell-lemon');
+          break;
+        case 'won':
+          this.endLevel(true);
+          break;
+        case 'lost':
+          this.endLevel(false, ev.reason);
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  private toastOnce(key: string, text: string): void {
+    if (this.toastsSeen.has(key)) return;
+    this.toastsSeen.add(key);
+    this.ui.toast(text);
+  }
+
+  private updateForecast(): void {
+    if (!this.sim || !this.level) return;
+    const next = this.level.waves[this.sim.state.waveIndex + 1];
+    if (!next) {
+      this.ui.hud?.hideForecast();
+      return;
+    }
+    const counts = new Map<string, number>();
+    for (const e of next.entries) {
+      const def = CONTENT.critters[e.critter];
+      const name = def?.boss ? `👑 ${def.name}` : def?.name ?? e.critter;
+      counts.set(name, (counts.get(name) ?? 0) + e.count);
+    }
+    const parts = [...counts.entries()].map(([n, c]) => `${c}× <b>${n}</b>`);
+    const scentNote = this.sim.state.scent >= 25 ? ' <b>+10% (they smell it)</b>' : '';
+    this.ui.hud?.showForecast(`📋 Critter Forecast: ${parts.join(', ')}${scentNote}`);
+  }
+
+  // ---------- selection ----------
+  private selectTower(def: string): void {
+    if (!this.sim) return;
+    const cost = CONTENT.towers[def]?.tiers[0].cost ?? 0;
+    if (this.sim.state.crumbs < cost) {
+      this.ui.toast('not enough crumbs!! sweep more!!');
+      this.sfx.play('place-bad');
+      return;
+    }
+    this.mode = { kind: 'placeTower', def };
+    this.ui.hud?.setSelected({ kind: 'tower', id: def });
+    this.closeInspect();
+    this.sfx.play('ui-click');
+  }
+
+  private selectClutter(shape: string): void {
+    this.mode = { kind: 'placeClutter', shape, rot: 0 };
+    this.ui.hud?.setSelected({ kind: 'clutter', id: shape });
+    this.closeInspect();
+    this.sfx.play('ui-click');
+  }
+
+  private selectSpell(id: string): void {
+    if (!this.sim) return;
+    const sp = CONTENT.spells[id];
+    if ((this.sim.state.spellCds[id] ?? 0) > 0 || this.sim.state.mana < sp.cost) {
+      this.ui.toast(this.sim.state.mana < sp.cost ? 'not enough static charge!! (kills + sweeping fill the jar)' : 'still recharging!!');
+      this.sfx.play('place-bad');
+      return;
+    }
+    this.mode = { kind: 'spell', id };
+    this.ui.hud?.setSelected({ kind: 'spell', id });
+    this.sfx.play('ui-click');
+  }
+
+  private cancelMode(): void {
+    if (this.mode.kind === 'carry') {
+      this.sim?.command({ type: 'carryCancel' });
+    }
+    this.mode = { kind: 'idle' };
+    this.ui.hud?.setSelected(null);
+    this.renderer.hideGhost();
+    this.renderer.setHandPose('point');
+  }
+
+  private closeInspect(): void {
+    this.inspectedTower = null;
+    this.ui.hideInspect();
+    this.renderer.hideGhost();
+  }
+
+  private refreshInspectSoon(): void {
+    const id = this.inspectedTower;
+    if (id === null) return;
+    setTimeout(() => {
+      if (this.inspectedTower !== id || !this.sim) return;
+      const tw = this.sim.state.towers.get(id);
+      if (tw) this.ui.showInspect(tw, this.sim.state, this.pointer.x, this.pointer.y);
+      else this.closeInspect();
+    }, 80);
+  }
+
+  private togglePause(): void {
+    if (!this.sim) return;
+    if (!DIFFICULTY[this.save.settings.difficulty].pauseAllowed && this.sim.state.phase === 'assault') {
+      this.ui.toast('landlords do not pause. 😤');
+      return;
+    }
+    this.paused = !this.paused;
+    if (this.paused) this.ui.showPause();
+    else this.ui.closeModal();
+  }
+
+  // ---------- input ----------
+  private tileAtPointer(): TileRef | null {
+    const hit = this.renderer.pickSurfacePoint(this.pointer.ndcX, this.pointer.ndcY);
+    if (!hit || !this.sim) return null;
+    return this.sim.grid.tileOfWorld(hit.surface, hit.x, hit.z);
+  }
+
+  private updateGhost(): void {
+    if (!this.sim || !this.level) return;
+    if (this.mode.kind === 'placeClutter') {
+      const tile = this.tileAtPointer();
+      if (!tile) {
+        this.renderer.hideGhost();
+        return;
+      }
+      const shape = CONTENT.shapes[this.mode.shape];
+      const cells = rotateCells(shape.cells, this.mode.rot).map(([c, r]) => ({ s: tile.s, c: tile.c + c, r: tile.r + r }));
+      const valid = cells.every((t) =>
+        this.sim!.grid.inBounds(t) && !this.sim!.grid.isStaticBlocked(t) && !this.sim!.grid.isClutter(t) &&
+        !(t.s === this.level!.cakeTile.s && t.c === this.level!.cakeTile.c && t.r === this.level!.cakeTile.r) &&
+        !this.level!.spawns.some((sp) => sp.tile.s === t.s && sp.tile.c === t.c && sp.tile.r === t.r),
+      );
+      this.renderer.showGhost(cells.map((t) => this.sim!.grid.worldOf(t)), valid);
+    } else if (this.mode.kind === 'placeTower' || this.mode.kind === 'carry') {
+      const tile = this.tileAtPointer();
+      if (!tile) {
+        this.renderer.hideGhost();
+        return;
+      }
+      const defId = this.mode.kind === 'placeTower' ? this.mode.def : this.sim.state.towers.get(this.mode.towerId)?.def;
+      const def = defId ? CONTENT.towers[defId] : null;
+      if (!def) return;
+      const floorPlace = def.attack === 'trap' || def.floorMount;
+      const cid = this.sim.grid.clutterIdAt(tile);
+      const valid = floorPlace
+        ? !this.sim.grid.isStaticBlocked(tile) && cid === null
+        : cid !== null;
+      const w = this.sim.grid.worldOf(tile);
+      this.renderer.showGhost([{ x: w.x, y: w.y + (cid !== null ? 0.85 : 0), z: w.z }], valid);
+      this.renderer.showRange(w.x, w.y + (cid !== null ? 0.85 : 0), w.z, def.tiers[0].range);
+    }
+  }
+
+  private bindInput(): void {
+    const canvas = this.canvas;
+    let orbiting = false;
     let lastX = 0;
     let lastY = 0;
+
     canvas.addEventListener('pointerdown', (e) => {
       if (e.button === 1 || e.button === 2) {
-        dragging = true;
+        orbiting = true;
         lastX = e.clientX;
         lastY = e.clientY;
+        return;
       }
+      if (e.button !== 0 || !this.sim) return;
+      this.updatePointer(e);
+
+      if (this.mode.kind === 'placeClutter') {
+        const tile = this.tileAtPointer();
+        if (tile) {
+          this.sim.command({ type: 'placeClutter', shape: this.mode.shape, rot: this.mode.rot, at: tile });
+          if (!e.shiftKey) this.cancelMode();
+        }
+        return;
+      }
+      if (this.mode.kind === 'placeTower') {
+        const tile = this.tileAtPointer();
+        if (tile) {
+          this.sim.command({ type: 'placeTower', def: this.mode.def, at: tile });
+          if (!e.shiftKey) this.cancelMode();
+        }
+        return;
+      }
+      if (this.mode.kind === 'spell') {
+        const hit = this.renderer.pickSurfacePoint(this.pointer.ndcX, this.pointer.ndcY);
+        if (hit) {
+          this.sim.command({ type: 'castSpell', spell: this.mode.id, surface: hit.surface, x: hit.x, z: hit.z });
+          this.cancelMode();
+        }
+        return;
+      }
+      if (this.mode.kind === 'carry') {
+        const tile = this.tileAtPointer();
+        if (tile) {
+          this.sim.command({ type: 'carryDrop', at: tile });
+          this.cancelMode();
+        }
+        return;
+      }
+
+      // idle: critter gesture > tower inspect > sweep
+      const critterId = this.renderer.pickCritter(this.pointer.ndcX, this.pointer.ndcY, this.sim.state);
+      if (critterId !== null) {
+        this.gesture = { type: 'critter', critterId, startX: e.clientX, startY: e.clientY, startT: performance.now(), lastSweep: 0 };
+        this.renderer.setHandPose('flick');
+        return;
+      }
+      const towerId = this.renderer.pickTower(this.pointer.ndcX, this.pointer.ndcY, this.sim.state);
+      if (towerId !== null) {
+        const tw = this.sim.state.towers.get(towerId)!;
+        this.inspectedTower = towerId;
+        this.ui.showInspect(tw, this.sim.state, e.clientX, e.clientY);
+        const def = CONTENT.towers[tw.def];
+        this.renderer.showRange(tw.pos.x, tw.pos.y, tw.pos.z, def.tiers[tw.tier - 1].range);
+        this.sfx.play('ui-hover');
+        return;
+      }
+      this.closeInspect();
+      this.gesture = { type: 'sweep', startX: e.clientX, startY: e.clientY, startT: performance.now(), lastSweep: 0 };
+      this.renderer.setHandPose('sweep');
     });
+
     addEventListener('pointermove', (e) => {
-      if (dragging) {
+      this.updatePointer(e);
+      if (orbiting) {
         this.renderer.rig.orbit(e.clientX - lastX, e.clientY - lastY);
         lastX = e.clientX;
         lastY = e.clientY;
       }
       // hand follows pointer
-      const ndcX = (e.clientX / innerWidth) * 2 - 1;
-      const ndcY = -(e.clientY / innerHeight) * 2 + 1;
-      const hit = this.renderer.pickSurfacePoint(ndcX, ndcY);
+      const hit = this.renderer.pickSurfacePoint(this.pointer.ndcX, this.pointer.ndcY);
       if (hit && this.level) {
         const y = this.level.surfaces[hit.surface].origin.y;
         this.renderer.hand.setTarget(new Vector3(hit.x, y, hit.z), y);
       }
+      // sweep while dragging
+      if (this.gesture?.type === 'sweep' && this.sim) {
+        const now = performance.now();
+        if (now - this.gesture.lastSweep > 90 && hit) {
+          this.gesture.lastSweep = now;
+          this.sim.command({ type: 'sweep', surface: hit.surface, x: hit.x, z: hit.z, radius: 0.95 });
+          this.sfx.play('sweep', 160);
+        }
+      }
     });
-    addEventListener('pointerup', () => {
-      dragging = false;
+
+    addEventListener('pointerup', (e) => {
+      if (e.button === 1 || e.button === 2) {
+        orbiting = false;
+        return;
+      }
+      if (!this.gesture || !this.sim) {
+        this.gesture = null;
+        return;
+      }
+      const g = this.gesture;
+      this.gesture = null;
+      this.renderer.setHandPose('point');
+
+      if (g.type === 'critter' && g.critterId !== undefined) {
+        const dx = e.clientX - g.startX;
+        const dy = e.clientY - g.startY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 16 && performance.now() - g.startT < 350) {
+          // tap = squash attempt
+          this.sim.command({ type: 'squash', critterId: g.critterId });
+          this.renderer.hand.press();
+        } else if (dist >= 16) {
+          // slingshot: pull back, fling forward
+          const cr = this.sim.state.critters.get(g.critterId);
+          if (cr) {
+            const release = this.renderer.pickSurfacePoint(this.pointer.ndcX, this.pointer.ndcY);
+            if (release) {
+              const dirX = cr.pos.x - release.x;
+              const dirZ = cr.pos.z - release.z;
+              const len = Math.hypot(dirX, dirZ);
+              if (len > 0.2) {
+                this.sim.command({
+                  type: 'flick',
+                  critterId: g.critterId,
+                  dir: { x: dirX / len, z: dirZ / len },
+                  power: Math.min(12, 3 + len * 2.2),
+                });
+              }
+            }
+          }
+        }
+      }
     });
+
+    canvas.addEventListener('dblclick', (e) => {
+      if (!this.sim) return;
+      this.updatePointer(e);
+      const towerId = this.renderer.pickTower(this.pointer.ndcX, this.pointer.ndcY, this.sim.state);
+      if (towerId !== null) this.sim.command({ type: 'highFive', towerId });
+    });
+
     canvas.addEventListener('wheel', (e) => {
       this.renderer.rig.zoom(e.deltaY);
       e.preventDefault();
     }, { passive: false });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    addEventListener('keydown', (e) => {
+      if (e.key === 'r' || e.key === 'R') {
+        if (this.mode.kind === 'placeClutter') {
+          this.mode.rot = ((this.mode.rot + 1) % 4) as 0 | 1 | 2 | 3;
+        }
+      } else if (e.key === 'Escape') {
+        if (this.mode.kind !== 'idle') this.cancelMode();
+        else if (this.inspectedTower !== null) this.closeInspect();
+        else if (this.sim) this.togglePause();
+      } else if (e.key === ' ') {
+        if (this.sim?.state.phase === 'build') {
+          this.sim.command({ type: 'callWave' });
+          e.preventDefault();
+        }
+      } else if (e.key === '1' || e.key === '2' || e.key === '3') {
+        this.speedMult = parseInt(e.key, 10) as 1 | 2 | 3;
+      } else if (e.key === 'p' || e.key === 'P') {
+        this.togglePause();
+      }
+    });
   }
 
-  /** Deterministic staged scenes for screenshot evaluation. */
-  demo(name: 'build' | 'battle' | 'boss' | 'towers' | 'critters'): void {
-    if (name === 'towers') {
-      // lineup of the full Phase 1 roster for art review
-      this.loadLevel('kitchen-1');
-      const sim = this.sim!;
-      sim.state.crumbs = 99999;
-      const roster = ['sgt-spritz', 'old-smacky', 'sir-toastsalot', 'big-blow', 'the-coldfather', 'bandolero'];
-      sim.state.clutterHand = roster.map(() => 'tupper-o');
-      roster.forEach((_def, i) => {
-        const c = 1 + (i % 3) * 4;
-        const r = i < 3 ? 0 : 7;
-        sim.command({ type: 'placeClutter', shape: 'tupper-o', rot: 0, at: { s: 0, c, r } });
-      });
-      this.fastForward(2);
-      roster.forEach((def, i) => {
-        const c = 1 + (i % 3) * 4;
-        const r = i < 3 ? 0 : 7;
-        sim.command({ type: 'placeTower', def, at: { s: 0, c, r } });
-      });
-      // floor-mounted personalities stand on the tile itself
-      sim.command({ type: 'placeTower', def: 'gnomeo', at: { s: 0, c: 12, r: 2 } });
-      sim.command({ type: 'placeTower', def: 'stick-rick', at: { s: 0, c: 12, r: 8 } });
-      this.fastForward(4);
-      this.renderer.rig.pose(0.05, 0.8, 11.5);
-      this.renderer.rig.target.set(7, 1.0, 4);
-      return;
+  private updatePointer(e: { clientX: number; clientY: number }): void {
+    this.pointer.x = e.clientX;
+    this.pointer.y = e.clientY;
+    this.pointer.ndcX = (e.clientX / innerWidth) * 2 - 1;
+    this.pointer.ndcY = -(e.clientY / innerHeight) * 2 + 1;
+  }
+
+  // ---------- demos for screenshot evaluation ----------
+  fastForward(ticks: number): void {
+    if (!this.sim) return;
+    for (let i = 0; i < ticks; i++) {
+      const events = this.sim.tick();
+      this.handleEvents(events);
+      if (i === ticks - 1) this.renderer.syncTick(this.sim.state, events);
     }
-    if (name === 'critters') {
-      this.loadLevel('kitchen-1');
-      const sim = this.sim!;
-      const species = ['ant-worker', 'ant-soldier', 'ant-bullet', 'fly-house', 'fly-fruit', 'roach', 'mouse-thief', 'slug', 'snail', 'moth', 'dust-bunny', 'dust-bunnette', 'stinkbug'];
-      species.forEach((def, i) => {
-        const c = 1 + (i % 7) * 2;
-        const r = i < 7 ? 8 : 6;
-        const cr = sim.debugSpawn(def, { s: 0, c, r });
-        cr.pos.x = c + 0.5;
-        cr.pos.z = (i < 7 ? 8 : 6) + 0.5;
-      });
-      // freeze them for the portrait
-      for (const cr of sim.state.critters.values()) cr.statuses.frozen = 9999;
-      this.fastForward(2);
-      this.renderer.rig.pose(0.05, 0.85, 9);
-      this.renderer.rig.target.set(7, 0.4, 7);
-      return;
-    }
-    if (name === 'build') {
-      this.loadLevel('kitchen-1');
-      return;
-    }
-    if (name === 'battle') {
-      this.loadLevel('kitchen-1');
-      const sim = this.sim!;
-      sim.state.crumbs = 900;
-      sim.state.clutterHand = ['cereal-i', 'tupper-o', 'tupper-o'];
-      sim.command({ type: 'placeClutter', shape: 'cereal-i', rot: 1, at: { s: 0, c: 2, r: 3 } });
-      sim.command({ type: 'placeClutter', shape: 'tupper-o', rot: 0, at: { s: 0, c: 11, r: 4 } });
-      sim.command({ type: 'placeClutter', shape: 'tupper-o', rot: 0, at: { s: 0, c: 1, r: 0 } });
-      this.fastForward(2);
-      sim.command({ type: 'placeTower', def: 'sgt-spritz', at: { s: 0, c: 2, r: 4 } });
-      sim.command({ type: 'placeTower', def: 'old-smacky', at: { s: 0, c: 11, r: 4 } });
-      sim.command({ type: 'placeTower', def: 'sir-toastsalot', at: { s: 0, c: 1, r: 0 } });
-      sim.command({ type: 'placeTower', def: 'gnomeo', at: { s: 0, c: 3, r: 1 } });
-      this.fastForward(2);
-      sim.command({ type: 'callWave' });
-      this.fastForward(Math.round(7 / SIM_DT)); // mid-wave chaos
-      return;
-    }
-    if (name === 'boss') {
-      this.loadLevel('kitchen-5');
-      const sim = this.sim!;
-      sim.state.crumbs = 2000;
-      sim.state.clutterHand = ['tupper-o', 'tupper-o'];
-      sim.command({ type: 'placeClutter', shape: 'tupper-o', rot: 0, at: { s: 0, c: 1, r: 5 } });
-      sim.command({ type: 'placeClutter', shape: 'tupper-o', rot: 0, at: { s: 0, c: 12, r: 6 } });
-      this.fastForward(2);
-      sim.command({ type: 'placeTower', def: 'the-coldfather', at: { s: 0, c: 1, r: 5 } });
-      sim.command({ type: 'placeTower', def: 'bandolero', at: { s: 0, c: 12, r: 6 } });
-      this.fastForward(2);
-      sim.debugSpawn('crumb-king', { s: 0, c: 3, r: 8 });
-      for (let i = 0; i < 8; i++) sim.debugSpawn('ant-worker', { s: 0, c: 2 + (i % 4), r: 9 });
-      this.fastForward(Math.round(2.5 / SIM_DT));
-      return;
+    this.renderer.syncTick(this.sim.state, []);
+    if (this.sim) this.ui.updateHud(this.sim.state, this.speedMult);
+  }
+
+  demo(name: string): void {
+    switch (name) {
+      case 'title':
+        this.showTitle();
+        return;
+      case 'levels':
+        this.showLevels();
+        return;
+      case 'hud':
+        this.startLevel('kitchen-1', 1337);
+        return;
+      case 'battle': {
+        this.startLevel('kitchen-1', 1337);
+        const sim = this.sim!;
+        sim.state.crumbs = 900;
+        sim.state.clutterHand = ['cereal-i', 'tupper-o', 'tupper-o'];
+        sim.command({ type: 'placeClutter', shape: 'cereal-i', rot: 1, at: { s: 0, c: 2, r: 3 } });
+        sim.command({ type: 'placeClutter', shape: 'tupper-o', rot: 0, at: { s: 0, c: 11, r: 4 } });
+        sim.command({ type: 'placeClutter', shape: 'tupper-o', rot: 0, at: { s: 0, c: 1, r: 0 } });
+        this.fastForward(2);
+        sim.command({ type: 'placeTower', def: 'sgt-spritz', at: { s: 0, c: 2, r: 4 } });
+        sim.command({ type: 'placeTower', def: 'old-smacky', at: { s: 0, c: 11, r: 4 } });
+        sim.command({ type: 'placeTower', def: 'sir-toastsalot', at: { s: 0, c: 1, r: 0 } });
+        sim.command({ type: 'placeTower', def: 'gnomeo', at: { s: 0, c: 3, r: 1 } });
+        this.fastForward(2);
+        sim.command({ type: 'callWave' });
+        this.fastForward(Math.round(7 / SIM_DT));
+        return;
+      }
+      case 'boss': {
+        this.startLevel('kitchen-5', 1337);
+        const sim = this.sim!;
+        sim.state.crumbs = 2000;
+        sim.state.clutterHand = ['tupper-o', 'tupper-o'];
+        sim.command({ type: 'placeClutter', shape: 'tupper-o', rot: 0, at: { s: 0, c: 1, r: 5 } });
+        sim.command({ type: 'placeClutter', shape: 'tupper-o', rot: 0, at: { s: 0, c: 12, r: 6 } });
+        this.fastForward(2);
+        sim.command({ type: 'placeTower', def: 'the-coldfather', at: { s: 0, c: 1, r: 5 } });
+        sim.command({ type: 'placeTower', def: 'bandolero', at: { s: 0, c: 12, r: 6 } });
+        this.fastForward(2);
+        sim.debugSpawn('crumb-king', { s: 0, c: 3, r: 8 });
+        for (let i = 0; i < 8; i++) sim.debugSpawn('ant-worker', { s: 0, c: 2 + (i % 4), r: 9 });
+        this.fastForward(Math.round(2.5 / SIM_DT));
+        return;
+      }
+      case 'mutation': {
+        this.startLevel('kitchen-2', 1337);
+        this.ui.showMutationDraft(['thick-shells', 'hyper-legs', 'double-dead']);
+        return;
+      }
+      case 'recap': {
+        this.startLevel('kitchen-1', 1337);
+        const sim = this.sim!;
+        sim.state.cakeSlices = 8;
+        sim.state.recap.kills = 42;
+        sim.state.recap.sweeps = 11;
+        sim.state.recap.crumbsBanked = 310;
+        sim.state.recap.crumbsWasted = 18;
+        sim.state.recap.killsByTower = { 'sgt-spritz': 21, 'old-smacky': 14, 'gnomeo': 7 };
+        sim.state.recap.bitesBySource = { 'Worker Ant': 2 };
+        sim.state.recap.scentHistory = [0, 5, 12, 30, 42, 38, 55, 61, 44, 30, 22, 35, 48, 20, 10];
+        this.endLevel(true);
+        return;
+      }
+      case 'towers': {
+        this.startLevel('kitchen-1', 1337);
+        const sim = this.sim!;
+        sim.state.crumbs = 99999;
+        const roster = ['sgt-spritz', 'old-smacky', 'sir-toastsalot', 'big-blow', 'the-coldfather', 'bandolero'];
+        sim.state.clutterHand = roster.map(() => 'tupper-o');
+        roster.forEach((_def, i) => {
+          sim.command({ type: 'placeClutter', shape: 'tupper-o', rot: 0, at: { s: 0, c: 1 + (i % 3) * 4, r: i < 3 ? 0 : 7 } });
+        });
+        this.fastForward(2);
+        roster.forEach((def, i) => {
+          sim.command({ type: 'placeTower', def, at: { s: 0, c: 1 + (i % 3) * 4, r: i < 3 ? 0 : 7 } });
+        });
+        sim.command({ type: 'placeTower', def: 'gnomeo', at: { s: 0, c: 12, r: 2 } });
+        sim.command({ type: 'placeTower', def: 'stick-rick', at: { s: 0, c: 12, r: 8 } });
+        this.fastForward(4);
+        this.renderer.rig.pose(0.05, 0.8, 11.5);
+        this.renderer.rig.target.set(7, 1.0, 4);
+        return;
+      }
+      case 'critters': {
+        this.startLevel('kitchen-1', 1337);
+        const sim = this.sim!;
+        const species = ['ant-worker', 'ant-soldier', 'ant-bullet', 'fly-house', 'fly-fruit', 'roach', 'mouse-thief', 'slug', 'snail', 'moth', 'dust-bunny', 'dust-bunnette', 'stinkbug'];
+        species.forEach((def, i) => {
+          sim.debugSpawn(def, { s: 0, c: 1 + (i % 7) * 2, r: i < 7 ? 8 : 6 });
+        });
+        for (const cr of sim.state.critters.values()) cr.statuses.frozen = 9999;
+        this.fastForward(2);
+        this.renderer.rig.pose(0.05, 0.85, 9);
+        this.renderer.rig.target.set(7, 0.4, 7);
+        return;
+      }
     }
   }
 }
 
 export function exposeDebug(game: Game): void {
   (window as unknown as { __game: object }).__game = {
-    loadLevel: (id: string) => game.loadLevel(id),
-    demo: (name: 'build' | 'battle' | 'boss') => game.demo(name),
+    demo: (name: string) => game.demo(name),
+    startLevel: (id: string) => game.startLevel(id, 1337),
     state: () => game.sim?.state,
     grantCrumbs: (n: number) => {
       if (game.sim) game.sim.state.crumbs += n;
