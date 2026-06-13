@@ -1,9 +1,18 @@
 import { RNG } from '../core/rng';
 import { Grid } from './grid';
 import { WaveRuntime } from './waves';
-import { spawnCritter, updateCritters } from './critters';
+import { damageCritter, spawnCritter, updateCritters } from './critters';
+import { tryPlaceClutter } from './clutter';
+import { tryBranchTower, tryPlaceTower, trySellTower, tryUpgradeTower, updateTowers } from './towers';
+import { updateProjectiles } from './projectiles';
+import { applySweep, updateCrumbEating } from './crumbs';
+import {
+  applyCarryCancel, applyCarryDrop, applyCarryStart, applyFlick,
+  applyHighFive, applyRearmTrap, applySquash, updateHand,
+} from './hand';
+import { applyCast, updateSpells } from './spells';
 import type {
-  ContentDB, DifficultyId, DifficultyMods, LevelDef, LossReason,
+  Critter, ContentDB, DamageType, DifficultyId, DifficultyMods, LevelDef, LossReason,
   SimCommand, SimEvent, SimOptions, SimState, TileRef, Vec3,
 } from './types';
 
@@ -151,14 +160,15 @@ export class Sim implements SimCtx {
     if (!piece) return;
     this.state.clutter.delete(id);
     this.grid.clearClutter(id);
-    // any towers on top come crashing down
+    // any towers on top come crashing down (unless the Hand is holding them)
     for (const towerId of piece.mounted) {
       const tw = this.state.towers.get(towerId);
-      if (tw) {
-        tw.downed = true;
-        tw.mountClutter = null;
-        this.emit({ t: 'towerDropped', id: towerId, at: { ...tw.pos } });
-      }
+      if (!tw) continue;
+      tw.mountClutter = null;
+      if (tw.carried) continue;
+      tw.downed = true;
+      tw.pos = { ...tw.pos, y: this.grid.worldOf(tw.tile).y };
+      this.emit({ t: 'towerDropped', id: towerId, at: { ...tw.pos } });
     }
     this.emit({ t: 'clutterGone', id });
     this.recomputePaths();
@@ -221,19 +231,43 @@ export class Sim implements SimCtx {
       }
     }
 
-    // 5. entities
+    // 5. entities & systems
+    updateHand(this, dt);
     updateCritters(this, dt);
+    updateTowers(this, dt);
+    updateProjectiles(this, dt);
+    updateCrumbEating(this, dt);
+    updateSpells(this, dt);
     this.updateScent(dt);
 
-    // 6. wave clear / win
+    // 6. centralized loss: the cake is gone AND nobody is carrying a recoverable slice
+    if (st.cakeSlices <= 0) {
+      let carrierAlive = false;
+      for (const c of st.critters.values()) {
+        if (c.carriedSlice) { carrierAlive = true; break; }
+      }
+      if (!carrierAlive) this.lose('cakeDevoured');
+    }
+
+    // 7. wave clear / win
     if (st.phase === 'assault' && this.waveRt?.done && st.critters.size === 0) {
       this.onWaveClear();
     }
 
-    // 7. recap sampling (1/s)
+    // 8. recap sampling (1/s)
     if (st.tick % 30 === 0) st.recap.scentHistory.push(Math.round(st.scent));
 
     return this.events.splice(0, this.events.length);
+  }
+
+  /** Test/tooling hooks — also used by the balance harness and debug console. */
+  debugSpawn(def: string, at: TileRef): Critter {
+    return spawnCritter(this, def, at);
+  }
+
+  debugDamage(id: number, amount: number, type: DamageType): void {
+    const cr = this.state.critters.get(id);
+    if (cr) damageCritter(this, cr, amount, type, 'spell');
   }
 
   // ---------- internals ----------
@@ -253,8 +287,47 @@ export class Sim implements SimCtx {
         this.emit({ t: 'mutationPicked', id: cmd.id });
         return;
       }
-      default:
-        // remaining commands are implemented by the combat/economy/hand systems (Cycle B)
+      case 'placeClutter':
+        tryPlaceClutter(this, cmd.shape, cmd.rot, cmd.at);
+        return;
+      case 'placeTower':
+        tryPlaceTower(this, cmd.def, cmd.at);
+        return;
+      case 'upgradeTower':
+        tryUpgradeTower(this, cmd.id);
+        return;
+      case 'branchTower':
+        tryBranchTower(this, cmd.id, cmd.branch);
+        return;
+      case 'sellTower':
+        trySellTower(this, cmd.id);
+        return;
+      case 'flick':
+        applyFlick(this, cmd.critterId, cmd.dir, cmd.power);
+        return;
+      case 'squash':
+        applySquash(this, cmd.critterId);
+        return;
+      case 'sweep':
+        applySweep(this, cmd.surface, cmd.x, cmd.z, cmd.radius);
+        return;
+      case 'carryStart':
+        applyCarryStart(this, cmd.towerId);
+        return;
+      case 'carryDrop':
+        applyCarryDrop(this, cmd.at);
+        return;
+      case 'carryCancel':
+        applyCarryCancel(this);
+        return;
+      case 'highFive':
+        applyHighFive(this, cmd.towerId);
+        return;
+      case 'rearmTrap':
+        applyRearmTrap(this, cmd.towerId);
+        return;
+      case 'castSpell':
+        applyCast(this, cmd.spell, cmd.surface, cmd.x, cmd.z);
         return;
     }
   }

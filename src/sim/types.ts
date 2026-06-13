@@ -220,6 +220,7 @@ export interface Critter {
   actionT?: number;         // generic channel timer (eating, chewing windup)
   fallFromY?: number;       // height where the fall began (damage calc)
   extraPlaysUsed?: number;  // mutation-granted extra playDead uses consumed
+  burnDps?: number;         // damage/sec while 'burnt' status active
   chewTarget?: number;      // clutter id
   wobble: number;           // render phase
   spawnedAt: number;        // tick
@@ -237,6 +238,7 @@ export interface Tower {
   carried: boolean;             // offline while Hand carries it
   downed: boolean;              // clutter collapsed beneath it; offline until Hand re-mounts it
   armed: boolean;               // traps: false after triggering until re-armed
+  invested: number;             // total crumbs spent (sell refunds 90%)
   disabled: number;             // seconds remaining (stink gas, outage...)
   kills: number;
   moraleT: number;              // high-five buff seconds remaining
@@ -260,6 +262,10 @@ export interface Projectile {
   statusId?: StatusId;
   statusDur?: number;
   mods: Record<string, number>;
+  arcStart?: Vec3;          // ballistic lob params
+  arcDest?: Vec3;
+  arcT?: number;
+  arcDur?: number;
 }
 
 export interface CrumbEnt {

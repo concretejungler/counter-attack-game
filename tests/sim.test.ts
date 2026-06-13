@@ -25,13 +25,18 @@ describe('Sim core (Cycle A)', () => {
   });
 
   it('is deterministic: same seed + commands → identical state; different seed differs', () => {
+    const lvl = () => tinyLevel({ clutterDeck: ['box-o'], clutterPerWave: 3, startCrumbs: 500 });
     const script = (sim: Sim) => {
+      sim.command({ type: 'placeClutter', shape: 'box-o', rot: 0, at: { s: 0, c: 3, r: 3 } });
+      sim.command({ type: 'placeTower', def: 'test-gun', at: { s: 0, c: 3, r: 3 } });
       sim.command({ type: 'callWave' });
-      run(sim, seconds(8));
+      run(sim, seconds(4));
+      sim.command({ type: 'sweep', surface: 0, x: 4, z: 2, radius: 3 });
+      run(sim, seconds(4));
     };
-    const a = new Sim(tinyLevel(), opts(7));
-    const b = new Sim(tinyLevel(), opts(7));
-    const c = new Sim(tinyLevel(), opts(8));
+    const a = new Sim(lvl(), opts(7));
+    const b = new Sim(lvl(), opts(7));
+    const c = new Sim(lvl(), opts(8));
     script(a); script(b); script(c);
     expect(serializeSim(a)).toEqual(serializeSim(b));
     expect(serializeSim(a)).not.toEqual(serializeSim(c));

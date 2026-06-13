@@ -50,7 +50,7 @@ export function spawnCritter(ctx: SimCtx, defId: string, at: TileRef, opts: { el
   return cr;
 }
 
-/** Status-derived speed multiplier and per-tick status countdown. */
+/** Status-derived speed multiplier and per-tick status countdown (aura slows handled separately). */
 function tickStatuses(cr: Critter, dt: number): number {
   let slow = 0;
   const st = cr.statuses;
@@ -62,8 +62,39 @@ function tickStatuses(cr: Critter, dt: number): number {
   if (st.stunned) return 0;
   if (st.sticky) slow = Math.max(slow, 0.6);
   if (st.soaked) slow = Math.max(slow, 0.15);
-  cr.slowPct = Math.max(cr.slowPct, slow);
-  return 1 - Math.min(0.95, cr.slowPct);
+  return 1 - slow;
+}
+
+/** First hit from each tower misses dodgy critters. Returns true if this hit is dodged. */
+export function tryDodge(cr: Critter, towerId: number, ctx: SimCtx): boolean {
+  const def = ctx.content.critters[cr.def];
+  if (!def?.traits?.includes('dodgeFirst')) return false;
+  if (cr.dodged[towerId]) return false;
+  cr.dodged[towerId] = true;
+  return true;
+}
+
+/** Shove a critter; elevated critters shoved past the rim start falling. */
+export function applyKnockback(ctx: SimCtx, cr: Critter, dirX: number, dirZ: number, amount: number): void {
+  if (amount <= 0) return;
+  if (cr.state === 'climb' || cr.state === 'fall' || cr.state === 'flung') return;
+  const n = Math.hypot(dirX, dirZ) || 1;
+  cr.pos.x += (dirX / n) * amount;
+  cr.pos.z += (dirZ / n) * amount;
+  if (cr.flying) return;
+  const tile = ctx.grid.tileOfWorld(cr.surface, cr.pos.x, cr.pos.z);
+  if (tile) return;
+  const surf = ctx.grid.surfaces[cr.surface].def;
+  if (surf.kind === 'floor') {
+    // floors have walls, not cliffs — clamp back in
+    cr.pos.x = Math.min(surf.origin.x + surf.cols - 0.1, Math.max(surf.origin.x + 0.1, cr.pos.x));
+    cr.pos.z = Math.min(surf.origin.z + surf.rows - 0.1, Math.max(surf.origin.z + 0.1, cr.pos.z));
+    return;
+  }
+  // over the edge!
+  cr.state = 'fall';
+  cr.fallFromY = cr.pos.y;
+  cr.vel = { x: (dirX / n) * 1.5, y: 0, z: (dirZ / n) * 1.5 };
 }
 
 function effectiveSpeed(ctx: SimCtx, cr: Critter, def: CritterDef, statusMul: number): number {
@@ -104,10 +135,20 @@ function despawn(ctx: SimCtx, cr: Critter): void {
 
 function arriveAtCake(ctx: SimCtx, cr: Critter, def: CritterDef): void {
   cr.state = 'eatCake';
-  cr.actionT = BITE_CHANNEL;
+  cr.actionT = def.traits?.includes('thief') ? 0.3 : BITE_CHANNEL;
 }
 
 function finishBite(ctx: SimCtx, cr: Critter, def: CritterDef): void {
+  // thieves snatch a whole slice and run — recoverable if you kill them before they exit
+  if (def.traits?.includes('thief')) {
+    if (!cr.carriedSlice && ctx.state.cakeSlices > 0) {
+      cr.carriedSlice = true;
+      ctx.state.cakeSlices--;
+      ctx.emit({ t: 'sliceStolen', critterId: cr.id });
+    }
+    cr.state = 'flee';
+    return;
+  }
   const bites = Math.max(0, def.bites);
   if (bites > 0 && ctx.state.cakeSlices > 0) {
     ctx.state.cakeSlices = Math.max(0, ctx.state.cakeSlices - bites);
@@ -115,10 +156,6 @@ function finishBite(ctx: SimCtx, cr: Critter, def: CritterDef): void {
     const name = def.name;
     ctx.state.recap.bitesBySource[name] = (ctx.state.recap.bitesBySource[name] ?? 0) + bites;
     ctx.emit({ t: 'cakeBite', slicesLeft: ctx.state.cakeSlices, by: cr.def, at: { ...cr.pos } });
-    if (ctx.state.cakeSlices <= 0) {
-      ctx.lose('cakeDevoured');
-      return;
-    }
   }
   cr.state = 'flee';
 }
@@ -241,8 +278,11 @@ export function updateCritters(ctx: SimCtx, dt: number): void {
   const dead: Critter[] = [];
   for (const cr of ctx.state.critters.values()) {
     const def = critterDef(ctx, cr.def);
-    cr.slowPct = 0; // aura systems re-apply each tick before movement next frame
-    const statusMul = tickStatuses(cr, dt);
+    // aura slows were stamped by towers AFTER our last update; consume, then reset for this tick
+    const auraSlow = Math.min(0.9, cr.slowPct);
+    cr.slowPct = 0;
+    const statusMul = tickStatuses(cr, dt) * (1 - auraSlow);
+    if (cr.statuses.burnt) cr.hp -= (cr.burnDps ?? 5) * dt;
 
     switch (cr.state) {
       case 'walk': {
@@ -283,16 +323,25 @@ export function updateCritters(ctx: SimCtx, dt: number): void {
       case 'fall':
       case 'flung': {
         cr.vel.y -= GRAVITY * dt;
+        cr.vel.x *= 1 - 1.2 * dt; // air drag so flicks don't sail forever
+        cr.vel.z *= 1 - 1.2 * dt;
         cr.pos.x += cr.vel.x * dt;
         cr.pos.y += cr.vel.y * dt;
         cr.pos.z += cr.vel.z * dt;
-        const landSurf = ctx.grid.surfaceBelow(cr.pos.x, cr.pos.z, cr.pos.y + 1.5);
-        const floorY = landSurf >= 0 ? ctx.grid.surfaces[landSurf].def.origin.y : 0;
+        let landSurf = ctx.grid.surfaceBelow(cr.pos.x, cr.pos.z, cr.pos.y + 1.5);
+        if (landSurf < 0) {
+          // off every surface: land on the room floor (surfaces[0] by convention) and clamp in
+          landSurf = 0;
+          const f = ctx.grid.surfaces[0].def;
+          cr.pos.x = Math.min(f.origin.x + f.cols - 0.1, Math.max(f.origin.x + 0.1, cr.pos.x));
+          cr.pos.z = Math.min(f.origin.z + f.rows - 0.1, Math.max(f.origin.z + 0.1, cr.pos.z));
+        }
+        const floorY = ctx.grid.surfaces[landSurf].def.origin.y;
         if (cr.vel.y < 0 && cr.pos.y <= floorY) {
           cr.pos.y = floorY;
           const fallFrom = cr.fallFromY ?? floorY;
           const drop = Math.max(0, fallFrom - floorY);
-          cr.surface = landSurf >= 0 ? landSurf : cr.surface;
+          cr.surface = landSurf;
           cr.vel = { x: 0, y: 0, z: 0 };
           const dmg = Math.max(0, (drop - FALL_SAFE) * FALL_DMG_PER_UNIT);
           cr.state = cr.bitesDone > 0 || cr.carriedSlice ? 'flee' : 'walk';

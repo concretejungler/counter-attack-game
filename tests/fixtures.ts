@@ -63,10 +63,10 @@ export const TEST_CRITTERS: Record<string, CritterDef> = {
   },
   'test-fly': {
     id: 'test-fly', name: 'Test Fly', tier: 1, hp: 8, speed: 3, size: 0.25,
-    bounty: 4, bites: 1, resist: null, weak: null, flying: true, desc: 'test',
+    bounty: 4, bites: 1, resist: null, weak: null, flying: true, traits: ['dodgeFirst'], desc: 'test',
   },
   'test-thief': {
-    id: 'test-thief', name: 'Test Thief', tier: 2, hp: 30, speed: 4, size: 0.45,
+    id: 'test-thief', name: 'Test Thief', tier: 2, hp: 20, speed: 3, size: 0.45,
     bounty: 15, bites: 0, resist: null, weak: null, traits: ['thief'], desc: 'test',
   },
   'test-roach': {
@@ -109,6 +109,18 @@ export const TEST_TOWERS: Record<string, TowerDef> = {
     aoe: 1.2,
     groundOnly: true,
     desc: 'test', barks: ['smack'],
+  },
+  'test-trap': {
+    id: 'test-trap', name: 'Test Trap', item: 'Mousetrap', role: 'one-shot trap',
+    dmgType: 'swat', attack: 'trap', targeting: 'close',
+    tiers: [
+      { cost: 30, dmg: 50, rate: 1, range: 0.45 },
+      { cost: 25, dmg: 90, rate: 1, range: 0.5 },
+      { cost: 50, dmg: 150, rate: 1, range: 0.55 },
+    ],
+    branches: [],
+    groundOnly: true,
+    desc: 'test', barks: ['snap'],
   },
   'test-freezer': {
     id: 'test-freezer', name: 'Test Freezer', item: 'Fridge', role: 'slow aura',
