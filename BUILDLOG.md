@@ -23,7 +23,9 @@
 - 2026-06-12: All assets procedural (models from primitives, faces from canvas textures, audio synthesized). Zero asset files.
 
 ## Evaluation findings & improvements
-(append per milestone)
+- **Renderer milestone (screenshot eval rounds 1-3):** Toy-box diorama works — warm toon kitchen, glowing cake HP, charming critter bestiary (all 13 species read distinctly), boss model lands. FIXED during eval: (1) critters pathed under kitchen island through solid cabinet → furniture now blocks floor beneath (shelves stay open) — better mazing too; (2) demo placements silently failed (clutter-hand validation — correct behavior, bad demo); (3) ants invisible at gameplay zoom → +35% critter scale, brighter palette; (4) camera framed too far → tightened; (5) towers too small → +28% scale; (6) bullet ant read as a carrot → stretch reduced; (7) gnome/rick are floorMount — placement on clutter correctly rejected.
+- Render notes: smoke test = screenshot-luminance (readPixels needs preserveDrawingBuffer — avoided); renderer.info.autoReset=false for full-frame draw-call counts (~133 calls in build scene).
+- CUT (P1): dustpan prop — sweeping collects directly into the Hand (sim already works this way; revisit in P2 polish).
 
 ## Cuts
 (none yet — see CUTS.md if created)

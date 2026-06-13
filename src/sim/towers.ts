@@ -97,7 +97,7 @@ export function tryPlaceTower(ctx: SimCtx, defId: string, at: TileRef): boolean 
 
 export function tryUpgradeTower(ctx: SimCtx, id: number): boolean {
   const tw = ctx.state.towers.get(id);
-  if (!tw || tw.tier >= 3) return false;
+  if (!tw || (tw.tier !== 1 && tw.tier !== 2)) return false;
   const def = towerDefOf(ctx, tw.def);
   const cost = def.tiers[tw.tier].cost; // next tier's cost
   if (ctx.state.crumbs < cost) return false;
@@ -295,8 +295,6 @@ export function updateTowers(ctx: SimCtx, dt: number): void {
         }
         break;
       }
-      case 'none':
-        break;
     }
   }
 }

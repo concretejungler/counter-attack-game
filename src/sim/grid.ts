@@ -83,6 +83,19 @@ export class Grid {
       this.link(key(climb.from), key(climb.to));
       this.link(key(climb.to), key(climb.from));
     }
+
+    // cabinet-bodied furniture blocks the floor beneath it (wall shelves stay open underneath)
+    const floorS = this.surfaces[0];
+    for (let i = 1; i < this.surfaces.length; i++) {
+      const s = this.surfaces[i].def;
+      if (s.kind === 'shelf') continue;
+      for (let c = 0; c < s.cols; c++) {
+        for (let r = 0; r < s.rows; r++) {
+          const ft = this.tileOfWorld(0, s.origin.x + c + 0.5, s.origin.z + r + 0.5);
+          if (ft) floorS.statBlocked[ft.r * floorS.def.cols + ft.c] = 1;
+        }
+      }
+    }
   }
 
   private link(a: number, b: number) {
