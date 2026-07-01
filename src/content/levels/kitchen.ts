@@ -28,9 +28,9 @@ export const KITCHEN_1: LevelDef = {
   waves: [
     { entries: [e('ant-worker', 6, 1.4, 'door')] },
     { entries: [e('ant-worker', 10, 1.0, 'door')] },
-    { entries: [e('ant-worker', 12, 0.8, 'door'), e('ant-soldier', 1, 1, 'door', 8)] },
-    { entries: [e('ant-worker', 9, 0.85, 'door'), e('fly-house', 3, 2.2, 'door', 3)] },
-    { entries: [e('ant-worker', 12, 0.75, 'door'), e('ant-soldier', 2, 4, 'door', 5), e('fly-house', 3, 2.2, 'door', 8)] },
+    { entries: [e('ant-worker', 12, 0.8, 'door'), e('ant-soldier', 2, 4, 'door', 6)] },
+    { entries: [e('ant-worker', 10, 0.8, 'door'), e('fly-house', 3, 2.0, 'door', 3)] },
+    { entries: [e('ant-worker', 18, 0.5, 'door'), e('ant-soldier', 5, 2.2, 'door', 5), e('fly-house', 6, 1.3, 'door', 8)] },
   ],
   tutorial: [
     { wave: 0, text: 'hi house!! the wish worked!! defend my BIRTHDAY CAKE. drag CLUTTER from the corkboard to build walls, then put SGT. SPRITZ on top!! — me' },

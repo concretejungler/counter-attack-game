@@ -22,7 +22,7 @@ interface Result {
   simSeconds: number;
 }
 
-function autoPlay(levelId: string, strategy: Step[], difficulty: DifficultyId, seed: number, opts: { upgrades?: boolean; spells?: boolean } = {}): Result {
+function autoPlay(levelId: string, strategy: Step[], difficulty: DifficultyId, seed: number, opts: { upgrades?: boolean; spells?: boolean; log?: boolean } = {}): Result {
   const level = levelById(levelId);
   const sim = new Sim(level, { seed, difficulty, content: CONTENT });
   const upgrades = opts.upgrades ?? true;
@@ -32,17 +32,68 @@ function autoPlay(levelId: string, strategy: Step[], difficulty: DifficultyId, s
   let lastSweep = 0;
   let done: Result | null = null;
   const maxTicks = Math.round(1500 / SIM_DT);
+  const pendingTowers: [string, number, number, number][] = []; // couldn't afford yet — retry next build phase
+
+  // A human sees where the piece actually lands; the script must too.
+  // Try each shape in hand × rotations × small anchor nudges until one sticks.
+  const placeClutterSmart = (c: number, r: number, s: number): boolean => {
+    const before = sim.state.clutter.size;
+    for (const shape of [...sim.state.clutterHand]) {
+      for (const rot of [0, 1, 2, 3] as const) {
+        for (const [dc, dr] of [[0, 0], [-1, 0], [0, -1], [1, 0], [0, 1], [-1, -1]]) {
+          cmd({ type: 'placeClutter', shape, rot, at: { s, c: c + dc, r: r + dr } });
+          sim.tick();
+          if (sim.state.clutter.size > before) return true;
+        }
+      }
+    }
+    if (opts.log) console.log(`    [${levelId}] clutter FAILED at ${c},${r} s${s} (hand: ${sim.state.clutterHand.join(',')})`);
+    return false;
+  };
+
+  // Mount towers on a real clutter cell with a free slot, nearest the requested tile.
+  const placeTowerSmart = (def: string, c: number, r: number, s: number): boolean => {
+    const td = CONTENT.towers[def];
+    if (!td) return false;
+    if (td.tiers[0].cost > sim.state.crumbs) {
+      pendingTowers.push([def, c, r, s]);
+      return false;
+    }
+    const before = sim.state.towers.size;
+    const candidates: { s: number; c: number; r: number }[] = [];
+    if (td.attack === 'trap' || td.floorMount) {
+      for (const [dc, dr] of [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+        candidates.push({ s, c: c + dc, r: r + dr });
+      }
+    } else {
+      const cells: { s: number; c: number; r: number; d: number }[] = [];
+      for (const piece of sim.state.clutter.values()) {
+        const shape = CONTENT.shapes[piece.shape];
+        if (piece.mounted.length >= shape.mountSlots) continue;
+        for (const cell of piece.cells) {
+          if (cell.s !== s) continue;
+          cells.push({ ...cell, d: Math.abs(cell.c - c) + Math.abs(cell.r - r) });
+        }
+      }
+      cells.sort((a, b) => a.d - b.d);
+      candidates.push(...cells);
+    }
+    for (const at of candidates) {
+      cmd({ type: 'placeTower', def, at });
+      sim.tick();
+      if (sim.state.towers.size > before) return true;
+    }
+    if (opts.log) console.log(`    [${levelId}] tower ${def} FAILED near ${c},${r} s${s} (crumbs ${sim.state.crumbs}, clutter ${sim.state.clutter.size})`);
+    return false;
+  };
 
   const doBuildPhase = (waveIdx: number) => {
     const step = strategy.find((s) => s.wave === waveIdx);
+    const retries = pendingTowers.splice(0, pendingTowers.length);
+    for (const [def, c, r, s] of retries) placeTowerSmart(def, c, r, s);
     if (step) {
-      for (const [c, r, s] of step.clutter ?? []) {
-        const shape = sim.state.clutterHand[0];
-        if (shape) cmd({ type: 'placeClutter', shape, rot: 0, at: { s: s ?? 0, c, r } });
-      }
-      for (const [def, c, r, s] of step.towers ?? []) {
-        cmd({ type: 'placeTower', def, at: { s: s ?? 0, c, r } });
-      }
+      for (const [c, r, s] of step.clutter ?? []) placeClutterSmart(c, r, s ?? 0);
+      for (const [def, c, r, s] of step.towers ?? []) placeTowerSmart(def, c, r, s ?? 0);
     }
     if (upgrades) {
       // greedy: cheapest upgrade first, then branches
@@ -116,6 +167,11 @@ function autoPlay(levelId: string, strategy: Step[], difficulty: DifficultyId, s
       }
     }
   }
+  if (opts.log) {
+    const twList = [...sim.state.towers.values()].map((t) => `${t.def}T${t.tier}${t.branch ? 'B' : ''}@s${t.tile.s}(${t.tile.c},${t.tile.r})k${t.kills}`).join(' ');
+    console.log(`    [${levelId}] towers: ${twList}`);
+    console.log(`    [${levelId}] bites: ${JSON.stringify(sim.state.recap.bitesBySource)} kills=${sim.state.recap.kills} crumbs=${sim.state.crumbs}`);
+  }
   return done ?? { won: false, bites: sim.state.cakeMax - sim.state.cakeSlices, wavesSurvived: sim.state.waveIndex, simSeconds: sim.state.time };
 }
 
@@ -124,8 +180,9 @@ const PAR: Record<string, Step[]> = {
   'kitchen-1': [
     { wave: 0, clutter: [[5, 0]], towers: [['sgt-spritz', 5, 0]] },
     { wave: 1, clutter: [[7, 1]], towers: [['old-smacky', 7, 1]] },
-    { wave: 2, clutter: [[2, 1]] },
-    { wave: 3, towers: [['sgt-spritz', 2, 1]] },
+    { wave: 2, clutter: [[2, 1, 1]] },
+    { wave: 3, towers: [['sgt-spritz', 2, 1, 1]] },
+    { wave: 4, clutter: [[5, 1, 1]], towers: [['old-smacky', 5, 1, 1]] },
   ],
   'kitchen-2': [
     { wave: 0, clutter: [[6, 6]], towers: [['sgt-spritz', 6, 6]] },
@@ -134,12 +191,14 @@ const PAR: Record<string, Step[]> = {
     { wave: 4, clutter: [[10, 4]], towers: [['sgt-spritz', 10, 4]] },
   ],
   'kitchen-3': [
-    { wave: 0, clutter: [[5, 7]], towers: [['sgt-spritz', 5, 7]] },
-    { wave: 1, clutter: [[7, 7]], towers: [['sir-toastsalot', 7, 7]] },
-    { wave: 2, towers: [['stick-rick', 6, 8]] },
-    { wave: 3, clutter: [[2, 7]], towers: [['sgt-spritz', 2, 7]] },
-    { wave: 4, towers: [['stick-rick', 4, 8]] },
-    { wave: 5, clutter: [[10, 8]], towers: [['old-smacky', 10, 8]] },
+    // cake lives on the stove — anti-air must live up there with it
+    { wave: 0, clutter: [[5, 1, 1]], towers: [['sgt-spritz', 5, 1, 1]] },
+    { wave: 1, clutter: [[5, 3, 1]], towers: [['old-smacky', 5, 3, 1]] },
+    { wave: 2, clutter: [[6, 7]], towers: [['sir-toastsalot', 6, 7]] },
+    { wave: 3, towers: [['stick-rick', 4, 8]] },
+    { wave: 4, clutter: [[2, 2, 1]], towers: [['sgt-spritz', 2, 2, 1]] },
+    { wave: 5, towers: [['stick-rick', 8, 8]] },
+    { wave: 6, clutter: [[9, 8]], towers: [['old-smacky', 9, 8]] },
   ],
   'kitchen-4': [
     { wave: 0, clutter: [[3, 0, 1]], towers: [['sgt-spritz', 3, 0, 1]] },
@@ -150,14 +209,16 @@ const PAR: Record<string, Step[]> = {
     { wave: 6, towers: [['stick-rick', 5, 4]] },
   ],
   'kitchen-5': [
-    { wave: 0, clutter: [[5, 8], [8, 8]], towers: [['sgt-spritz', 5, 8], ['old-smacky', 8, 8]] },
-    { wave: 1, towers: [['stick-rick', 7, 9]] },
-    { wave: 2, clutter: [[1, 3]], towers: [['sir-toastsalot', 1, 3]] },
-    { wave: 3, clutter: [[2, 3, 1]], towers: [['the-coldfather', 2, 3, 1]] },
-    { wave: 4, clutter: [[12, 8]], towers: [['bandolero', 12, 8]] },
-    { wave: 5, towers: [['gnomeo', 3, 9]] },
-    { wave: 6, clutter: [[11, 4]], towers: [['sgt-spritz', 11, 4]] },
-    { wave: 8, towers: [['stick-rick', 11, 9]] },
+    // banquet cake at (4,2): spritz guards it from the vent flight corridor day one
+    { wave: 0, clutter: [[6, 1, 1]], towers: [['sgt-spritz', 6, 1, 1]] },
+    { wave: 1, clutter: [[2, 1, 1]], towers: [['sgt-spritz', 2, 1, 1]] },
+    { wave: 2, clutter: [[7, 3, 1]], towers: [['old-smacky', 7, 3, 1]] },
+    { wave: 3, clutter: [[6, 7]], towers: [['sir-toastsalot', 6, 7]] },
+    { wave: 4, towers: [['stick-rick', 4, 9], ['stick-rick', 10, 9]] },
+    { wave: 5, clutter: [[5, 3, 1]], towers: [['the-coldfather', 5, 3, 1]] },
+    { wave: 6, clutter: [[12, 8]], towers: [['bandolero', 12, 8]] },
+    { wave: 7, clutter: [[3, 3, 1]], towers: [['sgt-spritz', 3, 3, 1], ['gnomeo', 5, 9]] },
+    { wave: 8, clutter: [[9, 7]], towers: [['old-smacky', 9, 7], ['sir-toastsalot', 9, 7]] },
   ],
 };
 

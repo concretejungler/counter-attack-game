@@ -2,27 +2,21 @@
 
 > Living status doc. Updated after every task. After context compaction: read this + CLAUDE.md + the plan, then continue.
 
-## ⏸️ RESUME HERE (checkpoint 2026-06-12): Phase 1 balance-tuning loop, mid-flight
+## ✅ PHASE 1 COMPLETE (2026-07-01). Now: Phase 2 (worlds 2-9) + graphics overhaul + mobile.
 
-**What works:** sim (62 tests), content lint (6), full renderer + diegetic UI + audio, playable end-to-end (`npm run dev` → fridge title → play). 68 unit tests green. Smoke + screenshots pass.
+**T13 balance gate PASSED — 8/8 balance tests, 76/76 total.** Final numbers (houseguest, 3 seeds):
+- kitchen-1: W×3, 5.0 avg bites · kitchen-2: W×3, 2.0 · kitchen-3: W×3, 1.7 · kitchen-4: W×3, 0.0 · kitchen-5 (boss): W×3, 4.7
+- minimal single-spritz LOSES ✓ · par crumbles on condemned ✓ · perf 0.10ms/tick @ 300 critters ✓
 
-**Active task = T13 balance gate.** `tests/balance.test.ts` runs a scripted "par player" (builds per-level strategy, sweeps richest crumb pile every 2s, casts lemon-smite/MOOOOM at clusters, auto-upgrades). Gate: par play wins ≥2/3 seeds with ≤6 avg bites on houseguest; minimal/condemned must LOSE.
+**What the balance failures actually were (findings):**
+1. **Harness bug, not tuning:** par scripts mounted towers at the clutter *anchor* tile, but `pasta-j`/`sponge-s` have no cell at (0,0) and the hand is a random draw → clutter landed offset / tower placement silently no-opped → zero-defense losses (kitchen-5 died wave 0 with 290 unspent crumbs). Fix: `autoPlay` now places like a human — tries shapes×rotations×nudges, mounts towers on real placed cells with free slots, retries unaffordable towers next build phase.
+2. **Anti-air holes:** fliers cruise at cake height and beeline (critters.ts walkBrain) — floor towers near ground funnels never touch them. kitchen-3/5 par now builds ON the stove/banquet next to the cake. Rule of thumb for all future par scripts: *the cake surface needs its own garrison.*
+3. **dodgeFirst is brutal vs single towers:** a housefly at the cake eats exactly one Smacky swing (dodged), bites 0.8s, flees at +15% — one tower can NEVER kill a transiting fly. Fly counts are the difficulty dial that punishes minimal builds without touching par (par's counter garrison kills them).
+4. kitchen-1 waves 3-5 toughened so a lone unupgraded spritz loses (18 workers @0.5s outpaces its 1.8/s kill rate; 9 flies across waves 4-5).
 
-**Last balance run (after tuning round 1):**
-- kitchen-1: W(5b) W(5b) W(5b) ✅ PASS
-- kitchen-2: W(0b) W(4b) W(1b) ✅ PASS
-- kitchen-3: L L L (all die wave 4) ❌ — par player can't hold
-- kitchen-4: L L L (all die wave 8) ❌
-- kitchen-5: L L L (die wave 0-1, the BOSS finale) ❌
-- perf: 0.05ms/tick @ 300 critters ✅ (gate <8ms — huge headroom)
+**Current session directives (user, 2026-07-01):** finish ALL remaining levels (worlds 2-9), greatly improve graphics, make it playable on mobile. Full autonomy, work to completion. Task list: #2 Phase-2 sim+content foundation → #3 worlds 2-9 rooms/levels/bosses → #4 graphics overhaul → #5 mobile.
 
-**NEXT STEPS (do these in order):**
-1. Diagnose kitchen-3/4/5 par failures. Two hypotheses: (a) par *strategies* in `PAR` map place towers in weak spots / too few towers for the crumb budget — improve the scripts first (cheaper than nerfing); (b) genuinely overtuned waves — if even good strategies lose, soften early waves of 3/4/5. kitchen-5 dying at wave 0-1 is suspicious → likely the par strategy is bad (only 2 towers before a real wave) OR startCrumbs too low for the opening. Check `console.log` per-wave death in the balance output; consider logging `wavesSurvived` deaths.
-2. Tune by editing CONTENT (`src/content/levels/kitchen.ts` waves, `towers.ts` tiers, `spells.ts`) NOT sim systems. Re-run `npx vitest run tests/balance.test.ts` until 5/5 pass.
-3. Then: full `npx vitest run` green, `node tools/smoke.mjs`, `node tools/shot.mjs` (review battle/boss/hud PNGs once more), update this log's findings, commit, mark task #6 done.
-4. Phase 1 DONE → start Phase 2 (task #7): worlds 2-9, 16 more towers, 18 more critters, bosses 2-9 + EXTERMINATOR, pets, jarring/Critterdex, grudges, Director AI, random events, Oh-Crap scenarios, House Rules.
-
-**Key commands:** `npx vitest run tests/balance.test.ts 2>&1 | Select-String 'kitchen-\d:|stress:|Tests '` shows the per-level W/L line. Balance file has `PAR` strategy map + `autoPlay()`. Difficulty mults in `src/sim/sim.ts` DIFFICULTY.
+**Key commands:** `npx vitest run tests/balance.test.ts 2>&1 | Select-String 'kitchen-\d:|stress:|Tests '` shows per-level W/L. Balance file has `PAR` strategy map + `autoPlay()` (smart placement). Difficulty mults in `src/sim/sim.ts` DIFFICULTY.
 
 ---
 
@@ -30,8 +24,8 @@
 
 | Phase | Status |
 |---|---|
-| P1 Vertical Slice (kitchen) | ✅ sim core (T2-T6) · ⏳ content features → content → renderer → UI → audio → balance |
-| P2 Full House | not started |
+| P1 Vertical Slice (kitchen) | ✅ DONE — sim, content, renderer, UI, audio, balance gate all green |
+| P2 Full House | ⏳ in progress (worlds 2-9, towers 9-24, critters 13-30, bosses 2-9) |
 | P3 Hooks (roguelike/meta) | not started |
 | P4 Soul (eggs/polish) | not started |
 | P5 Block Party (multiplayer) | not started |
