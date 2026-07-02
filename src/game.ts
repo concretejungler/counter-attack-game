@@ -321,6 +321,7 @@ export class Game {
         case 'die': {
           this.sfx.play('die-poof', 70);
           const def = CONTENT.critters[ev.def];
+          this.save.critterdex.kills[ev.def] = (this.save.critterdex.kills[ev.def] ?? 0) + 1;
           if (def?.boss) {
             this.bossAlive = false;
             this.ui.banner('👑 THE CRUMB KING CRUMBLES!');
@@ -328,6 +329,22 @@ export class Game {
           }
           break;
         }
+        // Jarring is being implemented in parallel (src/sim/) — 'jarDone' already exists in
+        // the SimEvent union (types.ts) but no system emits it yet. Wired defensively here so
+        // Critterdex jar counts start working the moment that system lands, with no further
+        // game.ts changes needed.
+        case 'jarDone':
+          this.save.critterdex.jarred[ev.def] = (this.save.critterdex.jarred[ev.def] ?? 0) + 1;
+          this.sfx.play('ui-click');
+          this.ui.toast(`🫙 Jarred! ${CONTENT.critters[ev.def]?.name ?? ev.def} joins the Critterdex.`);
+          persistSave(this.save);
+          break;
+        case 'shinySpawn':
+          this.save.critterdex.shinySeen[ev.def] = (this.save.critterdex.shinySeen[ev.def] ?? 0) + 1;
+          this.sfx.play('upgrade'); // closest existing "Pavlovian chime" cue (GAME-PROMPT 2.5) — sfx.ts owned by another workstream
+          this.ui.toast(`✨ SHINY! a ${CONTENT.critters[ev.def]?.name ?? ev.def} sparkles nearby...`);
+          persistSave(this.save);
+          break;
         case 'fire': {
           const name = FIRE_SFX[ev.def];
           if (name) this.sfx.play(name, 90);
@@ -879,6 +896,18 @@ export class Game {
       case 'levels':
         this.showLevels();
         return;
+      case 'journal': {
+        // seed some fake Critterdex progress so the screenshot shows a mix of filled-in
+        // pages, silhouette "???" cards, and a boss spread — not an all-empty journal.
+        const species = Object.keys(CONTENT.critters);
+        species.forEach((id, i) => {
+          if (i % 3 !== 0) this.save.critterdex.kills[id] = 3 + ((i * 17) % 90);
+          if (i % 7 === 0) this.save.critterdex.jarred[id] = 1 + (i % 3);
+          if (i % 11 === 0) this.save.critterdex.shinySeen[id] = 1;
+        });
+        this.ui.showJournal('title');
+        return;
+      }
       case 'hud':
         this.startLevel('kitchen-1', 1337);
         return;

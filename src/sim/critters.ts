@@ -1,5 +1,6 @@
 import type { Critter, CritterDef, DamageType, StatusId, TileRef, Tower, Vec3 } from './types';
 import type { SimCtx } from './sim';
+import { onBiterEscaped, settleGrudge } from './grudges';
 
 const BITE_CHANNEL = 0.8;     // seconds spent taking a bite
 const ARRIVE_DIST = 0.18;     // how close to a tile center counts as arrived
@@ -15,12 +16,22 @@ export function critterDef(ctx: SimCtx, id: string): CritterDef {
   return def;
 }
 
-export function spawnCritter(ctx: SimCtx, defId: string, at: TileRef, opts: { elite?: boolean } = {}): Critter {
+const SHINY_CHANCE = 0.01; // 1-in-100 (GAME-PROMPT §2.5)
+
+export function spawnCritter(
+  ctx: SimCtx, defId: string, at: TileRef,
+  opts: { elite?: boolean; shinyEligible?: boolean } = {},
+): Critter {
   const def = critterDef(ctx, defId);
   const hpMul = ctx.diff.critterHp * (1 + ctx.modSum('allHpPct') + (def.flying ? ctx.modSum('flierHpPct') : 0));
   const pos = ctx.grid.worldOf(at);
   const jx = (ctx.rng.next() - 0.5) * 0.4;
   const jz = (ctx.rng.next() - 0.5) * 0.4;
+  // Shiny rolls draw from ctx.shinyRng — a separate seeded stream from ctx.rng — so this
+  // brand-new roll never perturbs the main gameplay RNG sequence that dozens of hand-tuned
+  // balance par-scripts depend on staying byte-stable (positions, clutter deals, AI draws...).
+  const shinyEligible = (opts.shinyEligible ?? true) && !def.boss;
+  const shiny = shinyEligible && ctx.shinyRng.chance(SHINY_CHANCE);
   const cr: Critter = {
     id: ctx.nextId(),
     def: defId,
@@ -38,7 +49,7 @@ export function spawnCritter(ctx: SimCtx, defId: string, at: TileRef, opts: { el
     dodged: {},
     crumbsEaten: 0,
     elite: opts.elite ?? false,
-    shiny: false,
+    shiny,
     crowned: undefined,
     flying: !!def.flying,
     vel: { x: 0, y: 0, z: 0 },
@@ -47,6 +58,7 @@ export function spawnCritter(ctx: SimCtx, defId: string, at: TileRef, opts: { el
   };
   ctx.state.critters.set(cr.id, cr);
   ctx.emit({ t: 'spawn', id: cr.id, def: defId, at: { ...cr.pos }, shiny: cr.shiny });
+  if (shiny) ctx.emit({ t: 'shinySpawn', id: cr.id, def: defId, at: { ...cr.pos } });
   return cr;
 }
 
@@ -149,6 +161,8 @@ function despawn(ctx: SimCtx, cr: Critter): void {
     ctx.emit({ t: 'leak', id: cr.id, def: cr.def });
     const w = Math.max(0, ctx.state.waveIndex);
     ctx.state.recap.leaksByWave[w] = (ctx.state.recap.leaksByWave[w] ?? 0) + 1;
+    // The Grudge System (§2.6): a biter that escapes alive gets a name and returns crowned.
+    onBiterEscaped(ctx, cr, critterDef(ctx, cr.def));
   }
 }
 
@@ -483,7 +497,7 @@ function applySpawner(ctx: SimCtx, cr: Critter, def: CritterDef, dt: number): vo
   const tile = ctx.grid.tileOfWorld(cr.surface, cr.pos.x, cr.pos.z);
   if (!tile) return;
   for (let i = 0; i < def.spawnCount; i++) {
-    const child = spawnCritter(ctx, def.spawnDef, tile);
+    const child = spawnCritter(ctx, def.spawnDef, tile, { shinyEligible: false });
     child.pos.x = cr.pos.x + (ctx.rng.next() - 0.5) * 0.5;
     child.pos.z = cr.pos.z + (ctx.rng.next() - 0.5) * 0.5;
   }
@@ -666,12 +680,18 @@ export function updateCritters(ctx: SimCtx, dt: number): void {
     const tile = ctx.grid.tileOfWorld(cr.surface, cr.pos.x, cr.pos.z) ?? { s: cr.surface, c: 0, r: 0 };
     const at = { ...cr.pos };
     ctx.state.critters.delete(cr.id);
-    const evolved = spawnCritter(ctx, def.evolveTo!, tile);
+    const evolved = spawnCritter(ctx, def.evolveTo!, tile, { shinyEligible: false });
     evolved.pos = { ...at };
     evolved.surface = cr.surface;
-    evolved.state = cr.state === 'playDead' ? 'walk' : cr.state;
+    // Only 'walk'/'flee' are safe to carry over as-is (no extra interpolation fields). Any other
+    // transient state (climb/chew/eatCake/fall/flung/eatCrumb/playDead) depends on fields the
+    // fresh spawn doesn't have — fall back to the same bites-based walk/flee pattern used elsewhere.
+    evolved.state = cr.state === 'walk' || cr.state === 'flee'
+      ? cr.state
+      : (cr.bitesDone > 0 || cr.carriedSlice ? 'flee' : 'walk');
     evolved.bitesDone = cr.bitesDone;
     evolved.carriedSlice = cr.carriedSlice;
+    evolved.shiny = cr.shiny; // shininess carries through an evolution, not re-rolled
     ctx.emit({ t: 'evolve', id: evolved.id, from: cr.def, into: def.evolveTo!, at: { ...at } });
   }
   for (const cr of dead) {
@@ -825,12 +845,15 @@ export function killCritter(
   const bounty = Math.max(1, Math.round(def.bounty * ctx.diff.bounty * (1 + ctx.modSum('bountyPct') + (opts.bountyPct ?? 0))));
   ctx.dropCrumbs(cr.pos, cr.surface, bounty);
 
+  // Grudge System (§2.6): killing a crowned elite pays its grudge bounty and settles the score for good.
+  if (cr.crowned) settleGrudge(ctx, cr);
+
   // split on death (centipedes, dust bunnies...)
   if (def.splitInto) {
     const tile = ctx.grid.tileOfWorld(cr.surface, cr.pos.x, cr.pos.z);
     if (tile) {
       for (let i = 0; i < def.splitInto.count; i++) {
-        const child = spawnCritter(ctx, def.splitInto.def, tile);
+        const child = spawnCritter(ctx, def.splitInto.def, tile, { shinyEligible: false });
         child.pos.x = cr.pos.x + (ctx.rng.next() - 0.5) * 0.5;
         child.pos.z = cr.pos.z + (ctx.rng.next() - 0.5) * 0.5;
       }

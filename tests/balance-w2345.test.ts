@@ -190,9 +190,9 @@ const OPENING: Record<string, Step> = {
 
   'garage-1': { wave: 0, clutter: [[5, 1, 1]], towers: [['mike-rowave', 5, 1, 1]] },
   'garage-2': { wave: 0, clutter: [[6, 1, 1], [3, 1, 1]], towers: [['mike-rowave', 6, 1, 1], ['old-smacky', 3, 1, 1]] },
-  'garage-3': { wave: 0, clutter: [[1, 0, 2], [1, 1, 2]], towers: [['mike-rowave', 1, 0, 2], ['dj-decibel', 1, 1, 2]] },
+  'garage-3': { wave: 0, clutter: [[1, 0, 2], [1, 1, 2]], towers: [['mike-rowave', 1, 0, 2], ['sgt-spritz', 1, 1, 2]] },
   'garage-4': { wave: 0, clutter: [[3, 1, 3], [5, 1, 3]], towers: [['mike-rowave', 3, 1, 3], ['dj-decibel', 5, 1, 3]] },
-  'garage-5': { wave: 0, clutter: [[2, 1, 2], [4, 1, 2]], towers: [['mike-rowave', 2, 1, 2], ['dj-decibel', 4, 1, 2]] },
+  'garage-5': { wave: 0, clutter: [[2, 1, 2], [4, 1, 2]], towers: [['mike-rowave', 2, 1, 2], ['saltimus-prime', 4, 1, 2]] },
 };
 
 const strategyFor = (id: string): Step[] => {

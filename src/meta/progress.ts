@@ -3,8 +3,8 @@
  * Pure functions over ALL_LEVELS + SaveData['stars'] — no new save fields required,
  * since unlock state is fully derivable from stars already keyed by level id.
  */
-import { ALL_LEVELS } from '../content';
-import type { LevelDef, RoomTheme } from '../sim/types';
+import { ALL_LEVELS, CONTENT } from '../content';
+import type { CritterDef, LevelDef, RoomTheme } from '../sim/types';
 import type { SaveData } from './save';
 
 /** The 9 rooms in dollhouse cutaway order: top floor -> bottom -> outside. */
@@ -106,3 +106,38 @@ export function totalStars(save: SaveData): number {
 }
 
 export const MAX_STARS = ALL_LEVELS.length * 3;
+
+// ---------- Critterdex ----------
+
+/** All species, ordered: regular critters (by tier) then bosses last, each in content
+ *  registration order within their group — reads like a field-journal table of contents. */
+export function critterdexOrder(): CritterDef[] {
+  const all = Object.values(CONTENT.critters);
+  const regular = all.filter((c) => !c.boss);
+  const bosses = all.filter((c) => c.boss);
+  return [...regular, ...bosses];
+}
+
+export function killCount(save: SaveData, defId: string): number {
+  return save.critterdex.kills[defId] ?? 0;
+}
+
+export function jarCount(save: SaveData, defId: string): number {
+  return save.critterdex.jarred[defId] ?? 0;
+}
+
+export function shinyCount(save: SaveData, defId: string): number {
+  return save.critterdex.shinySeen[defId] ?? 0;
+}
+
+/** A species counts as "seen" (unlocks its journal page) once killed or jarred at least once. */
+export function isCritterSeen(save: SaveData, defId: string): boolean {
+  return killCount(save, defId) > 0 || jarCount(save, defId) > 0;
+}
+
+export function critterdexCompletionPct(save: SaveData): number {
+  const order = critterdexOrder();
+  if (order.length === 0) return 0;
+  const seen = order.filter((c) => isCritterSeen(save, c.id)).length;
+  return Math.round((seen / order.length) * 100);
+}

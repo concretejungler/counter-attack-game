@@ -151,8 +151,10 @@ describe('Sim core (Cycle A)', () => {
     expect(sim.state.mutations).toContain('mut-hp');
     sim.command({ type: 'callWave' });
     run(sim, seconds(1.5));
-    const critter = [...sim.state.critters.values()][0];
-    expect(critter.maxHp).toBe(15); // 10 * 1.5
+    // wave 1's ant had time to bite-and-flee off the board, which spawns it back next wave
+    // as a crowned grudge elite (see GAME-PROMPT §2.6) — exclude it to isolate the plain spawn.
+    const critter = [...sim.state.critters.values()].find((c) => !c.crowned);
+    expect(critter?.maxHp).toBe(15); // 10 * 1.5
   });
 
   it('scent history is sampled into recap', () => {

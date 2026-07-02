@@ -1,9 +1,10 @@
-import type { LevelDef, RecapData, SimState, RoomTheme } from '../sim/types';
+import type { ContentDB, LevelDef, RecapData, SimState, RoomTheme } from '../sim/types';
 import type { SaveData } from '../meta/save';
-import { LEVEL_ICONS } from './icons';
+import { LEVEL_ICONS, CRITTER_ICONS } from './icons';
 import {
   ROOM_COLOR, ROOM_LABEL, worldsGrouped, isLevelUnlocked, isWorldUnlocked,
   starsFor, prerequisiteRoomLabel, furthestUnlockedLevel,
+  critterdexOrder, isCritterSeen, killCount, jarCount, shinyCount, critterdexCompletionPct,
 } from '../meta/progress';
 
 const el = (tag: string, cls = '', html = ''): HTMLElement => {
@@ -15,7 +16,12 @@ const el = (tag: string, cls = '', html = ''): HTMLElement => {
 
 const TITLE_COLORS = ['#e8504f', '#3f5d7d', '#d8a020', '#3c8a5e', '#8a4a9c', '#d87f2e'];
 
-export function buildTitle(onPlay: () => void, onSettings: () => void): HTMLElement {
+export function buildTitle(
+  save: SaveData,
+  onPlay: () => void,
+  onSettings: () => void,
+  onJournal: () => void,
+): HTMLElement {
   const screen = el('div', 'screen');
   const fridge = el('div', 'fridge');
 
@@ -40,11 +46,16 @@ export function buildTitle(onPlay: () => void, onSettings: () => void): HTMLElem
   const infest = el('button', 'fridge-note locked', '🌀 Infestation Mode <small>(soon)</small>');
   infest.style.setProperty('--pin', '#3c8a5e');
   infest.style.setProperty('--tilt', '0.8deg');
+  const journalPct = critterdexCompletionPct(save);
+  const journal = el('button', 'fridge-note magnet-sticker', `📔 my journal!! <small>${journalPct}%</small>`);
+  journal.style.setProperty('--pin', '#d8a020');
+  journal.style.setProperty('--tilt', '1.4deg');
+  journal.onclick = onJournal;
   const settings = el('button', 'fridge-note', '🌡️ Settings');
   settings.style.setProperty('--pin', '#3f5d7d');
   settings.style.setProperty('--tilt', '-1deg');
   settings.onclick = onSettings;
-  menu.append(play, infest, settings);
+  menu.append(play, journal, infest, settings);
 
   fridge.append(
     title,
@@ -81,10 +92,20 @@ const ROOM_LAYOUT: Record<RoomTheme, { col: string; row: string }> = {
   secret: { col: '4 / 5', row: '5' },
 };
 
-export function buildLevelSelect(save: SaveData, onPick: (id: string) => void, onBack: () => void): HTMLElement {
+export function buildLevelSelect(
+  save: SaveData,
+  onPick: (id: string) => void,
+  onBack: () => void,
+  onJournal: () => void,
+): HTMLElement {
   const screen = el('div', 'screen house-screen');
   const wrap = el('div', 'house-wrap');
-  wrap.append(el('div', 'house-title', '🏠 The Whole House'));
+  const titleRow = el('div', 'house-title-row');
+  titleRow.append(el('div', 'house-title', '🏠 The Whole House'));
+  const journalBtn = el('button', 'wood-btn small journal-btn', `📔 Journal <small>${critterdexCompletionPct(save)}%</small>`);
+  journalBtn.onclick = onJournal;
+  titleRow.append(journalBtn);
+  wrap.append(titleRow);
 
   const scroller = el('div', 'house-scroller');
   const house = el('div', 'house-map');
@@ -152,6 +173,91 @@ export function buildLevelSelect(save: SaveData, onPick: (id: string) => void, o
   });
 
   return screen;
+}
+
+/** The Critterdex — "a kid's field journal" (GAME-PROMPT §18/§2.5). Lined notebook paper,
+ *  one index card per species (crayon-portrait emoji, kid-voice desc, kill/jar tallies),
+ *  silhouette "???" cards for anything never yet seen. Bosses get a wide full-spread card. */
+export function buildJournal(save: SaveData, content: ContentDB, onBack: () => void): HTMLElement {
+  const screen = el('div', 'screen journal-screen');
+  const book = el('div', 'journal-book');
+
+  const pct = critterdexCompletionPct(save);
+  const header = el('div', 'journal-header');
+  header.append(
+    el('div', 'journal-title', '📔 my critter journal'),
+    el('div', 'journal-pct', `${pct}% filled in${pct >= 100 ? ' — THE GOLDEN JAR!! 🏆' : ''}`),
+  );
+  book.append(header);
+
+  const pctBar = el('div', 'journal-bar');
+  const pctFill = el('div', 'journal-bar-fill');
+  pctFill.style.width = `${pct}%`;
+  pctBar.append(pctFill);
+  book.append(pctBar);
+
+  const order = critterdexOrder();
+  const regular = order.filter((c) => !c.boss);
+  const bosses = order.filter((c) => c.boss);
+
+  const grid = el('div', 'journal-grid');
+  regular.forEach((def, i) => grid.append(journalCard(save, def, i)));
+  book.append(grid);
+
+  if (bosses.length > 0) {
+    book.append(el('div', 'journal-section-label', '👑 the big ones (full-page entries)'));
+    const bossGrid = el('div', 'journal-boss-grid');
+    bosses.forEach((def, i) => bossGrid.append(journalCard(save, def, i, true)));
+    book.append(bossGrid);
+  }
+
+  const back = el('button', 'wood-btn small', '← Fridge');
+  back.style.marginTop = '16px';
+  back.onclick = onBack;
+  book.append(back);
+
+  screen.append(book);
+  return screen;
+}
+
+function journalCard(save: SaveData, def: import('../sim/types').CritterDef, i: number, boss = false): HTMLElement {
+  const seen = isCritterSeen(save, def.id);
+  const cls = `journal-card${boss ? ' boss-card' : ''}${seen ? '' : ' unseen'}`;
+  const card = el('div', cls);
+  card.style.setProperty('--tilt', `${((i * 17 + (boss ? 5 : 0)) % 5) - 2}deg`);
+
+  // Boss cards lay portrait + text side-by-side (full-page-spread feel); regular cards
+  // stack everything vertically. `body` holds everything after the portrait either way —
+  // for regular cards it's just appended inline (flex-direction differs per .boss-card CSS).
+  const body = boss ? el('div', 'journal-body') : card;
+
+  if (!seen) {
+    card.append(el('div', 'journal-portrait silhouette', '❓'));
+    body.append(
+      el('div', 'journal-name', '???'),
+      el('div', 'journal-desc unknown-desc', 'never spotted this one yet. squish or jar one to fill in the page!'),
+    );
+    if (boss) card.append(body);
+    return card;
+  }
+
+  const kills = killCount(save, def.id);
+  const jars = jarCount(save, def.id);
+  const shinies = shinyCount(save, def.id);
+
+  card.append(el('div', 'journal-portrait', CRITTER_ICONS[def.id] ?? '❔'));
+  body.append(el('div', 'journal-name', def.name));
+  if (boss) body.append(el('div', 'journal-tier', 'BOSS'));
+  body.append(el('div', 'journal-desc', def.desc));
+
+  const stats = el('div', 'journal-stats');
+  stats.append(el('div', 'journal-stat', `🥊 squished: <b>${kills}</b>`));
+  if (jars > 0) stats.append(el('div', 'journal-stat', `🫙 jarred: <b>${jars}</b>`));
+  if (shinies > 0) stats.append(el('div', 'journal-stat shiny-stat', `✨ shiny seen: <b>${shinies}</b>`));
+  body.append(stats);
+
+  if (boss) card.append(body);
+  return card;
 }
 
 export interface RecapInfo {

@@ -55,7 +55,10 @@ describe('Content lint — every reference resolves', () => {
       const ids = def.branches.map((b) => b.id);
       expect(new Set(ids).size).toBe(ids.length);
       expect(def.tiers).toHaveLength(3);
-      for (const tier of def.tiers) expect(tier.cost).toBeGreaterThan(0);
+      // Jarred-unique towers (GAME-PROMPT §2.5) are earned, not bought — cost 0 by design.
+      if (!def.id.startsWith('jar-')) {
+        for (const tier of def.tiers) expect(tier.cost).toBeGreaterThan(0);
+      }
       expect(def.barks.length).toBeGreaterThan(0);
     }
   });

@@ -19,6 +19,14 @@ export interface SaveData {
     crumbsBanked: number;
   };
   seenNotes: string[];                   // dismissed tutorial notes
+  /** The Critterdex — kid's field journal. Keyed by critter def id. Optional-safe: added
+   *  after v1 shipped, so loadSave() backfills empty records for saves written before this
+   *  existed (no version bump needed, same pattern as stats/settings backfill below). */
+  critterdex: {
+    kills: Record<string, number>;       // squished count per species
+    jarred: Record<string, number>;      // capture count per species
+    shinySeen: Record<string, number>;   // shiny sightings (chime heard) per species
+  };
 }
 
 const KEY = 'counterattack_save_v1';
@@ -30,6 +38,7 @@ export function defaultSave(): SaveData {
     settings: { musicVol: 0.7, sfxVol: 0.9, shake: true, difficulty: 'houseguest' },
     stats: { wins: 0, losses: 0, kills: 0, sweeps: 0, crumbsBanked: 0 },
     seenNotes: [],
+    critterdex: { kills: {}, jarred: {}, shinySeen: {} },
   };
 }
 
@@ -39,7 +48,17 @@ export function loadSave(): SaveData {
     if (!raw) return defaultSave();
     const data = JSON.parse(raw) as SaveData;
     if (data.version !== 1) return defaultSave();
-    return { ...defaultSave(), ...data, settings: { ...defaultSave().settings, ...data.settings }, stats: { ...defaultSave().stats, ...data.stats } };
+    return {
+      ...defaultSave(),
+      ...data,
+      settings: { ...defaultSave().settings, ...data.settings },
+      stats: { ...defaultSave().stats, ...data.stats },
+      critterdex: {
+        kills: { ...(data.critterdex?.kills ?? {}) },
+        jarred: { ...(data.critterdex?.jarred ?? {}) },
+        shinySeen: { ...(data.critterdex?.shinySeen ?? {}) },
+      },
+    };
   } catch {
     return defaultSave();
   }

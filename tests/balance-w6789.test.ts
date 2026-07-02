@@ -50,10 +50,11 @@ const cakeGuard = (s: number, c: number, r: number): Step[] => [
 const basementPar = (topSurface = 1): Step[] => [
   {
     wave: 0,
-    clutter: [[1, 0, topSurface], [4, 0, topSurface]],
+    clutter: [[1, 0, topSurface], [4, 0, topSurface], [2, 2, topSurface]],
     towers: [
       ['saltimus-prime', 1, 0, topSurface],
       ['sir-toastsalot', 4, 0, topSurface],
+      ['old-stinky', 2, 2, topSurface],
     ],
   },
   { wave: 1, clutter: [[1, 2, topSurface]], towers: [['stick-rick', 9, 1], ['saltimus-prime', 1, 2, topSurface]] },
@@ -163,8 +164,8 @@ const backyardOpenPar: Step[] = [
   { wave: 2, clutter: [[5, 6], [11, 6]], towers: [['bandolero', 5, 6], ['dj-decibel', 11, 6]] },
   { wave: 3, towers: [['audrey-the-third', 6, 5], ['count-blendula', 10, 5], ['snappy-and-sons', 8, 3]] },
   { wave: 4, clutter: [[3, 8], [13, 2]], towers: [['mike-rowave', 3, 8], ['static', 13, 2]] },
-  { wave: 5, towers: [['old-stinky', 8, 7], ['stick-rick', 7, 4]] },
-  { wave: 6, clutter: [[12, 8], [2, 2]], towers: [['bandolero', 12, 8], ['sir-toastsalot', 2, 2]] },
+  { wave: 5, clutter: [[8, 7]], towers: [['old-stinky', 8, 7], ['stick-rick', 7, 4]] },
+  { wave: 6, clutter: [[12, 8], [9, 6]], towers: [['bandolero', 12, 8], ['the-coldfather', 9, 6]] },
   { wave: 7, towers: [['gnomeo', 5, 5], ['snappy-and-sons', 11, 5]] },
 ];
 
@@ -214,7 +215,7 @@ const sewerPar: Step[] = [
   {
     wave: 0,
     clutter: [[0, 0, 2], [4, 0, 2], [2, 2, 1]],
-    towers: [['static', 0, 0, 2], ['professor-scorch', 4, 0, 2], ['stick-rick', 8, 1], ['alexis', 2, 2, 1]],
+    towers: [['saltimus-prime', 0, 0, 2], ['professor-scorch', 4, 0, 2], ['stick-rick', 8, 1], ['alexis', 2, 2, 1]],
   },
   { wave: 1, clutter: [[2, 0, 1], [6, 0, 1]], towers: [['mike-rowave', 2, 0, 1], ['professor-scorch', 6, 0, 1]] },
   { wave: 2, towers: [['static', 1, 1, 2], ['mike-rowave', 5, 1, 2]] },

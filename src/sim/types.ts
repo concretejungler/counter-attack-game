@@ -348,7 +348,9 @@ export type SimCommand =
   | { type: 'highFive'; towerId: number }
   | { type: 'rearmTrap'; towerId: number }
   | { type: 'castSpell'; spell: string; surface?: number; x?: number; z?: number }
-  | { type: 'pickMutation'; id: string };
+  | { type: 'pickMutation'; id: string }
+  | { type: 'jarStart'; critterId: number }   // 2s channel; hand offline; target must be <20% hp & shiny
+  | { type: 'jarCancel' };
 
 // ---------- events out ----------
 export type LossReason = 'cakeDevoured' | 'theSwarm' | 'condemned' | 'betrayal' | 'exterminated';
@@ -393,7 +395,14 @@ export type SimEvent =
   | { t: 'manaFull' }
   | { t: 'mutationOffer'; options: string[] }
   | { t: 'mutationPicked'; id: string }
-  | { t: 'fall'; id: number; from: number };
+  | { t: 'fall'; id: number; from: number }
+  | { t: 'shinySpawn'; id: number; def: string; at: Vec3 }          // the Pavlovian chime
+  | { t: 'jarStart'; critterId: number }
+  | { t: 'jarDone'; critterId: number; def: string; towerDef: string } // captured → unique tower unlocked for this level
+  | { t: 'jarFail'; critterId: number; reason: 'moved' | 'died' | 'cancelled' | 'ineligible' }
+  | { t: 'grudgeBorn'; name: string; def: string; escapes: number }  // a biter escaped alive
+  | { t: 'grudgeReturn'; name: string; critterId: number; bounty: number }
+  | { t: 'grudgeSettled'; name: string; critterId: number; bounty: number }; // killed a crowned elite
 
 // ---------- recap / telemetry ----------
 export interface RecapData {
@@ -452,6 +461,20 @@ export interface SimState {
   spellCds: Record<string, number>;
   mutations: string[];
   mutationOffer: string[] | null;
+  /** Named biters that escaped alive; they return crowned next wave. Persists for the level. */
+  grudges: GrudgeEntry[];
+  /** Jar channel in progress: critter id + seconds remaining (hand is offline meanwhile). */
+  jarring: { critterId: number; t: number } | null;
+  /** Unique jarred-tower defs earned this level (placeable once each). */
+  jarredStock: string[];
   recap: RecapData;
   speedMult: number;        // shell-set; sim reads for nothing (kept for UI echo)
+}
+
+export interface GrudgeEntry {
+  name: string;             // "Greg the Glutton"
+  def: string;              // species
+  escapes: number;          // buff stacks (+15% hp & +8% speed each)
+  bounty: number;           // crumbs on kill (grows per escape)
+  aliveAs: number | null;   // critter id while on the board this wave
 }

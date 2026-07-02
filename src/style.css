@@ -172,6 +172,7 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   box-shadow: 0 2px 4px rgba(0,0,0,0.4);
 }
 .fridge-note.locked { opacity: 0.45; filter: grayscale(0.6); }
+.fridge-note.magnet-sticker small { display: block; font-size: 11px; font-weight: normal; color: #8a6e1c; margin-top: 1px; }
 .fridge-foot { margin-top: 22px; text-align: center; font-size: 12px; color: #8a9098; font-family: var(--font-label); }
 
 /* ---------- level select: the corkboard ---------- */
@@ -242,13 +243,20 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   max-width: 1180px;
   padding: 0 12px;
 }
+.house-title-row {
+  display: flex; align-items: center; justify-content: center;
+  gap: 16px;
+  width: 100%;
+  margin-bottom: 12px;
+}
 .house-title {
   font-size: 30px; color: #fff4e0;
   text-shadow: 2px 3px 0 rgba(0,0,0,0.35);
   text-align: center;
-  margin-bottom: 12px;
   transform: rotate(-1deg);
 }
+.journal-btn { white-space: nowrap; }
+.journal-btn small { font-size: 0.7em; opacity: 0.85; font-weight: normal; }
 .house-scroller {
   width: 100%;
   max-width: 1080px;
@@ -340,6 +348,165 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
 .sticky-name { font-weight: bold; line-height: 1.1; margin: 2px 0; min-height: 22px; }
 .sticky-stars { letter-spacing: 1px; color: #d8a020; font-size: 12px; }
 .sticky-stars .off { color: #9a8c60; }
+
+/* ---------- the Critterdex: a kid's field journal (lined notebook paper) ---------- */
+.journal-screen {
+  background: radial-gradient(ellipse at 50% 15%, #4a3826 0%, #241a10 75%);
+  align-items: flex-start;
+  padding-top: 18px;
+}
+.journal-book {
+  width: min(1120px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--paper);
+  background-image: repeating-linear-gradient(
+    0deg, rgba(63, 93, 125, 0.16) 0 1px, transparent 1px 30px
+  );
+  background-position: 0 64px;
+  border: 5px solid var(--ink);
+  border-radius: 4px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.55);
+  padding: 20px 26px 26px;
+  position: relative;
+}
+/* red margin rule, like real notebook paper */
+.journal-book::before {
+  content: '';
+  position: absolute; top: 0; bottom: 0; left: 46px;
+  width: 2px;
+  background: rgba(200, 88, 56, 0.35);
+  pointer-events: none;
+}
+.journal-header {
+  display: flex; align-items: baseline; justify-content: space-between;
+  flex-wrap: wrap; gap: 8px;
+  margin-bottom: 6px;
+  padding-left: 20px;
+}
+.journal-title {
+  font-size: 30px; font-weight: bold;
+  color: var(--ink);
+  transform: rotate(-1deg);
+}
+.journal-pct {
+  font-size: 16px; font-weight: bold;
+  color: #8a6e1c;
+  background: var(--butter);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  padding: 3px 12px;
+  transform: rotate(1.5deg);
+}
+.journal-bar {
+  margin: 0 0 18px 20px;
+  height: 10px;
+  background: #e8dcc0;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  overflow: hidden;
+  max-width: 460px;
+}
+.journal-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #d8a020, #f7c948);
+  transition: width 0.4s;
+}
+.journal-section-label {
+  font-size: 18px; font-weight: bold;
+  color: var(--ink);
+  margin: 22px 0 10px 20px;
+  transform: rotate(-0.6deg);
+}
+.journal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 16px;
+  padding-left: 20px;
+}
+.journal-boss-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 18px;
+  padding-left: 20px;
+}
+.journal-card {
+  background: #fffdf6;
+  border: 2.5px solid var(--ink);
+  border-radius: 8px;
+  padding: 12px 13px 10px;
+  box-shadow: 0 5px 12px rgba(0,0,0,0.28);
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 0.12s, box-shadow 0.12s;
+  position: relative;
+}
+.journal-card:hover { transform: rotate(0deg) translateY(-3px) scale(1.02); box-shadow: 0 9px 18px rgba(0,0,0,0.35); z-index: 2; }
+.journal-card::before { /* tape corner */
+  content: '';
+  position: absolute; top: -8px; left: 50%; margin-left: -22px;
+  width: 44px; height: 16px;
+  background: rgba(255, 248, 224, 0.7);
+  transform: rotate(-2deg);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+.journal-card.unseen { filter: grayscale(1) brightness(0.88); }
+.journal-portrait {
+  font-size: 46px;
+  text-align: center;
+  line-height: 1;
+  height: 56px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 6px;
+}
+.journal-portrait.silhouette {
+  color: #8a8478;
+  background: repeating-linear-gradient(45deg, #e4ddc8 0 6px, #d8d0b8 6px 12px);
+  border-radius: 50%;
+  width: 56px; height: 56px;
+  margin: 0 auto 6px;
+  font-size: 26px;
+}
+.journal-name {
+  font-size: 17px; font-weight: bold;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.journal-tier {
+  text-align: center;
+  font-size: 10.5px; font-weight: bold; letter-spacing: 1.5px;
+  color: #fff4e0;
+  background: #6e2424;
+  border-radius: 5px;
+  padding: 1px 8px;
+  width: fit-content;
+  margin: 0 auto 6px;
+}
+.journal-desc {
+  font-size: 12.5px;
+  line-height: 1.32;
+  color: #4a4038;
+  min-height: 48px;
+  margin-bottom: 8px;
+}
+.journal-desc.unknown-desc { text-align: center; color: #8a8478; font-style: italic; }
+.journal-stats { display: flex; flex-direction: column; gap: 3px; border-top: 1.5px dashed #d8cca8; padding-top: 6px; }
+.journal-stat { font-size: 12px; color: #5a4e3c; }
+.journal-stat.shiny-stat { color: #a0780f; }
+.journal-stat b { color: var(--ink); }
+
+/* boss cards: wider full-page-spread treatment */
+.journal-card.boss-card {
+  padding: 16px 18px 14px;
+  background: linear-gradient(170deg, #fff8e4, #fff0cc);
+  border-width: 3px;
+  display: flex; gap: 14px; align-items: flex-start;
+}
+.boss-card .journal-portrait { font-size: 64px; height: 78px; width: 78px; flex-shrink: 0; margin: 0; }
+.boss-card .journal-portrait.silhouette { width: 78px; height: 78px; font-size: 34px; }
+.boss-card .journal-name { font-size: 20px; text-align: left; }
+.boss-card .journal-tier { margin: 0 0 6px; }
+.boss-card .journal-desc { min-height: 0; }
+.boss-card .journal-body { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 
 /* ---------- HUD ---------- */
 .hud-top {
@@ -935,6 +1102,47 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   .sticky-num { font-size: 8px; }
   .sticky-name { min-height: 16px; margin: 1px 0; }
   .sticky-stars { font-size: 9px; }
+
+  /* house title row wraps under the journal button on narrow phones */
+  .house-title-row { gap: 8px; flex-wrap: wrap; }
+  .journal-btn { font-size: 12px; padding: 6px 12px; }
+
+  /* Critterdex journal: same scroll-and-shrink treatment as the house map —
+     grid collapses to fewer columns, cards shrink but stay readable/tappable. */
+  .journal-screen { padding-top: 6px; align-items: stretch; }
+  .journal-book {
+    width: 100%; max-width: 100%;
+    max-height: 86vh;
+    padding: 12px 12px 16px;
+    border-width: 3px;
+  }
+  .journal-book::before { left: 26px; }
+  .journal-header { padding-left: 10px; gap: 4px; }
+  .journal-title { font-size: clamp(18px, 6vw, 22px); }
+  .journal-pct { font-size: 12px; padding: 2px 9px; }
+  .journal-bar { margin-left: 10px; max-width: none; }
+  .journal-section-label { font-size: 14px; margin: 14px 0 8px 10px; }
+  .journal-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+    padding-left: 10px;
+  }
+  .journal-boss-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding-left: 10px;
+  }
+  .journal-card { padding: 8px 9px 7px; }
+  .journal-portrait { font-size: 32px; height: 40px; margin-bottom: 3px; }
+  .journal-portrait.silhouette { width: 40px; height: 40px; font-size: 18px; }
+  .journal-name { font-size: 13px; margin-bottom: 2px; }
+  .journal-desc { font-size: 10.5px; min-height: 0; margin-bottom: 5px; }
+  .journal-tier { font-size: 9px; padding: 1px 6px; }
+  .journal-stat { font-size: 10px; }
+  .boss-card .journal-portrait { font-size: 40px; width: 52px; height: 52px; }
+  .boss-card .journal-portrait.silhouette { width: 52px; height: 52px; font-size: 22px; }
+  .boss-card .journal-name { font-size: 15px; }
+  .journal-card.boss-card { gap: 10px; padding: 10px 12px 10px; }
 }
 
 /* short landscape phones (e.g. 844x390) — menus/modals need to fit without
@@ -955,6 +1163,11 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   .polaroid .label { font-size: 11px; }
 
   .house-scroller { max-height: 80vh; }
+  .journal-book { max-height: 90vh; padding: 8px 10px 12px; }
+  .journal-header { margin-bottom: 3px; }
+  .journal-title { font-size: 16px; }
+  .journal-bar { margin-bottom: 10px; height: 7px; }
+  .journal-section-label { margin: 10px 0 6px 10px; }
 
   .paper-modal { padding: 12px 16px; max-height: 92vh; }
   .paper-modal h2 { font-size: clamp(16px, 4.5vw, 20px); margin-bottom: 2px; }

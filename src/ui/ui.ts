@@ -1,7 +1,7 @@
 import type { ContentDB, LevelDef, SimState, Tower } from '../sim/types';
 import type { SaveData } from '../meta/save';
 import { Hud, InspectPanel, type HudCallbacks, type InspectCallbacks } from './hud';
-import { buildLevelSelect, buildRecap, buildSettings, buildTitle, type RecapInfo } from './screens';
+import { buildJournal, buildLevelSelect, buildRecap, buildSettings, buildTitle, type RecapInfo } from './screens';
 import { MUTATION_ICONS } from './icons';
 import { isMobileViewport, isPortrait } from '../core/device';
 
@@ -20,6 +20,8 @@ export interface UICallbacks extends HudCallbacks, InspectCallbacks {
   onSettingsChanged(s: SaveData['settings']): void;
   onResume(): void;
 }
+
+export type JournalReturnTo = 'title' | 'levels';
 
 /** Screen router + HUD lifecycle + modals/toasts/banners. */
 export class UI {
@@ -74,8 +76,10 @@ export class UI {
   showTitle(): void {
     this.clearScreen();
     this.screenEl = buildTitle(
+      this.save,
       () => this.cb.onToLevels(),
       () => this.showSettings(),
+      () => this.showJournal('title'),
     );
     this.root.append(this.screenEl);
   }
@@ -86,7 +90,19 @@ export class UI {
       this.save,
       (id) => this.cb.onStartLevel(id),
       () => this.cb.onBackToTitle(),
+      () => this.showJournal('levels'),
     );
+    this.root.append(this.screenEl);
+  }
+
+  /** The Critterdex. Reachable from the title fridge and from level select; remembers
+   *  which screen to pop back to. */
+  showJournal(returnTo: JournalReturnTo): void {
+    this.clearScreen();
+    this.screenEl = buildJournal(this.save, this.content, () => {
+      if (returnTo === 'title') this.showTitle();
+      else this.showLevelSelect();
+    });
     this.root.append(this.screenEl);
   }
 

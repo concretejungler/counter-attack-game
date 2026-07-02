@@ -577,4 +577,105 @@ export const TOWER_DEFS: Record<string, TowerDef> = {
     desc: 'A family business with a spring-loaded succession plan. The sons are eager. Too eager.',
     barks: ['Say cheese.', 'Family meeting!', 'We snap because we care.'],
   },
+
+  // ---------- Jarred-unique towers (GAME-PROMPT §2.5) ----------
+  // Earned by capturing a shiny critter below 20% HP. Free to place (cost 0), one-of-a-kind
+  // per capture — see src/sim/hand.ts JAR_TOWER_MAP + jarredStock for the placement gate.
+
+  'jar-wasp': {
+    id: 'jar-wasp',
+    name: 'Wasp-in-a-Jar',
+    item: 'Mason Jar',
+    role: 'Jarred unique — fast sting turret, hits air',
+    dmgType: 'zap',
+    attack: 'projectile',
+    targeting: 'first',
+    hitsAir: true,
+    projSpeed: 20,
+    status: { id: 'stunned', dur: 0.4, chance: 0.2 },
+    tiers: [
+      { cost: 0, dmg: 30, rate: 2.2, range: 4.2 },
+      { cost: 0, dmg: 30, rate: 2.2, range: 4.2 },
+      { cost: 0, dmg: 30, rate: 2.2, range: 4.2 },
+    ],
+    branches: [],
+    desc: 'Furious, glass-bound, and still holding a grudge about the jar part. Stings anything that flies.',
+    barks: ['*muffled buzzing rage*', 'Let me OUT— oh, fine, I\'ll sting from here.', 'Bzzt. (translation: violence.)'],
+  },
+
+  'jar-firefly': {
+    id: 'jar-firefly',
+    name: 'Firefly Lantern',
+    item: 'Mason Jar',
+    role: 'Jarred unique — reveal aura with a light sting',
+    dmgType: 'light',
+    attack: 'aura',
+    targeting: 'close',
+    hitsAir: true,
+    tiers: [
+      { cost: 0, dmg: 4, rate: 1.0, range: 3.5, extra: { reveal: 1 } },
+      { cost: 0, dmg: 4, rate: 1.0, range: 3.5, extra: { reveal: 1 } },
+      { cost: 0, dmg: 4, rate: 1.0, range: 3.5, extra: { reveal: 1 } },
+    ],
+    branches: [],
+    desc: 'A tiny glass nightlight that outs every stealthy little liar in the room. Bites a bit too, for spite.',
+    barks: ['*soft judgmental glow*', 'I see you.', 'Blink twice for guilty.'],
+  },
+
+  'jar-stag': {
+    id: 'jar-stag',
+    name: 'Stag Buddy',
+    item: 'Mason Jar',
+    role: 'Jarred unique — blocker tank, absorbs aggro',
+    dmgType: 'swat',
+    attack: 'none',
+    targeting: 'close',
+    floorMount: true,
+    tiers: [
+      { cost: 0, dmg: 0, rate: 1, range: 1.4, extra: { decoyHp: 500, decoyRadius: 2.0, explodeAoe: 0 } },
+      { cost: 0, dmg: 0, rate: 1, range: 1.4, extra: { decoyHp: 500, decoyRadius: 2.0, explodeAoe: 0 } },
+      { cost: 0, dmg: 0, rate: 1, range: 1.4, extra: { decoyHp: 500, decoyRadius: 2.0, explodeAoe: 0 } },
+    ],
+    branches: [],
+    desc: 'Antlers the size of a dinner tray and the patience of a saint in a jar. Nothing gets past him.',
+    barks: ['*stoic mandible flex*', 'You shall not pass. I have antlers and nowhere to be.', '...'],
+  },
+
+  'jar-queen-ant': {
+    id: 'jar-queen-ant',
+    name: 'Queen Ant Jar',
+    item: 'Mason Jar',
+    role: 'Jarred unique — spawns friendly workers that sweep crumbs for you',
+    dmgType: 'gas',
+    attack: 'aura',
+    targeting: 'close',
+    tiers: [
+      { cost: 0, dmg: 0, rate: 1, range: 2.2, extra: { autoSweep: 1.5 } },
+      { cost: 0, dmg: 0, rate: 1, range: 2.2, extra: { autoSweep: 1.5 } },
+      { cost: 0, dmg: 0, rate: 1, range: 2.2, extra: { autoSweep: 1.5 } },
+    ],
+    branches: [],
+    desc: 'Runs a small, extremely loyal crumb-banking operation from inside a jar. Never leaves. Never has to.',
+    barks: ['*regal antennae wave*', 'The colony banks for you now.', 'Sweep. Bank. Repeat. It is the way.'],
+  },
+
+  'jar-pillbug': {
+    id: 'jar-pillbug',
+    name: 'Pillbug Trap',
+    item: 'Mason Jar',
+    role: 'Jarred unique — huge one-shot trap',
+    dmgType: 'swat',
+    attack: 'trap',
+    targeting: 'close',
+    groundOnly: true,
+    floorMount: true,
+    tiers: [
+      { cost: 0, dmg: 400, rate: 1, range: 0.9 },
+      { cost: 0, dmg: 400, rate: 1, range: 0.9 },
+      { cost: 0, dmg: 400, rate: 1, range: 0.9 },
+    ],
+    branches: [],
+    desc: 'Rolls out of the jar, flattens one unlucky trespasser, rolls back in looking smug.',
+    barks: ['*curls up ominously*', 'One roll. One kill.', 'Marble of justice.'],
+  },
 };

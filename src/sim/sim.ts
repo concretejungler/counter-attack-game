@@ -3,14 +3,15 @@ import { Grid } from './grid';
 import { WaveRuntime } from './waves';
 import { damageCritter, spawnCritter, updateCritters } from './critters';
 import { tryPlaceClutter } from './clutter';
-import { tryBranchTower, tryPlaceTower, trySellTower, tryUpgradeTower, updateTowers } from './towers';
+import { towerStats, tryBranchTower, tryPlaceTower, trySellTower, tryUpgradeTower, updateTowers } from './towers';
 import { updateProjectiles } from './projectiles';
 import { applySweep, updateCrumbEating } from './crumbs';
 import {
   applyCarryCancel, applyCarryDrop, applyCarryStart, applyFlick,
-  applyHighFive, applyRearmTrap, applySquash, updateHand,
+  applyHighFive, applyJarCancel, applyJarStart, applyRearmTrap, applySquash, isJarTower, updateHand,
 } from './hand';
 import { applyCast, updateSpells } from './spells';
+import { spawnGrudges } from './grudges';
 import type {
   Critter, ContentDB, DamageType, DifficultyId, DifficultyMods, LevelDef, LossReason,
   SimCommand, SimEvent, SimOptions, SimState, TileRef, Vec3,
@@ -37,6 +38,14 @@ export interface SimCtx {
   level: LevelDef;
   grid: Grid;
   rng: RNG;
+  /**
+   * Independent seeded streams reserved for cosmetic/side-channel randomness that must stay
+   * deterministic per seed but should never perturb the main gameplay RNG sequence (positions,
+   * clutter deals, mutation shuffles, AI-relevant draws) — dozens of hand-tuned balance
+   * par-scripts depend on that sequence staying byte-stable run to run.
+   */
+  shinyRng: RNG;    // shiny-critter roll (GAME-PROMPT §2.5)
+  grudgeRng: RNG;   // grudge name picks + crowned-elite spawn-door picks (GAME-PROMPT §2.6)
   content: ContentDB;
   diff: DifficultyMods;
   emit(e: SimEvent): void;
@@ -54,6 +63,8 @@ export class Sim implements SimCtx {
   level: LevelDef;
   grid: Grid;
   rng: RNG;
+  shinyRng: RNG;
+  grudgeRng: RNG;
   content: ContentDB;
   diff: DifficultyMods;
 
@@ -71,6 +82,8 @@ export class Sim implements SimCtx {
     this.level = level;
     this.content = opts.content;
     this.rng = new RNG(opts.seed);
+    this.shinyRng = new RNG((opts.seed ^ 0x5348_4e59) >>> 0);  // 'SHNY' XOR-mixed, independent stream
+    this.grudgeRng = new RNG((opts.seed ^ 0x4752_4447) >>> 0); // 'GRDG' XOR-mixed, independent stream
     this.diff = DIFFICULTY[opts.difficulty];
     this.grid = new Grid(level);
     this.grid.recompute(level.cakeTile);
@@ -110,6 +123,9 @@ export class Sim implements SimCtx {
       spellCds: {},
       mutations: [],
       mutationOffer: null,
+      grudges: [],
+      jarring: null,
+      jarredStock: [],
       recap: {
         bitesBySource: {},
         leaksByWave: [],
@@ -218,7 +234,7 @@ export class Sim implements SimCtx {
       if (this.scoutTimer >= SCOUT_INTERVAL) {
         this.scoutTimer = 0;
         const spawn = this.rng.pick(this.level.spawns);
-        spawnCritter(this, this.swarmDef, spawn.tile);
+        spawnCritter(this, this.swarmDef, spawn.tile, { shinyEligible: false });
         this.emit({ t: 'scoutSpawn', def: this.swarmDef });
       }
     }
@@ -235,6 +251,7 @@ export class Sim implements SimCtx {
     updateHand(this, dt);
     updateCritters(this, dt);
     updateTowers(this, dt);
+    this.updateStationaryAutoSweep();
     updateProjectiles(this, dt);
     updateCrumbEating(this, dt);
     updateSpells(this, dt);
@@ -290,9 +307,17 @@ export class Sim implements SimCtx {
       case 'placeClutter':
         tryPlaceClutter(this, cmd.shape, cmd.rot, cmd.at);
         return;
-      case 'placeTower':
+      case 'placeTower': {
+        if (isJarTower(this, cmd.def)) {
+          // jarred-unique towers are placeable only while earned stock is available; they cost 0 crumbs.
+          const stockIdx = this.state.jarredStock.indexOf(cmd.def);
+          if (stockIdx === -1) return;
+          if (tryPlaceTower(this, cmd.def, cmd.at)) this.state.jarredStock.splice(stockIdx, 1);
+          return;
+        }
         tryPlaceTower(this, cmd.def, cmd.at);
         return;
+      }
       case 'upgradeTower':
         tryUpgradeTower(this, cmd.id);
         return;
@@ -329,6 +354,12 @@ export class Sim implements SimCtx {
       case 'castSpell':
         applyCast(this, cmd.spell, cmd.surface, cmd.x, cmd.z);
         return;
+      case 'jarStart':
+        applyJarStart(this, cmd.critterId);
+        return;
+      case 'jarCancel':
+        applyJarCancel(this);
+        return;
     }
   }
 
@@ -346,6 +377,7 @@ export class Sim implements SimCtx {
       st.recap.crumbsBanked += bonusCrumbs;
       this.emit({ t: 'crumbBank', amount: bonusCrumbs, total: st.crumbs });
     }
+    spawnGrudges(this);
     this.emit({ t: 'waveStart', index: st.waveIndex, total: st.wavesTotal });
   }
 
@@ -373,6 +405,33 @@ export class Sim implements SimCtx {
       if (offer.length > 0) {
         st.mutationOffer = offer;
         this.emit({ t: 'mutationOffer', options: [...offer] });
+      }
+    }
+  }
+
+  /**
+   * Stationary aura towers with an `autoSweep` extra but no `roam` (currently just the jarred
+   * Queen Ant Jar — see GAME-PROMPT §2.5: "spawns friendly worker ants that sweep crumbs FOR
+   * you", implemented here as a passive bank-in-range aura rather than literal roaming spawns).
+   * Vroomba-style roam towers already auto-sweep inside updateRoamTower (towers.ts) — this pass
+   * is gated to skip anything with `roam` set so the two paths never double-fire.
+   */
+  private updateStationaryAutoSweep(): void {
+    const st = this.state;
+    for (const tw of st.towers.values()) {
+      if (tw.disabled > 0 || tw.carried || tw.downed) continue;
+      const def = this.content.towers[tw.def];
+      if (!def || def.attack !== 'aura') continue;
+      const stats = towerStats(this, tw);
+      if (!stats.extra.autoSweep || stats.extra.roam) continue;
+      for (const ent of [...st.crumbEnts.values()]) {
+        if (ent.surface !== tw.tile.s) continue;
+        const d = Math.hypot(ent.pos.x - tw.pos.x, ent.pos.z - tw.pos.z);
+        if (d > stats.extra.autoSweep) continue;
+        st.crumbEnts.delete(ent.id);
+        st.crumbs += ent.value;
+        st.recap.crumbsBanked += ent.value;
+        this.emit({ t: 'crumbBank', amount: ent.value, total: st.crumbs });
       }
     }
   }
@@ -421,7 +480,7 @@ export class Sim implements SimCtx {
         this.swarmWarned.clear();
         for (let i = 0; i < SWARM_SIZE; i++) {
           const spawn = this.level.spawns[i % this.level.spawns.length];
-          spawnCritter(this, this.swarmDef, spawn.tile);
+          spawnCritter(this, this.swarmDef, spawn.tile, { shinyEligible: false });
         }
         // the horde consumed the trail
         for (const id of [...st.crumbEnts.keys()]) st.crumbEnts.delete(id);
