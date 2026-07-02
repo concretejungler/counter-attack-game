@@ -2,7 +2,7 @@ import { Vector3 } from 'three';
 import { DIFFICULTY, Sim, SIM_DT } from './sim/sim';
 import type { LevelDef, SimEvent, TileRef } from './sim/types';
 import { rotateCells } from './sim/clutter';
-import { CONTENT, ALL_LEVELS, levelById } from './content';
+import { CONTENT, ALL_LEVELS, CAMPAIGN_LEVELS, levelById } from './content';
 import { GameRenderer } from './render/renderer';
 import { UI } from './ui/ui';
 import { AudioMan } from './audio/audio';
@@ -11,7 +11,7 @@ import { Music, type BossId } from './audio/music';
 import { loadSave, persistSave, type SaveData } from './meta/save';
 import { weeklySeed } from './sim/endless';
 import { evaluateAchievements, evaluateSingle, purchase, type AchievementDef } from './meta/achievements';
-import { metaModsFromSave } from './meta/progress';
+import { metaModsFromSave, isSecretUnlocked, type SecretLevelId } from './meta/progress';
 import {
   newRun, reachableNodeIndices, currentFloorNodes, nodeAt, seedForNode, runModsForFight,
   draftOptions, addToDeck, fightRewardScraps, isEliteNode, isBossNode, isFinalBoss,
@@ -81,6 +81,11 @@ export class Game {
   // touches save.infestation.
   private infestFight: { floor: 1 | 2 | 3; nodeIndex: number } | null = null;
   private dailyChoreActive = false;
+  /** SECRET LEVELS (§14 + §20.16): the id of the secret level currently in play, or null. These
+   *  bypass the normal campaign stars/BP-per-star math entirely (see endLevel's secret branch) —
+   *  set here so endLevel can special-case them the same way infestFight/dailyChoreActive gate
+   *  their own resolution paths. */
+  private secretLevelActive: string | null = null;
 
   // ---------- EASTER EGGS (§20) ----------
   /** §20.1 Konami code: rolling buffer of recent keydowns, checked on title screen only. Session
@@ -156,6 +161,7 @@ export class Game {
         this.paused = false;
       },
       onStartEndless: () => this.startEndless(),
+      onStartSecretLevel: (id) => this.startSecretLevel(id),
       onChoose: (option) => {
         this.sim?.command({ type: 'choose', option });
       },
@@ -298,6 +304,7 @@ export class Game {
     this.level = null;
     this.infestFight = null;
     this.dailyChoreActive = false;
+    this.secretLevelActive = null;
     this.music.intensity = 0;
     this.music.heartbeat = false;
     this.exitPhotoModeIfOpen();
@@ -309,6 +316,7 @@ export class Game {
     this.level = null;
     this.paused = false;
     this.endlessMode = false;
+    this.secretLevelActive = null;
     this.exitPhotoModeIfOpen();
     this.music.intensity = 0;
     this.music.heartbeat = false;
@@ -347,6 +355,7 @@ export class Game {
     this.level = null;
     this.endlessMode = false;
     this.infestFight = null;
+    this.secretLevelActive = null;
     this.music.intensity = 0;
     this.music.heartbeat = false;
     let run = this.save.infestation;
@@ -371,6 +380,7 @@ export class Game {
     this.dailyChoreActive = true;
     this.infestFight = null;
     this.endlessMode = false;
+    this.secretLevelActive = null;
     this.level = levelById(chore.levelId);
     const difficulty = this.save.settings.difficulty;
     this.sim = new Sim(this.level, {
@@ -385,6 +395,40 @@ export class Game {
     });
     this.finishLevelBoot(chore.levelId);
     this.ui.toast(`📅 DAILY CHORE: ${CONTENT.mutations[chore.mutationId]?.name ?? chore.mutationId} — win for +25 BP!`);
+  }
+
+  /** SECRET LEVELS (§14 + §20.16) — launched only from the "???" attic panel, only once
+   *  isSecretUnlocked() passes (the panel itself never renders a locked level clickable, but this
+   *  re-checks so a stale/replayed UI reference can never launch a locked secret). Bypasses the
+   *  normal campaign stars/BP-per-star flow entirely; see endLevel's secret branch for rewards.
+   *
+   *  The Impossible Room (secret-impossible) gets two forced knobs on top of whatever the
+   *  player's own settings.difficulty/pet are: 'condemned' difficulty and the Director engaged,
+   *  regardless of the player's chosen difficulty tier — GAME-PROMPT §14 calls for "genuinely
+   *  brutal... it should NOT be par-winnable", and it also uses weeklySeed() (src/sim/endless.ts)
+   *  so every player sees the same room during a given ISO week (the "this week's impossible
+   *  room" framing echoed in the level's blurb/UI). Every other secret level plays at the
+   *  player's own chosen difficulty, same as a normal campaign level. */
+  startSecretLevel(id: string): void {
+    if (!isSecretUnlocked(this.save, id as SecretLevelId)) return;
+    this.infestFight = null;
+    this.dailyChoreActive = false;
+    this.endlessMode = false;
+    this.secretLevelActive = id;
+    this.level = levelById(id);
+    const isImpossible = id === 'secret-impossible';
+    const difficulty = isImpossible ? 'condemned' : this.save.settings.difficulty;
+    this.sim = new Sim(this.level, {
+      seed: isImpossible ? weeklySeed(Date.now()) : ((Date.now() % 100000) | 1),
+      difficulty,
+      content: CONTENT,
+      events: true,
+      director: isImpossible || difficulty === 'landlord' || difficulty === 'condemned' || !!this.level.director,
+      pet: this.save.settings.pet ?? undefined,
+      metaMods: metaModsFromSave(this.save),
+    });
+    this.finishLevelBoot(id);
+    if (isImpossible) this.ui.toast('🚪 THIS WEEK\'S IMPOSSIBLE ROOM — good luck. genuinely.');
   }
 
   private pickInfestationNode(index: number): void {
@@ -442,6 +486,7 @@ export class Game {
     this.infestFight = { floor, nodeIndex };
     this.dailyChoreActive = false;
     this.endlessMode = false;
+    this.secretLevelActive = null;
     // hud.ts (outside this feature's file ownership) gates its build bar purely off
     // `level.allowedTowers` — it never reads SimOptions/state at all — so the deck-gate has to
     // be applied here, on the LevelDef object the Hud is actually constructed with, exactly like
@@ -595,6 +640,7 @@ export class Game {
   startLevel(id: string, seed?: number): void {
     this.infestFight = null;
     this.dailyChoreActive = false;
+    this.secretLevelActive = null;
     this.level = levelById(id);
     const difficulty = this.save.settings.difficulty;
     this.sim = new Sim(this.level, {
@@ -642,6 +688,43 @@ export class Game {
         { won, lossReason: reason, level: this.level, state, recap: state.recap, stars: 0, starDetail: [false, false, false] },
         () => { this.ui.closeModal(); this.showTitle(); },
         () => { this.ui.closeModal(); this.showTitle(); },
+        null,
+      );
+      return;
+    }
+
+    // SECRET LEVELS (§14 + §20.16): no stars, no campaign progression math — a self-contained
+    // win/loss with its own one-time rewards (Dev Room / Impossible Room) tracked in
+    // save.secrets. Kills/sweeps/crumbs still fold into lifetime stats like every other mode.
+    if (this.secretLevelActive) {
+      const secretId = this.secretLevelActive;
+      this.secretLevelActive = null;
+      this.save.stats[won ? 'wins' : 'losses']++;
+      this.save.stats.kills += state.recap.kills;
+      this.save.stats.sweeps += state.recap.sweeps;
+      this.save.stats.crumbsBanked += state.recap.crumbsBanked;
+      if (won && secretId === 'secret-dev' && !this.save.secrets.foundDevRoom) {
+        this.save.secrets.foundDevRoom = true;
+        this.save.browniePoints.earned += 100;
+        this.ui.toast('🎂 +100 Brownie Points — thanks for finding us!!');
+        const def = evaluateSingle('found-dev-room', { save: this.save });
+        if (def) this.announceAchievement(def);
+      }
+      if (won && secretId === 'secret-impossible' && !this.save.secrets.impossibleCleared) {
+        this.save.secrets.impossibleCleared = true;
+        this.save.browniePoints.earned += 200;
+        this.ui.toast('🏆 +200 Brownie Points — you are, in fact, human.');
+        const def = evaluateSingle('impossible', { save: this.save });
+        if (def) this.announceAchievement(def);
+      }
+      persistSave(this.save);
+      this.sfx.play(won ? 'win' : 'lose');
+      this.music.intensity = 0;
+      this.music.heartbeat = false;
+      this.ui.showRecap(
+        { won, lossReason: reason, level: this.level, state, recap: state.recap, stars: 0, starDetail: [false, false, false] },
+        () => { this.ui.closeModal(); this.showLevels(); },
+        () => { this.ui.closeModal(); this.showLevels(); },
         null,
       );
       return;
@@ -736,8 +819,8 @@ export class Game {
     this.music.intensity = 0;
     this.music.heartbeat = false;
 
-    const idx = ALL_LEVELS.findIndex((l) => l.id === this.level!.id);
-    const next = won && idx >= 0 && idx + 1 < ALL_LEVELS.length ? ALL_LEVELS[idx + 1] : null;
+    const idx = CAMPAIGN_LEVELS.findIndex((l) => l.id === this.level!.id);
+    const next = won && idx >= 0 && idx + 1 < CAMPAIGN_LEVELS.length ? CAMPAIGN_LEVELS[idx + 1] : null;
     const levelId = this.level.id;
     this.ui.showRecap(
       {

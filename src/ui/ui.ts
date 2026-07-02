@@ -21,6 +21,8 @@ const el = (tag: string, cls = '', html = ''): HTMLElement => {
 export interface UICallbacks extends HudCallbacks, InspectCallbacks {
   onStartLevel(id: string): void;
   onStartEndless?(): void;
+  /** SECRET LEVELS (§14 + §20.16) — launched from the "???" attic-corner panel. */
+  onStartSecretLevel?(id: string): void;
   onBackToTitle(): void;
   onToLevels(): void;
   onPickMutation(id: string): void;
@@ -167,6 +169,7 @@ export class UI {
       (pet) => this.cb.onPetChange(pet),
       () => this.showJunkDrawer('levels'),
       () => this.cb.onStartEndless?.(),
+      (id) => this.cb.onStartSecretLevel?.(id),
     );
     this.root.append(this.screenEl);
   }

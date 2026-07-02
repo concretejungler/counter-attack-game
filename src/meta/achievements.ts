@@ -14,8 +14,8 @@
  *    moment the relevant SimEvent arrives — cheaper than re-scanning all ~40 defs every tick
  *    and keeps the "first X" achievements feeling instant.
  */
-import type { ALL_LEVELS as AllLevelsType } from '../content';
-import { ALL_LEVELS } from '../content';
+import type { CAMPAIGN_LEVELS as CampaignLevelsType } from '../content';
+import { CAMPAIGN_LEVELS } from '../content';
 import type { SaveData } from './save';
 import { totalStars, MAX_STARS, critterdexCompletionPct } from './progress';
 
@@ -43,7 +43,7 @@ export interface AchievementDef {
 }
 
 function worldFullyWon(save: SaveData, world: number): boolean {
-  const levels = (ALL_LEVELS as typeof AllLevelsType).filter((l) => l.world === world);
+  const levels = (CAMPAIGN_LEVELS as typeof CampaignLevelsType).filter((l) => l.world === world);
   return levels.length > 0 && levels.every((l) => (save.stars[l.id] ?? 0) >= 1);
 }
 
@@ -124,7 +124,7 @@ export const ACHIEVEMENT_DEFS: AchievementDef[] = [
     name: 'Pest Free (Almost)',
     desc: 'Win every level in the campaign.',
     bp: 100,
-    check: ({ save }) => (ALL_LEVELS as typeof AllLevelsType).every((l) => (save.stars[l.id] ?? 0) >= 1),
+    check: ({ save }) => (CAMPAIGN_LEVELS as typeof CampaignLevelsType).every((l) => (save.stars[l.id] ?? 0) >= 1),
   },
   {
     id: 'golden-jar-stars',
@@ -352,7 +352,7 @@ export const ACHIEVEMENT_DEFS: AchievementDef[] = [
     bp: 45,
     check: ({ save }) =>
       [1, 2, 3, 4, 5, 6, 7, 8, 9].some((w) =>
-        (ALL_LEVELS as typeof AllLevelsType).filter((l) => l.world === w).every((l) => (save.stars[l.id] ?? 0) >= 3),
+        (CAMPAIGN_LEVELS as typeof CampaignLevelsType).filter((l) => l.world === w).every((l) => (save.stars[l.id] ?? 0) >= 3),
       ),
   },
   {
@@ -384,6 +384,22 @@ export const ACHIEVEMENT_DEFS: AchievementDef[] = [
     desc: 'Pop 100 red balloons, lifetime.',
     bp: 40,
     check: ({ save }) => save.stats.balloonsPopped >= 100,
+  },
+
+  // ---------- secret levels (§14, §20.9, §20.16) ----------
+  {
+    id: 'found-dev-room',
+    name: 'Knock Knock',
+    desc: 'Find and beat the Dev Room.',
+    bp: 25,
+    check: ({ save }) => save.secrets.foundDevRoom,
+  },
+  {
+    id: 'impossible',
+    name: 'Are You Human?',
+    desc: 'Beat the Impossible Room. Sub-1% clear rate by design — this one is not a bluff.',
+    bp: 200,
+    check: ({ save }) => save.secrets.impossibleCleared,
   },
 ];
 

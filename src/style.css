@@ -462,6 +462,31 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
 .sticky-ico { font-size: 24px; line-height: 1; }
 .sticky-num { font-size: 10px; font-weight: bold; color: #6e5a14; }
 .sticky-name { font-weight: bold; line-height: 1.1; margin: 2px 0; min-height: 22px; }
+
+/* the "???" attic-corner secret-levels panel (GAME-PROMPT §14 + §20.16) */
+.secret-room {
+  border-style: dotted;
+  border-color: #8a4a9c;
+  box-shadow: inset 0 0 14px rgba(138,74,156,0.25);
+}
+.secret-room .room-label { color: #5a2a6c; }
+.secret-room .room-notes {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  justify-content: stretch;
+}
+.secret-lvl {
+  width: auto;
+  min-width: 0;
+}
+.secret-lvl.locked { background: linear-gradient(180deg, #e0d0e8, #cab0d8); }
+.secret-hint {
+  font-size: 9px;
+  line-height: 1.2;
+  color: #5a2a6c;
+  margin-top: 2px;
+}
 .sticky-stars { letter-spacing: 1px; color: #d8a020; font-size: 12px; }
 .sticky-stars .off { color: #9a8c60; }
 

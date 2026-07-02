@@ -99,6 +99,18 @@ export interface SaveData {
      *  The 8-note hum + sway fires every 5th click (count % 5 === 0), not just once ever. */
     sunflowerClicks: number;
   };
+  /** SECRET LEVELS (§14 + §20.16) — one-time reward flags, additive/optional-safe like eggs
+   *  above (backfilled by loadSave() for saves written before this existed). Secret levels don't
+   *  use the normal stars/BP-per-star campaign math (see meta/progress.ts isSecretUnlocked +
+   *  game.ts's endLevel secret-level branch), so their completion state lives here instead. */
+  secrets: {
+    /** True once secret-dev (The Dev Room) has been won — grants +100 BP and the
+     *  'found-dev-room' achievement, both one-time-per-save (checked before granting again). */
+    foundDevRoom: boolean;
+    /** True once secret-impossible (The Impossible Room) has been won at least once — grants
+     *  +200 BP and the 'impossible' achievement, one-time-per-save. */
+    impossibleCleared: boolean;
+  };
 }
 
 const KEY = 'counterattack_save_v1';
@@ -127,6 +139,7 @@ export function defaultSave(): SaveData {
     infestation: null,
     lastDailyChoreDay: null,
     eggs: { fridgeMagnetsSolved: false, sunflowerClicks: 0 },
+    secrets: { foundDevRoom: false, impossibleCleared: false },
   };
 }
 
@@ -165,6 +178,7 @@ export function loadSave(): SaveData {
       infestation: data.infestation ?? null,
       lastDailyChoreDay: data.lastDailyChoreDay ?? null,
       eggs: { ...defaultSave().eggs, ...data.eggs },
+      secrets: { ...defaultSave().secrets, ...data.secrets },
     };
   } catch {
     return defaultSave();

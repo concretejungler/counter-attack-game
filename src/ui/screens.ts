@@ -6,6 +6,7 @@ import {
   ROOM_COLOR, ROOM_LABEL, worldsGrouped, isLevelUnlocked, isWorldUnlocked,
   starsFor, prerequisiteRoomLabel, furthestUnlockedLevel,
   critterdexOrder, isCritterSeen, killCount, jarCount, shinyCount, critterdexCompletionPct,
+  SECRET_LEVELS, isSecretUnlocked, secretLockHint, type SecretLevelId,
 } from '../meta/progress';
 import { JUNK_DRAWER_ITEMS, isPurchased, currentBP, canAfford, type JunkDrawerItem } from '../meta/achievements';
 import {
@@ -174,6 +175,51 @@ function buildPetPicker(save: SaveData, onPetChange: (pet: 'cat' | 'dog' | 'gold
   return bed;
 }
 
+/** The "???" attic-corner panel (GAME-PROMPT §14 secret levels + §20.16 playable credits).
+ *  Sits in the house-map grid opposite the real Attic room (col 1, row 1 — the real attic
+ *  occupies col 2/4 row 1, so this tucks into the empty top-left corner like a kid drew one more
+ *  room nobody asked about). Unlocked secret levels are clickable sticky notes exactly like a
+ *  normal room's level notes; locked ones show their own kid-voice hint text
+ *  (progress.ts secretLockHint) instead of stars. Secret levels are never gated behind a "room
+ *  unlock" the way campaign worlds are — each level has its own independent predicate — so this
+ *  renders every entry every time and lets isSecretUnlocked() decide per-card state. */
+function buildSecretRoom(save: SaveData, onPickSecret?: (id: string) => void): HTMLElement {
+  const room = el('div', 'room secret-room');
+  room.style.gridColumn = '1 / 2';
+  room.style.gridRow = '1';
+  room.style.setProperty('--room-color', ROOM_COLOR.secret);
+
+  const label = el('div', 'room-label', '❓ ???');
+  room.append(label);
+
+  const notes = el('div', 'room-notes');
+  SECRET_LEVELS.forEach((lvl, i) => {
+    const id = lvl.id as SecretLevelId;
+    const unlocked = isSecretUnlocked(save, id);
+    const note = el(
+      'div',
+      `sticky-lvl secret-lvl${unlocked ? '' : ' locked'}`,
+      unlocked
+        ? `
+          <div class="sticky-ico">${LEVEL_ICONS[lvl.id] ?? '❓'}</div>
+          <div class="sticky-name">${lvl.name}</div>
+        `
+        : `
+          <div class="sticky-ico">🔒</div>
+          <div class="sticky-name">???</div>
+          <div class="secret-hint">${secretLockHint(id)}</div>
+        `,
+    );
+    note.style.setProperty('--tilt', `${((i * 19) % 7) - 3}deg`);
+    note.title = unlocked ? lvl.blurb : secretLockHint(id);
+    if (unlocked && onPickSecret) note.onclick = () => onPickSecret(lvl.id);
+    notes.append(note);
+  });
+  room.append(notes);
+
+  return room;
+}
+
 export function buildLevelSelect(
   save: SaveData,
   onPick: (id: string) => void,
@@ -182,6 +228,7 @@ export function buildLevelSelect(
   onPetChange: (pet: 'cat' | 'dog' | 'goldfish' | null) => void,
   onJunkDrawer: () => void,
   onEndless?: () => void,
+  onPickSecret?: (id: string) => void,
 ): HTMLElement {
   const screen = el('div', 'screen house-screen');
   const wrap = el('div', 'house-wrap');
@@ -252,6 +299,8 @@ export function buildLevelSelect(
 
     house.append(room);
   });
+
+  house.append(buildSecretRoom(save, onPickSecret));
 
   scroller.append(house);
   wrap.append(scroller);

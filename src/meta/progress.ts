@@ -1,9 +1,15 @@
 /**
  * Campaign progression: which levels/worlds are unlocked, star totals, room grouping.
- * Pure functions over ALL_LEVELS + SaveData['stars'] — no new save fields required,
+ * Pure functions over CAMPAIGN_LEVELS + SaveData['stars'] — no new save fields required,
  * since unlock state is fully derivable from stars already keyed by level id.
+ *
+ * Deliberately uses CAMPAIGN_LEVELS (the 9-world list), NOT ALL_LEVELS (which also includes
+ * SECRET_LEVELS) — secret levels (GAME-PROMPT §14) gate nothing, don't have stars, and must never
+ * appear in the dollhouse grid or count toward MAX_STARS/totalStars/furthestUnlockedLevel. See
+ * src/content/levels/secret.ts's file header and isSecretUnlocked() below for their own,
+ * separate unlock predicates.
  */
-import { ALL_LEVELS, CONTENT } from '../content';
+import { CAMPAIGN_LEVELS, SECRET_LEVELS, CONTENT } from '../content';
 import type { CritterDef, LevelDef, RoomTheme, SimOptions } from '../sim/types';
 import type { SaveData } from './save';
 import { JUNK_DRAWER_ITEMS, isPurchased } from './achievements';
@@ -39,10 +45,12 @@ export const ROOM_COLOR: Record<RoomTheme, string> = {
   secret: '#e8c0e0',
 };
 
-/** Levels grouped by world number, in ALL_LEVELS order (already sorted by world). */
+/** Levels grouped by world number, in CAMPAIGN_LEVELS order (already sorted by world). Secret
+ *  levels (world 0) are deliberately excluded — they render from their own SECRET_LEVELS panel
+ *  (see buildSecretPanel in screens.ts), never the dollhouse grid. */
 export function worldsGrouped(): LevelDef[][] {
   const byWorld = new Map<number, LevelDef[]>();
-  for (const lvl of ALL_LEVELS) {
+  for (const lvl of CAMPAIGN_LEVELS) {
     if (!byWorld.has(lvl.world)) byWorld.set(lvl.world, []);
     byWorld.get(lvl.world)!.push(lvl);
   }
@@ -95,18 +103,58 @@ export function prerequisiteRoomLabel(worldIdx: number): string | null {
 /** The furthest-unlocked level across the whole campaign — used to focus the house map
  *  and as the fridge "Play" default target. */
 export function furthestUnlockedLevel(save: SaveData): LevelDef {
-  let furthest = ALL_LEVELS[0];
-  for (const lvl of ALL_LEVELS) {
+  let furthest = CAMPAIGN_LEVELS[0];
+  for (const lvl of CAMPAIGN_LEVELS) {
     if (isLevelUnlocked(save, lvl)) furthest = lvl;
   }
   return furthest;
 }
 
 export function totalStars(save: SaveData): number {
-  return ALL_LEVELS.reduce((sum, lvl) => sum + starsFor(save, lvl.id), 0);
+  return CAMPAIGN_LEVELS.reduce((sum, lvl) => sum + starsFor(save, lvl.id), 0);
 }
 
-export const MAX_STARS = ALL_LEVELS.length * 3;
+export const MAX_STARS = CAMPAIGN_LEVELS.length * 3;
+
+// ---------- Secret levels (GAME-PROMPT §14 + §20.16) ----------
+
+/** How many distinct campaign levels the player has beaten with all 3 stars — feeds the Crumb
+ *  Dimension's unlock predicate ("beat any 10 levels with 3 stars"). */
+export function threeStarLevelCount(save: SaveData): number {
+  return CAMPAIGN_LEVELS.reduce((n, lvl) => n + (starsFor(save, lvl.id) >= 3 ? 1 : 0), 0);
+}
+
+/** True once sewer-3 (THE EXTERMINATOR, the campaign finale) has been won — gates both the
+ *  Impossible Room and the Playable Credits. */
+export function isFinaleWon(save: SaveData): boolean {
+  return isLevelWon(save, 'sewer-3');
+}
+
+export type SecretLevelId = 'secret-crumb' | 'secret-dev' | 'secret-impossible' | 'secret-credits';
+
+/** Unlock predicate per secret level (GAME-PROMPT §14 secret list). Secret levels gate nothing
+ *  else in the campaign — these are one-directional reads of existing save state, never written
+ *  to by anything in this module. */
+export function isSecretUnlocked(save: SaveData, id: SecretLevelId): boolean {
+  switch (id) {
+    case 'secret-crumb': return threeStarLevelCount(save) >= 10;
+    case 'secret-dev': return save.eggs.fridgeMagnetsSolved;
+    case 'secret-impossible': return isFinaleWon(save);
+    case 'secret-credits': return isFinaleWon(save);
+  }
+}
+
+/** Kid-voice hint text shown on a locked secret-level card in the "???" attic panel. */
+export function secretLockHint(id: SecretLevelId): string {
+  switch (id) {
+    case 'secret-crumb': return '3-star 10 levels... any 10!! keep polishing those runs.';
+    case 'secret-dev': return 'solve the fridge... the magnets know something.';
+    case 'secret-impossible': return 'beat the finale... THE EXTERMINATOR, world 9.';
+    case 'secret-credits': return 'beat the finale... THE EXTERMINATOR, world 9.';
+  }
+}
+
+export { SECRET_LEVELS };
 
 // ---------- Critterdex ----------
 

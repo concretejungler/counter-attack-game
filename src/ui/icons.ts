@@ -66,6 +66,8 @@ export const CRITTER_ICONS: Record<string, string> = {
 
 export const LEVEL_ICONS: Record<string, string> = {
   'kitchen-1': '🍰', 'kitchen-2': '🚰', 'kitchen-3': '🔥', 'kitchen-4': '🗄️', 'kitchen-5': '👑',
+  // ---------- secret levels (§14 + §20.16) ----------
+  'secret-crumb': '🍩', 'secret-dev': '🚪', 'secret-impossible': '🌀', 'secret-credits': '🎬',
 };
 
 export const MUTATION_ICONS: Record<string, string> = {

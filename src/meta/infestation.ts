@@ -18,7 +18,7 @@
  * the run's deck — see the "allowedTowers?? gate the build bar from the deck" note in the brief.
  */
 import { RNG } from '../core/rng';
-import { ALL_LEVELS } from '../content';
+import { CAMPAIGN_LEVELS } from '../content';
 import type { LevelDef } from '../sim/types';
 
 // ---------- deck ----------
@@ -181,7 +181,7 @@ const FLOOR_WORLDS: [number, number, number][] = [[1, 2, 3], [4, 5, 6], [7, 8, 9
 
 function worldPoolFor(floor: 1 | 2 | 3): { fights: LevelDef[]; boss: LevelDef } {
   const worlds = FLOOR_WORLDS[floor - 1];
-  const worldLevels = ALL_LEVELS.filter((l) => worlds.includes(l.world));
+  const worldLevels = CAMPAIGN_LEVELS.filter((l) => worlds.includes(l.world));
   const byWorld = new Map<number, LevelDef[]>();
   for (const l of worldLevels) {
     if (!byWorld.has(l.world)) byWorld.set(l.world, []);
@@ -393,7 +393,7 @@ export interface DailyChore {
 export function dailyChoreFor(now: number): DailyChore {
   const day = dayNumber(now);
   const rng = new RNG((day * 0x1000193) >>> 0);
-  const level = rng.pick(ALL_LEVELS.filter((l) => l.id !== 'kitchen-1')); // skip the tutorial level
+  const level = rng.pick(CAMPAIGN_LEVELS.filter((l) => l.id !== 'kitchen-1')); // skip the tutorial level
   const mutationId = rng.pick(CURSE_POOL);
   return { day, levelId: level.id, mutationId };
 }
