@@ -1,5 +1,5 @@
 import type { SimCtx } from './sim';
-import { damageCritter } from './critters';
+import { damageCritter, spawnCritter } from './critters';
 
 export function updateSpells(ctx: SimCtx, dt: number): void {
   for (const k of Object.keys(ctx.state.spellCds)) {
@@ -49,11 +49,44 @@ export function applyCast(ctx: SimCtx, spellId: string, surface?: number, x?: nu
       return;
     }
     case 'timestop':
+      for (const cr of ctx.state.critters.values()) {
+        cr.statuses.stunned = Math.max(cr.statuses.stunned ?? 0, def.power);
+      }
+      return;
     case 'cleanse':
+      ctx.state.scent = Math.max(0, ctx.state.scent * 0.5);
+      for (const cr of ctx.state.critters.values()) {
+        delete cr.statuses.sticky;
+        delete cr.statuses.soaked;
+      }
+      return;
     case 'gamble':
+      switch (Math.floor(ctx.rng.next() * 3)) {
+        case 0:
+          ctx.state.crumbs += 150;
+          ctx.emit({ t: 'crumbBank', amount: 150, total: ctx.state.crumbs });
+          return;
+        case 1:
+          for (const tw of ctx.state.towers.values()) tw.moraleT = 15;
+          return;
+        default: {
+          const ambushDef = ctx.level.waves[0].entries[0].critter;
+          for (let i = 0; i < 8; i++) {
+            const spawn = ctx.rng.pick(ctx.level.spawns);
+            spawnCritter(ctx, ambushDef, spawn.tile);
+          }
+          return;
+        }
+      }
     case 'repair':
+      for (const piece of ctx.state.clutter.values()) piece.hp = piece.maxHp;
+      for (const tw of ctx.state.towers.values()) {
+        tw.downed = false;
+        if (ctx.content.towers[tw.def]?.attack === 'trap') tw.armed = true;
+      }
+      return;
     case 'handBuff':
-      // arrive with Phase 2 content
+      ctx.state.hand.zapT = def.power;
       return;
   }
 }

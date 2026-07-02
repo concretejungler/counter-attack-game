@@ -1,4 +1,4 @@
-import type { Critter, CritterDef, DamageType, StatusId, TileRef, Vec3 } from './types';
+import type { Critter, CritterDef, DamageType, StatusId, TileRef, Tower, Vec3 } from './types';
 import type { SimCtx } from './sim';
 
 const BITE_CHANNEL = 0.8;     // seconds spent taking a bite
@@ -78,6 +78,8 @@ export function tryDodge(cr: Critter, towerId: number, ctx: SimCtx): boolean {
 export function applyKnockback(ctx: SimCtx, cr: Critter, dirX: number, dirZ: number, amount: number): void {
   if (amount <= 0) return;
   if (cr.state === 'climb' || cr.state === 'fall' || cr.state === 'flung') return;
+  const kbDef = ctx.content.critters[cr.def];
+  if (kbDef?.traits?.includes('anchored')) return;
   const n = Math.hypot(dirX, dirZ) || 1;
   cr.pos.x += (dirX / n) * amount;
   cr.pos.z += (dirZ / n) * amount;
@@ -97,10 +99,27 @@ export function applyKnockback(ctx: SimCtx, cr: Critter, dirX: number, dirZ: num
   cr.vel = { x: (dirX / n) * 1.5, y: 0, z: (dirZ / n) * 1.5 };
 }
 
+const ROLL_CYCLE = 5;
+const ROLL_PHASE = 3; // first 3s of the cycle = rolling/invulnerable
+
+/** rollUp: true while inside the invulnerable rolling phase of its cycle. */
+function isRolling(cr: Critter, def: CritterDef): boolean {
+  if (!def.traits?.includes('rollUp')) return false;
+  const t = (cr.cycleT ?? 0) % ROLL_CYCLE;
+  return t < ROLL_PHASE;
+}
+
+const SUBMERGE_CYCLE = 7;
+const SUBMERGE_SURFACED = 4; // first 4s of the cycle = surfaced
+
 function effectiveSpeed(ctx: SimCtx, cr: Critter, def: CritterDef, statusMul: number): number {
   const base = def.speed * ctx.diff.critterSpeed * (1 + ctx.modSum('allSpeedPct'));
   const fear = cr.statuses.feared ? 1.25 : 1;
-  return base * statusMul * fear;
+  // speedAura: consume-and-reset stamp applied by nearby speedAura critters
+  const haste = 1 + (cr.hasteStamp ?? 0);
+  cr.hasteStamp = 0;
+  const roll = isRolling(cr, def) ? 1.5 : 1;
+  return base * statusMul * fear * haste * roll;
 }
 
 function steerToward(cr: Critter, target: Vec3, speed: number, dt: number): void {
@@ -173,9 +192,90 @@ function findDecoy(ctx: SimCtx, cr: Critter): number | null {
   return null;
 }
 
+/**
+ * Nearest tower to a critter, gated by `surfaceGate`:
+ *  - 'any15': towers qualify if |y diff| < 1.5, regardless of surface index (latcher: "any surface if |y diff| < 1.5, else same surface")
+ *  - 'same': only towers on the same surface index qualify
+ *  - 'any': unlimited range/surface (webber)
+ */
+function findNearestTower(
+  ctx: SimCtx, cr: Critter, maxRange: number, surfaceGate: 'any15' | 'same' | 'any',
+): { tw: Tower; dist: number } | null {
+  let best: { tw: Tower; dist: number } | null = null;
+  for (const tw of ctx.state.towers.values()) {
+    if (tw.carried) continue;
+    if (surfaceGate === 'any15' && Math.abs(tw.pos.y - cr.pos.y) >= 1.5 && tw.tile.s !== cr.surface) continue;
+    if (surfaceGate === 'same' && tw.tile.s !== cr.surface) continue;
+    const d = Math.hypot(tw.pos.x - cr.pos.x, tw.pos.z - cr.pos.z);
+    if (d > maxRange) continue;
+    if (!best || d < best.dist) best = { tw, dist: d };
+  }
+  return best;
+}
+
+/** latcher brain: walk toward and attach to the nearest tower, disabling it while alive. */
+function latcherBrain(ctx: SimCtx, cr: Critter, def: CritterDef, speed: number, dt: number): void {
+  // already latched?
+  if (cr.latchTarget !== undefined) {
+    const tw = ctx.state.towers.get(cr.latchTarget);
+    if (!tw || tw.carried) {
+      cr.latchTarget = undefined;
+    } else {
+      tw.disabled = Math.max(tw.disabled, 0.2);
+      return; // does not move while latched
+    }
+  }
+  const found = findNearestTower(ctx, cr, Infinity, 'any15');
+  if (!found) return; // no towers anywhere; idle
+  if (found.dist <= 0.5) {
+    cr.latchTarget = found.tw.id;
+    found.tw.disabled = Math.max(found.tw.disabled, 0.2);
+    return;
+  }
+  steerToward(cr, found.tw.pos, speed, dt);
+}
+
+/** clutterEater brain: ignore the cake, seek + chew the nearest clutter piece; flee if none left. */
+function clutterEaterBrain(ctx: SimCtx, cr: Critter, def: CritterDef, speed: number, dt: number): void {
+  let bestCell: Vec3 | null = null;
+  let bestClutterId: number | null = null;
+  let bestDist = Infinity;
+  for (const [id, piece] of ctx.state.clutter) {
+    for (const cell of piece.cells) {
+      if (cell.s !== cr.surface) continue;
+      const w = ctx.grid.worldOf(cell);
+      const d = Math.hypot(w.x - cr.pos.x, w.z - cr.pos.z);
+      if (d < bestDist) {
+        bestDist = d;
+        bestCell = w;
+        bestClutterId = id;
+      }
+    }
+  }
+  if (bestCell === null || bestClutterId === null) {
+    cr.state = 'flee';
+    return;
+  }
+  if (bestDist < 0.6) {
+    cr.state = 'chew';
+    cr.chewTarget = bestClutterId;
+    return;
+  }
+  steerToward(cr, bestCell, speed, dt);
+}
+
 /** Walking brain: follow the cake flow field; climb, chew, or bite as the path demands. */
 function walkBrain(ctx: SimCtx, cr: Critter, def: CritterDef, speed: number, dt: number): void {
   const grid = ctx.grid;
+
+  if (def.traits?.includes('latcher')) {
+    latcherBrain(ctx, cr, def, speed, dt);
+    return;
+  }
+  if (def.traits?.includes('clutterEater')) {
+    clutterEaterBrain(ctx, cr, def, speed, dt);
+    return;
+  }
 
   if (!cr.flying) {
     const decoy = findDecoy(ctx, cr);
@@ -296,10 +396,159 @@ function fleeBrain(ctx: SimCtx, cr: Critter, speed: number, dt: number): void {
   steerToward(cr, grid.worldOf(next), speed * 1.15, dt);
 }
 
+/**
+ * confused/feared walking critters follow the exit flow field (like fleeBrain) but keep state 'walk'
+ * and must NOT despawn at the exit — they just idle there until the status wears off, then walkBrain
+ * resumes toward the cake on the next tick. We reuse fleeBrain's steering but intercept the despawn path.
+ */
+function confusedFleeBrain(ctx: SimCtx, cr: Critter, speed: number, dt: number): void {
+  const grid = ctx.grid;
+  if (cr.flying) {
+    const exit = grid.worldOf(ctx.level.spawns[0].tile);
+    if (Math.hypot(exit.x - cr.pos.x, exit.z - cr.pos.z) < EXIT_REACH) return; // idle at exit
+    steerToward(cr, exit, speed * 1.15, dt);
+    return;
+  }
+  const tile = grid.tileOfWorld(cr.surface, cr.pos.x, cr.pos.z);
+  if (!tile) return; // idle; do not despawn a confused/feared critter
+  if (grid.distExitOf(tile) === 0) {
+    const center = grid.worldOf(tile);
+    if (Math.hypot(center.x - cr.pos.x, center.z - cr.pos.z) < EXIT_REACH) return; // idle at exit
+    steerToward(cr, center, speed * 1.15, dt);
+    return;
+  }
+  const next = grid.flowExitOf(tile);
+  if (!next) return; // idle
+  if (grid.isClutter(next)) {
+    cr.state = 'chew';
+    cr.chewTarget = grid.clutterIdAt(next) ?? undefined;
+    return;
+  }
+  if (next.s !== tile.s) {
+    const center = grid.worldOf(tile);
+    if (Math.hypot(center.x - cr.pos.x, center.z - cr.pos.z) < ARRIVE_DIST) {
+      startClimb(ctx, cr, next);
+    } else {
+      steerToward(cr, center, speed * 1.15, dt);
+    }
+    return;
+  }
+  steerToward(cr, grid.worldOf(next), speed * 1.15, dt);
+}
+
+/** speedAura: stamp nearby (non-self) critters on the same surface. Read next tick by effectiveSpeed. */
+function applySpeedAura(ctx: SimCtx, cr: Critter): void {
+  for (const other of ctx.state.critters.values()) {
+    if (other.id === cr.id) continue;
+    if (other.surface !== cr.surface) continue;
+    if (Math.hypot(other.pos.x - cr.pos.x, other.pos.z - cr.pos.z) > 2.5) continue;
+    other.hasteStamp = 0.3;
+  }
+}
+
+/** healPulse: every 3s, heal nearby (non-self) same-surface critters for 8% of their maxHp. */
+function applyHealPulse(ctx: SimCtx, cr: Critter, dt: number): void {
+  cr.pulseT = (cr.pulseT ?? 0) + dt;
+  if (cr.pulseT < 3) return;
+  cr.pulseT = 0;
+  for (const other of ctx.state.critters.values()) {
+    if (other.id === cr.id) continue;
+    if (other.surface !== cr.surface) continue;
+    if (Math.hypot(other.pos.x - cr.pos.x, other.pos.z - cr.pos.z) > 2.0) continue;
+    other.hp = Math.min(other.maxHp, other.hp + other.maxHp * 0.08);
+  }
+}
+
+/** towerSmash / webber: periodically disable the nearest tower. */
+function applyTowerDisableTrait(
+  ctx: SimCtx, cr: Critter, dt: number, period: number, range: number, disableSeconds: number,
+): void {
+  cr.pulseT = (cr.pulseT ?? 0) + dt;
+  if (cr.pulseT < period) return;
+  cr.pulseT = 0;
+  const found = findNearestTower(ctx, cr, range, range === Infinity ? 'any' : 'any15');
+  if (!found) return;
+  found.tw.disabled = Math.max(found.tw.disabled, disableSeconds);
+  ctx.emit({ t: 'towerDisabled', id: found.tw.id, seconds: disableSeconds });
+}
+
+/** spawner: periodically spawns minions at the spawner's current tile. */
+function applySpawner(ctx: SimCtx, cr: Critter, def: CritterDef, dt: number): void {
+  if (!def.spawnDef || !def.spawnEvery || !def.spawnCount) return;
+  cr.pulseT = (cr.pulseT ?? 0) + dt;
+  if (cr.pulseT < def.spawnEvery) return;
+  cr.pulseT = 0;
+  const tile = ctx.grid.tileOfWorld(cr.surface, cr.pos.x, cr.pos.z);
+  if (!tile) return;
+  for (let i = 0; i < def.spawnCount; i++) {
+    const child = spawnCritter(ctx, def.spawnDef, tile);
+    child.pos.x = cr.pos.x + (ctx.rng.next() - 0.5) * 0.5;
+    child.pos.z = cr.pos.z + (ctx.rng.next() - 0.5) * 0.5;
+  }
+}
+
+/** stealth: consume-and-reset revealStamp into hidden (towers stamp revealStamp=true when they see it). */
+function applyStealth(cr: Critter): void {
+  cr.hidden = !cr.revealStamp;
+  cr.revealStamp = false;
+}
+
+/** submerge: cycle 4s surfaced / 3s submerged; hidden while submerged. */
+function applySubmerge(cr: Critter, dt: number): void {
+  cr.cycleT = (cr.cycleT ?? 0) + dt;
+  const t = cr.cycleT % SUBMERGE_CYCLE;
+  cr.hidden = t >= SUBMERGE_SURFACED;
+}
+
+/** tunneler: hidden (and immune, handled in damageCritter) while far from the cake; surfaces permanently once close. */
+function applyTunneler(ctx: SimCtx, cr: Critter): void {
+  if (cr.hidden === false) return; // already surfaced permanently
+  const tile = ctx.grid.tileOfWorld(cr.surface, cr.pos.x, cr.pos.z);
+  const dist = tile ? ctx.grid.distOf(tile) : Infinity;
+  cr.hidden = !(dist <= 6);
+}
+
+/** lateFlier: ground walker that takes wing once path-distance to the cake drops below 6. */
+function applyLateFlier(ctx: SimCtx, cr: Critter): void {
+  if (cr.flying) return;
+  const tile = ctx.grid.tileOfWorld(cr.surface, cr.pos.x, cr.pos.z);
+  if (tile && ctx.grid.distOf(tile) < 6) cr.flying = true;
+}
+
+interface EvolveReq { cr: Critter; def: CritterDef }
+
 export function updateCritters(ctx: SimCtx, dt: number): void {
   const dead: Critter[] = [];
+  const evolving: EvolveReq[] = [];
   for (const cr of ctx.state.critters.values()) {
     const def = critterDef(ctx, cr.def);
+    const traits0 = def.traits;
+
+    // latchTarget must not survive a knockback/squash flinging the critter airborne
+    if (cr.latchTarget !== undefined && (cr.state === 'flung' || cr.state === 'fall')) {
+      cr.latchTarget = undefined;
+    }
+
+    // timedEvolve: queue for post-loop replacement so we don't mutate the Map mid-iteration
+    if (traits0?.includes('timedEvolve') && def.evolveTo && def.evolveAfter !== undefined) {
+      if ((ctx.state.tick - cr.spawnedAt) * (1 / 30) >= def.evolveAfter) {
+        evolving.push({ cr, def });
+        continue;
+      }
+    }
+
+    // passive per-tick trait ticks (independent of state machine)
+    if (traits0?.includes('stealth')) applyStealth(cr);
+    if (traits0?.includes('submerge')) applySubmerge(cr, dt);
+    if (traits0?.includes('rollUp')) cr.cycleT = (cr.cycleT ?? 0) + dt;
+    if (traits0?.includes('tunneler')) applyTunneler(ctx, cr);
+    if (traits0?.includes('healPulse')) applyHealPulse(ctx, cr, dt);
+    if (traits0?.includes('speedAura')) applySpeedAura(ctx, cr);
+    if (traits0?.includes('towerSmash')) applyTowerDisableTrait(ctx, cr, dt, 6, 3.5, 4);
+    if (traits0?.includes('webber')) applyTowerDisableTrait(ctx, cr, dt, 8, Infinity, 5);
+    if (traits0?.includes('spawner')) applySpawner(ctx, cr, def, dt);
+    if (traits0?.includes('lateFlier')) applyLateFlier(ctx, cr);
+
     // aura slows were stamped by towers AFTER our last update; consume, then reset for this tick
     const auraSlow = Math.min(0.9, cr.slowPct);
     cr.slowPct = 0;
@@ -310,7 +559,11 @@ export function updateCritters(ctx: SimCtx, dt: number): void {
       case 'walk': {
         if (statusMul === 0) break;
         const speed = effectiveSpeed(ctx, cr, def, statusMul);
-        walkBrain(ctx, cr, def, speed, dt);
+        if (cr.statuses.confused || cr.statuses.feared) {
+          confusedFleeBrain(ctx, cr, speed, dt);
+        } else {
+          walkBrain(ctx, cr, def, speed, dt);
+        }
         break;
       }
       case 'flee': {
@@ -406,6 +659,19 @@ export function updateCritters(ctx: SimCtx, dt: number): void {
 
     if (cr.hp <= 0 && cr.state !== 'playDead') dead.push(cr);
   }
+  for (const { cr, def } of evolving) {
+    if (!ctx.state.critters.has(cr.id)) continue;
+    const tile = ctx.grid.tileOfWorld(cr.surface, cr.pos.x, cr.pos.z) ?? { s: cr.surface, c: 0, r: 0 };
+    const at = { ...cr.pos };
+    ctx.state.critters.delete(cr.id);
+    const evolved = spawnCritter(ctx, def.evolveTo!, tile);
+    evolved.pos = { ...at };
+    evolved.surface = cr.surface;
+    evolved.state = cr.state === 'playDead' ? 'walk' : cr.state;
+    evolved.bitesDone = cr.bitesDone;
+    evolved.carriedSlice = cr.carriedSlice;
+    ctx.emit({ t: 'evolve', id: evolved.id, from: cr.def, into: def.evolveTo!, at: { ...at } });
+  }
   for (const cr of dead) {
     if (ctx.state.critters.has(cr.id)) killCritter(ctx, cr, 'tower');
   }
@@ -478,6 +744,7 @@ export interface DamageOpts {
   statusId?: StatusId;
   statusDur?: number;
   statusChance?: number;
+  bountyPct?: number;
 }
 
 /** Central damage entry — handles resist/weak, armor, playDead fakeouts, and death. */
@@ -492,6 +759,11 @@ export function damageCritter(
   if (!ctx.state.critters.has(cr.id)) return;
   if (cr.state === 'playDead') return; // untouchable while faking
   const def = critterDef(ctx, cr.def);
+  const traits = def.traits ?? [];
+  // rollUp: invulnerable while in the rolling phase of its cycle
+  if (isRolling(cr, def)) return;
+  // tunneler / submerge: untargetable AND immune while hidden underground/underwater
+  if (cr.hidden && (traits.includes('tunneler') || traits.includes('submerge'))) return;
   let dmg = amount;
   if (def.resist === type) dmg *= 0.5;
   if (def.weak === type) dmg *= 2;
@@ -505,9 +777,9 @@ export function damageCritter(
   }
 
   if (cr.hp <= 0) {
-    const traits = def.traits ?? [];
     const extraPlays = ctx.modSum('roachExtraPlayDead');
-    const maxPlays = traits.includes('playDead') ? 1 + extraPlays : 0;
+    const basePlays = traits.includes('playDead') ? (def.playDeadTimes ?? 1) : 0;
+    const maxPlays = basePlays > 0 ? basePlays + extraPlays : 0;
     const playsUsed = cr.playedDead ? 1 + (cr.extraPlaysUsed ?? 0) : 0;
     if (maxPlays > 0 && playsUsed < maxPlays) {
       if (cr.playedDead) cr.extraPlaysUsed = (cr.extraPlaysUsed ?? 0) + 1;
@@ -548,7 +820,7 @@ export function killCritter(
   }
 
   // bounty drops as physical crumbs
-  const bounty = Math.max(1, Math.round(def.bounty * ctx.diff.bounty * (1 + ctx.modSum('bountyPct'))));
+  const bounty = Math.max(1, Math.round(def.bounty * ctx.diff.bounty * (1 + ctx.modSum('bountyPct') + (opts.bountyPct ?? 0))));
   ctx.dropCrumbs(cr.pos, cr.surface, bounty);
 
   // split on death (centipedes, dust bunnies...)

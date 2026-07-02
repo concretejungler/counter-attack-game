@@ -93,12 +93,44 @@ export function updateProjectiles(ctx: SimCtx, dt: number): void {
   ctx.state.projectiles = alive;
 }
 
+const CHAIN_RANGE = 1.8;
+
+function chainFrom(ctx: SimCtx, p: Projectile, first: Critter): void {
+  const chainCount = p.mods.chainCount ?? 0;
+  if (chainCount <= 0) return;
+  const chainDmgPct = p.mods.chainDmgPct ?? 0.7;
+  const hit = new Set<number>([first.id]);
+  let last = first;
+  for (let jump = 1; jump <= chainCount; jump++) {
+    let next: Critter | null = null;
+    let bestD = Infinity;
+    for (const cr of ctx.state.critters.values()) {
+      if (hit.has(cr.id) || cr.hidden || cr.state === 'playDead') continue;
+      const d = Math.hypot(cr.pos.x - last.pos.x, cr.pos.z - last.pos.z);
+      if (d <= CHAIN_RANGE && d < bestD) {
+        bestD = d;
+        next = cr;
+      }
+    }
+    if (!next) break;
+    hit.add(next.id);
+    damageCritter(ctx, next, p.dmg * Math.pow(chainDmgPct, jump), p.dmgType, 'chain', {
+      towerId: p.tower,
+      towerDef: p.def,
+    });
+    // next's pos object survives even if damageCritter killed it (removed from the map) —
+    // keep chaining from its last known position.
+    last = next;
+  }
+}
+
 function impactAt(ctx: SimCtx, p: Projectile, primary: Critter | null | undefined): void {
   const hitPos = primary ? primary.pos : p.arcDest ?? p.pos;
 
   if (primary) {
     if (tryDodge(primary, p.tower, ctx)) return; // projectile spent on a dodge
     hitOne(ctx, p, primary, 1);
+    if (p.mods.chainCount) chainFrom(ctx, p, primary);
   }
   if (p.aoe > 0) {
     for (const cr of ctx.state.critters.values()) {
@@ -111,13 +143,15 @@ function impactAt(ctx: SimCtx, p: Projectile, primary: Critter | null | undefine
   }
 }
 
-const MOD_STATUSES = [
+export const MOD_STATUSES = [
   ['soakedDur', 'soaked'],
   ['stickyDur', 'sticky'],
   ['frozenDur', 'frozen'],
   ['fearedDur', 'feared'],
   ['butteredDur', 'buttered'],
   ['stunnedDur', 'stunned'],
+  ['confusedDur', 'confused'],
+  ['shrunkDur', 'shrunk'],
 ] as const;
 
 function hitOne(ctx: SimCtx, p: Projectile, cr: Critter, factor: number): void {

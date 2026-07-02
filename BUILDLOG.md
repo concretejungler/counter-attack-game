@@ -16,6 +16,17 @@
 
 **Current session directives (user, 2026-07-01):** finish ALL remaining levels (worlds 2-9), greatly improve graphics, make it playable on mobile. Full autonomy, work to completion. Task list: #2 Phase-2 sim+content foundation → #3 worlds 2-9 rooms/levels/bosses → #4 graphics overhaul → #5 mobile.
 
+**2026-07-01 Phase-2 foundation LANDED (104/104 tests, tsc clean).** Multi-agent build (model-router skill: Codex CLI + Sonnet subagents + main-model orchestration):
+- 14 new critter traits in sim (stealth/reveal stamps, tunneler, latcher, rollUp, submerge, spawner, towerSmash, webber, timedEvolve, lateFlier, speedAura, healPulse, anchored, clutterEater) + confused/feared exit-flow behavior + playDeadTimes + bountyPct pass-through.
+- New tower behaviors: chain lightning (chainCount/chainDmgPct), buff auras (buffRatePct/buffDmgPct stamp pattern), reveal, roam/suck/autoSweep (Vroomba), rewindSec pulses (Tick-Tock), agePct scaling (Old Stinky/Audrey), smoothie bounty, aura status stamping (shared MOD_STATUSES table exported from projectiles.ts).
+- All 8 spells implemented (timestop/cleanse/gamble/repair/handBuff joined bolt/lane/momHand). hand.zapT = Static Discharge.
+- Content: 24 towers total, 45 critters total (all bosses 2-9 incl. the-exterminator), 16 mutations, 10 clutter shapes.
+- All 9 themed room builders in render (palette.ts THEME_PALETTES + room.ts per-theme rigs; bedroom/basement/sewer are practical-light dark rooms; backyard is exterior).
+- Balance harness extracted to tests/harness/autoplay.ts (accepts LevelDef objects so unregistered levels can be gated).
+- Suites: critters-p2 (17), towers-p2 (6), spells-p2 (5).
+
+**Parked notes:** content/index.ts still only registers kitchen levels — wire worlds 2-9 when level files land. Mobile agent in flight (ui/, camera, handView, index.html, style.css, device.ts, shot-mobile.mjs). CUTS to log later: Scorch window-LOS scaling, Mike Rowave explosion risk, Static hand-rub reload, cricket weeping-angel rule, Lux flier-aggro, pets/jarring/grudges/Director (Phase-2 back half), condemned loss vignette.
+
 **Key commands:** `npx vitest run tests/balance.test.ts 2>&1 | Select-String 'kitchen-\d:|stress:|Tests '` shows per-level W/L. Balance file has `PAR` strategy map + `autoPlay()` (smart placement). Difficulty mults in `src/sim/sim.ts` DIFFICULTY.
 
 ---

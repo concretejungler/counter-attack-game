@@ -76,7 +76,7 @@ export interface LevelDef {
 
 // ---------- critters ----------
 export type CritterTrait =
-  | 'playDead'      // fakes death once at low hp, revives
+  | 'playDead'      // fakes death once at low hp, revives (playDeadTimes overrides count)
   | 'thief'         // sprints to cake, steals a slice, runs for exit
   | 'dodgeFirst'    // dodges first hit from each tower
   | 'deathGas'      // disables nearby towers on death
@@ -87,7 +87,21 @@ export type CritterTrait =
   | 'scatter'       // changes direction erratically
   | 'lampMoth'      // detours to disable lamp towers
   | 'crumbShed'     // boss: constantly drops crumbs (scent pressure)
-  | 'crumbHeal';    // boss: eats board crumbs to heal
+  | 'crumbHeal'     // boss: eats board crumbs to heal
+  | 'timedEvolve'   // evolves into evolveTo after evolveAfter seconds alive
+  | 'stealth'       // untargetable unless inside a revealing tower's range (extra.reveal)
+  | 'healPulse'     // every 3s heals nearby critters for 8% of their maxHp (radius 2)
+  | 'speedAura'     // nearby critters (radius 2.5) move +30% while it lives
+  | 'latcher'       // attaches to nearest tower, disables it until the critter dies
+  | 'clutterEater'  // ignores cake; seeks + chews nearest clutter; exits when none left
+  | 'submerge'      // cycles 4s surfaced / 3s submerged (untargetable while under)
+  | 'towerSmash'    // every 6s disables the nearest tower 4s (boss: THE EXTERMINATOR)
+  | 'rollUp'        // cycles 3s rolling (invulnerable) / 2s unrolled (vulnerable)
+  | 'tunneler'      // travels underground (untargetable) until within 4 tiles of cake
+  | 'lateFlier'     // ground walker that takes wing when path-dist to cake < 6
+  | 'anchored'      // immune to knockback and Hand flicks
+  | 'webber'        // boss: every 8s webs (disables 5s) the nearest tower
+  | 'spawner';      // periodically spawns minions (spawnDef/spawnEvery/spawnCount)
 
 export interface CritterDef {
   id: string;
@@ -106,7 +120,12 @@ export interface CritterDef {
   /** eats this many crumb-value to evolve into evolveTo */
   crumbHunger?: number;
   evolveTo?: string;
+  evolveAfter?: number;     // seconds (timedEvolve trait)
+  playDeadTimes?: number;   // playDead uses (default 1)
   splitInto?: { def: string; count: number };  // spawned on death
+  spawnDef?: string;        // spawner trait: minion def
+  spawnEvery?: number;      // spawner trait: seconds between broods
+  spawnCount?: number;      // spawner trait: minions per brood
   chewDps?: number;         // clutter damage per second (default 4)
   boss?: boolean;
   desc: string;             // Critterdex blurb, kid-journal voice
@@ -227,6 +246,12 @@ export interface Critter {
   chewTarget?: number;      // clutter id
   decoyTarget?: number;     // tower id being attacked (gnomes)
   shedT?: number;           // crumbShed accumulator
+  cycleT?: number;          // submerge/rollUp phase accumulator
+  hidden?: boolean;         // stealth/tunnel/submerge: currently untargetable
+  revealStamp?: boolean;    // set by reveal towers this tick; consumed by stealth logic next tick
+  hasteStamp?: number;      // set by speedAura critters this tick; consumed in effectiveSpeed
+  latchTarget?: number;     // latcher: tower id currently disabled by this critter
+  pulseT?: number;          // healPulse / spawner / towerSmash / webber accumulator
   wobble: number;           // render phase
   spawnedAt: number;        // tick
 }
@@ -250,6 +275,9 @@ export interface Tower {
   ageWaves: number;             // waves since placed/moved (Old Stinky scaling)
   aim: number;                  // yaw for render
   hp?: number;                  // decoys only — critters can break them
+  patrolDir?: number;           // roam towers (extra.roam): +1/-1 along their row
+  buffRatePct?: number;         // stamped each tick by nearby buff towers; consumed in towerStats
+  buffDmgPct?: number;
 }
 
 export interface Projectile {
@@ -300,6 +328,7 @@ export interface HandState {
   squashCd: number;
   carryCd: number;
   carrying: number | null;  // tower id
+  zapT: number;             // Static Discharge seconds left: squash has no cooldown or size gate
 }
 
 // ---------- commands in ----------

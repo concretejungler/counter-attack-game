@@ -1,7 +1,7 @@
 import type { Critter, TileRef, Tower, TowerDef } from './types';
 import type { SimCtx } from './sim';
-import { applyKnockback, damageCritter, tryDodge } from './critters';
-import { spawnProjectile } from './projectiles';
+import { applyKnockback, damageCritter, killCritter, tryDodge } from './critters';
+import { MOD_STATUSES, spawnProjectile } from './projectiles';
 
 export const CLUTTER_MOUNT_HEIGHT = 0.85;
 export const MORALE_RATE_BONUS = 1.25;
@@ -38,6 +38,9 @@ export function towerStats(ctx: SimCtx, tw: Tower): TowerStats {
     }
   }
   if (tw.moraleT > 0) rate *= MORALE_RATE_BONUS;
+  rate *= 1 + (tw.buffRatePct ?? 0);
+  dmg *= 1 + (tw.buffDmgPct ?? 0);
+  if (extra.agePct) dmg *= 1 + Math.min(1.0, extra.agePct * tw.ageWaves);
   return { dmg, rate, range, extra };
 }
 
@@ -155,6 +158,7 @@ function candidates(ctx: SimCtx, tw: Tower, def: TowerDef, range: number): Critt
   const out: Critter[] = [];
   for (const cr of ctx.state.critters.values()) {
     if (cr.state === 'playDead') continue;
+    if (cr.hidden) continue;
     if (def.groundOnly && cr.flying) continue;
     const d = Math.hypot(cr.pos.x - tw.pos.x, cr.pos.z - tw.pos.z);
     if (d <= range) out.push(cr);
@@ -183,7 +187,81 @@ function pickTarget(ctx: SimCtx, tw: Tower, def: TowerDef, range: number): Critt
   }
 }
 
+/** Reveal + buff auras stamp every OTHER active tower/critter each tick, one-tick-lagged into towerStats(). */
+function updateAuraStamps(ctx: SimCtx, dt: number): void {
+  for (const tw of ctx.state.towers.values()) {
+    tw.buffRatePct = 0;
+    tw.buffDmgPct = 0;
+  }
+  for (const tw of ctx.state.towers.values()) {
+    if (tw.disabled > 0 || tw.carried || tw.downed) continue;
+    const def = towerDefOf(ctx, tw.def);
+    const stats = towerStats(ctx, tw);
+
+    if (stats.extra.reveal > 0) {
+      for (const cr of ctx.state.critters.values()) {
+        const d = Math.hypot(cr.pos.x - tw.pos.x, cr.pos.z - tw.pos.z);
+        if (d <= stats.range && Math.abs(cr.pos.y - tw.pos.y) < 2.5) cr.revealStamp = true;
+      }
+    }
+
+    if (stats.extra.buffRatePct || stats.extra.buffDmgPct) {
+      for (const tw2 of ctx.state.towers.values()) {
+        if (tw2 === tw) continue;
+        const d = Math.hypot(tw2.pos.x - tw.pos.x, tw2.pos.z - tw.pos.z);
+        if (d <= stats.range) {
+          tw2.buffRatePct = (tw2.buffRatePct ?? 0) + (stats.extra.buffRatePct ?? 0);
+          tw2.buffDmgPct = (tw2.buffDmgPct ?? 0) + (stats.extra.buffDmgPct ?? 0);
+        }
+      }
+    }
+  }
+}
+
+/** Vroomba-style patrolling towers: sweep along their row, suck up tiny critters, auto-bank nearby crumbs. */
+function updateRoamTower(ctx: SimCtx, tw: Tower, stats: TowerStats, dt: number): void {
+  const roamSpeed = stats.extra.roamSpeed ?? 0;
+  tw.patrolDir ??= 1;
+  const prevX = tw.pos.x;
+  tw.pos.x += tw.patrolDir * roamSpeed * dt;
+  const newTile = ctx.grid.tileOfWorld(tw.tile.s, tw.pos.x, tw.pos.z);
+  if (newTile === null || ctx.grid.isStaticBlocked(newTile) || ctx.grid.isClutter(newTile)) {
+    tw.patrolDir = -tw.patrolDir;
+    tw.pos.x = prevX;
+  } else {
+    tw.tile = newTile;
+  }
+
+  const suckSize = stats.extra.suckSize ?? 0;
+  let sucks = 0;
+  for (const cr of ctx.state.critters.values()) {
+    if (sucks >= 2) break;
+    if (cr.hidden || cr.surface !== tw.tile.s) continue;
+    const d = Math.hypot(cr.pos.x - tw.pos.x, cr.pos.z - tw.pos.z);
+    if (d > stats.range) continue;
+    const crDef = ctx.content.critters[cr.def];
+    if (!crDef || crDef.size > suckSize) continue;
+    killCritter(ctx, cr, 'tower', { towerId: tw.id, towerDef: tw.def });
+    sucks++;
+  }
+
+  const autoSweep = stats.extra.autoSweep ?? 0;
+  if (autoSweep > 0) {
+    for (const ent of [...ctx.state.crumbEnts.values()]) {
+      if (ent.surface !== tw.tile.s) continue;
+      const d = Math.hypot(ent.pos.x - tw.pos.x, ent.pos.z - tw.pos.z);
+      if (d > autoSweep) continue;
+      ctx.state.crumbEnts.delete(ent.id);
+      ctx.state.crumbs += ent.value;
+      ctx.state.recap.crumbsBanked += ent.value;
+      ctx.emit({ t: 'crumbBank', amount: ent.value, total: ctx.state.crumbs });
+    }
+  }
+}
+
 export function updateTowers(ctx: SimCtx, dt: number): void {
+  updateAuraStamps(ctx, dt);
+
   for (const tw of ctx.state.towers.values()) {
     if (tw.moraleT > 0) tw.moraleT -= dt;
     if (tw.disabled > 0) {
@@ -195,10 +273,15 @@ export function updateTowers(ctx: SimCtx, dt: number): void {
     const def = towerDefOf(ctx, tw.def);
     const stats = towerStats(ctx, tw);
 
+    if (stats.extra.roam) {
+      updateRoamTower(ctx, tw, stats, dt);
+    }
+
     if (def.attack === 'trap') {
       if (!tw.armed) continue;
       for (const cr of ctx.state.critters.values()) {
         if (cr.flying || cr.state === 'playDead') continue;
+        if (cr.hidden) continue;
         if (Math.abs(cr.pos.y - tw.pos.y) > 0.6) continue;
         const d = Math.hypot(cr.pos.x - tw.pos.x, cr.pos.z - tw.pos.z);
         if (d <= stats.range) {
@@ -215,7 +298,7 @@ export function updateTowers(ctx: SimCtx, dt: number): void {
     }
 
     if (def.attack === 'aura') {
-      // the slow field is continuous (stamped every tick); only damage pulses on the rate cadence
+      // the slow field is continuous (stamped every tick); only damage/rewind/status pulses on the rate cadence
       tw.cooldown -= dt;
       const pool = candidates(ctx, tw, def, stats.range);
       const slow = stats.extra.slowPct ?? 0;
@@ -227,6 +310,30 @@ export function updateTowers(ctx: SimCtx, dt: number): void {
         if (stats.dmg > 0) {
           for (const cr of pool) {
             damageCritter(ctx, cr, stats.dmg, def.dmgType, 'tower', { towerId: tw.id, towerDef: tw.def });
+          }
+        }
+        const rewindSec = stats.extra.rewindSec ?? 0;
+        if (rewindSec > 0) {
+          for (const cr of pool) {
+            if (cr.flying || !ctx.state.critters.has(cr.id)) continue;
+            for (let i = 0; i < rewindSec; i++) {
+              const tile = ctx.grid.tileOfWorld(cr.surface, cr.pos.x, cr.pos.z);
+              if (!tile) break;
+              const next = ctx.grid.flowExitOf(tile);
+              if (next && next.s === tile.s) {
+                const w = ctx.grid.worldOf(next);
+                cr.pos.x = w.x;
+                cr.pos.z = w.z;
+              } else break;
+            }
+          }
+        }
+        for (const [modKey, status] of MOD_STATUSES) {
+          const durVal = stats.extra[modKey];
+          if (!durVal) continue;
+          for (const cr of pool) {
+            if (!ctx.state.critters.has(cr.id)) continue;
+            cr.statuses[status] = Math.max(cr.statuses[status] ?? 0, durVal);
           }
         }
       }
@@ -258,7 +365,9 @@ export function updateTowers(ctx: SimCtx, dt: number): void {
           damageCritter(ctx, cr, stats.dmg, def.dmgType, 'tower', {
             towerId: tw.id, towerDef: tw.def,
             statusId: def.status?.id, statusDur: def.status?.dur, statusChance: def.status?.chance,
-          });
+            // TODO(p2): remove cast once DamageOpts gains bountyPct?: number
+            ...(stats.extra.smoothiePct ? { bountyPct: stats.extra.smoothiePct } : {}),
+          } as Parameters<typeof damageCritter>[5]);
           if (def.knockback) {
             applyKnockback(ctx, cr, cr.pos.x - tw.pos.x, cr.pos.z - tw.pos.z, def.knockback + (stats.extra.knockback ?? 0));
           }

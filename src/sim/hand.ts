@@ -20,6 +20,7 @@ export function updateHand(ctx: SimCtx, dt: number): void {
   }
   if (h.squashCd > 0) h.squashCd = Math.max(0, h.squashCd - dt);
   if (h.carryCd > 0) h.carryCd = Math.max(0, h.carryCd - dt);
+  if (h.zapT > 0) h.zapT = Math.max(0, h.zapT - dt);
 }
 
 export function applyFlick(ctx: SimCtx, critterId: number, dir: Vec2, power: number): void {
@@ -29,6 +30,7 @@ export function applyFlick(ctx: SimCtx, critterId: number, dir: Vec2, power: num
   if (!cr) return;
   const def = critterDef(ctx, cr.def);
   if (def.boss) return; // bosses do not appreciate being flicked
+  if (def.traits?.includes('anchored')) return;
   h.flickCharges--;
   const n = Math.hypot(dir.x, dir.z) || 1;
   const p = Math.max(2, Math.min(12, power));
@@ -41,13 +43,15 @@ export function applyFlick(ctx: SimCtx, critterId: number, dir: Vec2, power: num
 
 export function applySquash(ctx: SimCtx, critterId: number): void {
   const h = ctx.state.hand;
-  if (h.squashCd > 0) return;
+  const charged = h.zapT > 0;
+  if (!charged && h.squashCd > 0) return;
   const cr = ctx.state.critters.get(critterId);
   if (!cr) return;
   const def = critterDef(ctx, cr.def);
+  if (def.boss) return;
   const squashable = def.size <= SQUASHABLE_SIZE || !!cr.statuses.shrunk;
-  if (!squashable || def.boss) return;
-  h.squashCd = SQUASH_COOLDOWN;
+  if (!charged && !squashable) return;
+  if (!charged) h.squashCd = SQUASH_COOLDOWN;
   ctx.emit({ t: 'squash', at: { ...cr.pos } });
   killCritter(ctx, cr, 'squash');
 }

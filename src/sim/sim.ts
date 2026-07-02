@@ -106,7 +106,7 @@ export class Sim implements SimCtx {
       crumbEnts: new Map(),
       clutter: new Map(),
       clutterHand: [],
-      hand: { flickCharges: 3, flickMax: 3, flickRecharge: 0, squashCd: 0, carryCd: 0, carrying: null },
+      hand: { flickCharges: 3, flickMax: 3, flickRecharge: 0, squashCd: 0, carryCd: 0, carrying: null, zapT: 0 },
       spellCds: {},
       mutations: [],
       mutationOffer: null,
