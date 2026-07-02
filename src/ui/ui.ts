@@ -24,6 +24,7 @@ export interface UICallbacks extends HudCallbacks, InspectCallbacks {
   onChoose(option: 0 | 1): void;
   onChoiceTick(): void;
   onFlyShooed(): void;
+  onPetChange(pet: 'cat' | 'dog' | 'goldfish' | null): void;
 }
 
 export type JournalReturnTo = 'title' | 'levels';
@@ -113,6 +114,7 @@ export class UI {
       (id) => this.cb.onStartLevel(id),
       () => this.cb.onBackToTitle(),
       () => this.showJournal('levels'),
+      (pet) => this.cb.onPetChange(pet),
     );
     this.root.append(this.screenEl);
   }

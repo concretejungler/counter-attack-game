@@ -10,6 +10,9 @@ export interface SaveData {
     sfxVol: number;
     shake: boolean;
     difficulty: 'houseguest' | 'homeowner' | 'landlord' | 'condemned';
+    /** Player-picked pet chaos agent (GAME-PROMPT §9). Optional-safe like critterdex/flyShooed
+     *  below — backfilled to null by loadSave() for saves written before this existed. */
+    pet: 'cat' | 'dog' | 'goldfish' | null;
   };
   stats: {
     wins: number;
@@ -42,7 +45,7 @@ export function defaultSave(): SaveData {
   return {
     version: 1,
     stars: {},
-    settings: { musicVol: 0.7, sfxVol: 0.9, shake: true, difficulty: 'houseguest' },
+    settings: { musicVol: 0.7, sfxVol: 0.9, shake: true, difficulty: 'houseguest', pet: null },
     stats: { wins: 0, losses: 0, kills: 0, sweeps: 0, crumbsBanked: 0 },
     seenNotes: [],
     critterdex: { kills: {}, jarred: {}, shinySeen: {} },

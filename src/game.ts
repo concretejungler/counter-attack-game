@@ -135,6 +135,10 @@ export class Game {
         }
         this.refreshInspectSoon();
       },
+      onPetChange: (pet) => {
+        this.save.settings.pet = pet;
+        persistSave(this.save);
+      },
     });
 
     this.bindInput();
@@ -178,6 +182,7 @@ export class Game {
       // Director joins on the two upper tiers (§13: "Director unchained" territory).
       events: true,
       director: difficulty === 'landlord' || difficulty === 'condemned' || !!this.level.director,
+      pet: this.save.settings.pet ?? undefined,
     });
     this.music.setTheme(this.level.theme);
     this.renderer.loadLevel(this.level, CONTENT);
@@ -470,6 +475,18 @@ export class Game {
           break;
         case 'towerDisabled':
           this.toastOnce('stink', '🦨 stink gas!! that tower needs a minute.');
+          break;
+        case 'petSwat': {
+          const tw = this.sim.state.towers.get(ev.towerId);
+          const name = tw ? (CONTENT.towers[tw.def]?.name ?? tw.def) : 'a tower';
+          this.ui.toast(`😼 Princess Destructo swatted ${name}. she is not sorry.`);
+          break;
+        }
+        case 'petPounce':
+          this.ui.toast(`😼 POUNCE. ${ev.kills} critters simply gone.`);
+          break;
+        case 'petBark':
+          this.ui.toast('🐶 BARK!!');
           break;
         case 'spellCast':
           this.sfx.play(ev.spell === 'moooom' ? 'spell-mom' : ev.spell === 'forbidden-slipper' ? 'spell-slipper' : 'spell-lemon');

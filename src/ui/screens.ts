@@ -92,11 +92,43 @@ const ROOM_LAYOUT: Record<RoomTheme, { col: string; row: string }> = {
   secret: { col: '4 / 5', row: '5' },
 };
 
+/** who's coming? — pet-bed corner picker (GAME-PROMPT §9). Selection persists to
+ *  save.settings.pet and drives SimOptions.pet on the next startLevel. */
+const PET_OPTIONS: { id: 'cat' | 'dog' | 'goldfish' | null; icon: string; name: string; desc: string }[] = [
+  { id: null, icon: '🚫', name: 'none', desc: 'just you and the towers.' },
+  { id: 'cat', icon: '🐱', name: 'Princess Destructo', desc: 'might swat your towers. might delete a wave. no promises.' },
+  { id: 'dog', icon: '🐶', name: 'Sir Barksalot', desc: 'barks critters silly. eats your crumbs.' },
+  { id: 'goldfish', icon: '🐟', name: 'The Oracle', desc: 'does nothing. knows everything.' },
+];
+
+function buildPetPicker(save: SaveData, onPetChange: (pet: 'cat' | 'dog' | 'goldfish' | null) => void): HTMLElement {
+  const bed = el('div', 'pet-bed');
+  bed.append(el('div', 'pet-bed-label', "🛏️ who's coming?"));
+  const row = el('div', 'pet-bed-row');
+  PET_OPTIONS.forEach((opt) => {
+    const btn = el('button', `pet-opt${save.settings.pet === opt.id ? ' picked' : ''}`, `
+      <div class="pet-opt-ico">${opt.icon}</div>
+      <div class="pet-opt-name">${opt.name}</div>
+    `);
+    btn.title = opt.desc;
+    btn.onclick = () => {
+      save.settings.pet = opt.id;
+      onPetChange(opt.id);
+      row.querySelectorAll('.pet-opt').forEach((b) => b.classList.remove('picked'));
+      btn.classList.add('picked');
+    };
+    row.append(btn);
+  });
+  bed.append(row);
+  return bed;
+}
+
 export function buildLevelSelect(
   save: SaveData,
   onPick: (id: string) => void,
   onBack: () => void,
   onJournal: () => void,
+  onPetChange: (pet: 'cat' | 'dog' | 'goldfish' | null) => void,
 ): HTMLElement {
   const screen = el('div', 'screen house-screen');
   const wrap = el('div', 'house-wrap');
@@ -106,6 +138,7 @@ export function buildLevelSelect(
   journalBtn.onclick = onJournal;
   titleRow.append(journalBtn);
   wrap.append(titleRow);
+  wrap.append(buildPetPicker(save, onPetChange));
 
   const scroller = el('div', 'house-scroller');
   const house = el('div', 'house-map');
