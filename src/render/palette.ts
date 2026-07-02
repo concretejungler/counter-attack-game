@@ -346,27 +346,27 @@ const backyard: ThemePalette = {
 };
 
 const sewer: ThemePalette = {
-  wallCream: 0x2e3c30,       // green-dark
-  wallTrim: 0x1c2620,
-  floorTileA: 0x24302a,
-  floorTileB: 0x1c2822,
+  wallCream: 0x50665a,       // green-dark (but legible — dark albedo + dim light = invisible game)
+  wallTrim: 0x36463c,
+  floorTileA: 0x46584c,
+  floorTileB: 0x3a4c40,
   groutAlpha: 'rgba(6,14,8,0.5)',
-  counterTop: 0x3a4a3e,      // walkway ledge
-  cabinet: 0x28352c,
-  wood: 0x3c4a3a,
-  woodDark: 0x222e20,
-  metal: 0x5a6e5e,           // pipe shapes
-  metalDark: 0x384a3c,
+  counterTop: 0x6a8272,      // walkway ledge
+  cabinet: 0x4a5e50,
+  wood: 0x5e7058,
+  woodDark: 0x3a4836,
+  metal: 0x7e9482,           // pipe shapes
+  metalDark: 0x546858,
   windowSky: 0x1a2620,
   sunbeam: 0x8fc89c,         // eerie drain glow instead of sunbeam
   sunbeamOpacity: 0.09,
   hasWindow: false,
   hasCeiling: true,
-  ambient: 0x2a3c30,
-  ambientGround: 0x040a06,
-  ambientIntensity: 0.32,
-  keyColor: 0x6fdc8a,        // sickly green drain-glow key light
-  keyIntensity: 0.6,
+  ambient: 0x3c5244,
+  ambientGround: 0x0a140c,
+  ambientIntensity: 0.62,    // sewers are dank, not invisible — play surfaces must read
+  keyColor: 0x8fe8a4,        // sickly green drain-glow key light
+  keyIntensity: 1.15,
   practicalColor: 0x7dffb0,
   fogColor: 0x08120a,
   bgColor: 0x08120a,
