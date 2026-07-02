@@ -6,6 +6,7 @@ import {
   starsFor, prerequisiteRoomLabel, furthestUnlockedLevel,
   critterdexOrder, isCritterSeen, killCount, jarCount, shinyCount, critterdexCompletionPct,
 } from '../meta/progress';
+import { JUNK_DRAWER_ITEMS, isPurchased, currentBP, canAfford, type JunkDrawerItem } from '../meta/achievements';
 
 const el = (tag: string, cls = '', html = ''): HTMLElement => {
   const e = document.createElement(tag);
@@ -21,6 +22,7 @@ export function buildTitle(
   onPlay: () => void,
   onSettings: () => void,
   onJournal: () => void,
+  onJunkDrawer: () => void,
 ): HTMLElement {
   const screen = el('div', 'screen');
   const fridge = el('div', 'fridge');
@@ -51,11 +53,16 @@ export function buildTitle(
   journal.style.setProperty('--pin', '#d8a020');
   journal.style.setProperty('--tilt', '1.4deg');
   journal.onclick = onJournal;
+  const bp = currentBP(save);
+  const drawer = el('button', 'fridge-note magnet-sticker', `🗄️ the junk drawer <small>${bp} 🧁 BP</small>`);
+  drawer.style.setProperty('--pin', '#8a4a9c');
+  drawer.style.setProperty('--tilt', '-0.6deg');
+  drawer.onclick = onJunkDrawer;
   const settings = el('button', 'fridge-note', '🌡️ Settings');
   settings.style.setProperty('--pin', '#3f5d7d');
   settings.style.setProperty('--tilt', '-1deg');
   settings.onclick = onSettings;
-  menu.append(play, journal, infest, settings);
+  menu.append(play, journal, drawer, infest, settings);
 
   fridge.append(
     title,
@@ -129,14 +136,26 @@ export function buildLevelSelect(
   onBack: () => void,
   onJournal: () => void,
   onPetChange: (pet: 'cat' | 'dog' | 'goldfish' | null) => void,
+  onJunkDrawer: () => void,
+  onEndless?: () => void,
 ): HTMLElement {
   const screen = el('div', 'screen house-screen');
   const wrap = el('div', 'house-wrap');
   const titleRow = el('div', 'house-title-row');
   titleRow.append(el('div', 'house-title', '🏠 The Whole House'));
+  titleRow.append(el('div', 'drawer-bp-chip', `🧁 ${currentBP(save)} BP`));
+  const drawerBtn = el('button', 'wood-btn small journal-btn', '🗄️ Junk Drawer');
+  drawerBtn.onclick = onJunkDrawer;
+  titleRow.append(drawerBtn);
   const journalBtn = el('button', 'wood-btn small journal-btn', `📔 Journal <small>${critterdexCompletionPct(save)}%</small>`);
   journalBtn.onclick = onJournal;
   titleRow.append(journalBtn);
+  if (onEndless && (save.stars['kitchen-5'] ?? 0) > 0) {
+    const best = save.stats.endlessBest ?? 0;
+    const endlessBtn = el('button', 'wood-btn small journal-btn', `🥫 Pantry Panic${best > 0 ? ` <small>best ${best}</small>` : ''}`);
+    endlessBtn.onclick = onEndless;
+    titleRow.append(endlessBtn);
+  }
   wrap.append(titleRow);
   wrap.append(buildPetPicker(save, onPetChange));
 
@@ -293,6 +312,102 @@ function journalCard(save: SaveData, def: import('../sim/types').CritterDef, i: 
   return card;
 }
 
+/** The Junk Drawer (GAME-PROMPT §18) — permanent Brownie-Point-purchased unlocks. A literal
+ *  messy kitchen drawer that slides open (CSS animation on .drawer-body, replayed each time
+ *  the screen builds — matches the "reachable from title" framing: every visit feels like
+ *  pulling it open again). `onPurchase` re-renders the whole screen on success so newly-owned
+ *  items flip state immediately and affordability recalculates against the new BP balance. */
+export function buildJunkDrawer(
+  save: SaveData,
+  onPurchase: (id: string) => boolean,
+  onBack: () => void,
+): HTMLElement {
+  const screen = el('div', 'screen drawer-screen');
+  const wrap = el('div', 'drawer-wrap');
+
+  const titleRow = el('div', 'drawer-title-row');
+  titleRow.append(el('div', 'drawer-title', '🗄️ The Junk Drawer'));
+  titleRow.append(el('div', 'drawer-bp-chip', `🧁 ${currentBP(save)} BP`));
+  wrap.append(titleRow);
+  wrap.append(el('div', 'drawer-sub', 'every house has one. spend Brownie Points on permanent unlocks — earned from stars and achievements.'));
+
+  const body = el('div', 'drawer-body');
+
+  const simItems = JUNK_DRAWER_ITEMS.filter((i) => i.kind === 'sim');
+  const cosmeticItems = JUNK_DRAWER_ITEMS.filter((i) => i.kind === 'cosmetic');
+
+  body.append(el('div', 'drawer-section-label', '🔧 Hand & Household Upgrades'));
+  const simGrid = el('div', 'drawer-grid');
+  simItems.forEach((item, i) => simGrid.append(drawerItemCard(save, item, i, onPurchase, () => rerender())));
+  body.append(simGrid);
+
+  body.append(el('div', 'drawer-section-label', '✨ Cosmetics'));
+  const cosGrid = el('div', 'drawer-grid');
+  cosmeticItems.forEach((item, i) => cosGrid.append(drawerItemCard(save, item, i, onPurchase, () => rerender())));
+  body.append(cosGrid);
+
+  wrap.append(body);
+
+  const backRow = el('div', 'drawer-back-row');
+  const back = el('button', 'wood-btn small', '← Fridge');
+  back.onclick = onBack;
+  backRow.append(back);
+  wrap.append(backRow);
+
+  screen.append(wrap);
+
+  // in-place re-render on purchase: swap the drawer-wrap contents so the BP chip and every
+  // item's owned/affordable state refresh without losing scroll position on the parent screen.
+  function rerender(): void {
+    const fresh = buildJunkDrawer(save, onPurchase, onBack);
+    screen.replaceWith(fresh);
+  }
+
+  return screen;
+}
+
+function drawerItemCard(
+  save: SaveData,
+  item: JunkDrawerItem,
+  i: number,
+  onPurchase: (id: string) => boolean,
+  onPurchased: () => void,
+): HTMLElement {
+  const owned = isPurchased(save, item.id);
+  const affordable = canAfford(save, item);
+  const lockedByReq = !!item.requires && !isPurchased(save, item.requires);
+  const cls = `drawer-item${owned ? ' owned' : ''}${!owned && (lockedByReq || !affordable) ? ' locked' : ''}`;
+  const card = el('div', cls);
+  card.style.setProperty('--tilt', `${((i * 13) % 5) - 2}deg`);
+
+  const head = el('div', 'drawer-item-head');
+  head.append(el('div', 'drawer-item-ico', item.kind === 'sim' ? '🔧' : '✨'));
+  head.append(el('div', 'drawer-item-name', item.name));
+  card.append(head);
+  card.append(el('div', 'drawer-item-desc', item.desc));
+
+  if (item.requires) {
+    const req = JUNK_DRAWER_ITEMS.find((x) => x.id === item.requires);
+    card.append(el('div', 'drawer-item-req', `requires: ${req?.name ?? item.requires}`));
+  }
+
+  const foot = el('div', 'drawer-item-foot');
+  if (owned) {
+    foot.append(el('div', 'drawer-item-owned-tag', '✔ owned'));
+  } else {
+    foot.append(el('div', 'drawer-item-cost', `🧁 ${item.cost} BP`));
+    const btn = el('button', 'wood-btn small', lockedByReq ? 'locked' : 'buy') as HTMLButtonElement;
+    btn.disabled = lockedByReq || !affordable;
+    btn.onclick = () => {
+      if (onPurchase(item.id)) onPurchased();
+    };
+    foot.append(btn);
+  }
+  card.append(foot);
+
+  return card;
+}
+
 export interface RecapInfo {
   won: boolean;
   lossReason?: string;
@@ -301,6 +416,8 @@ export interface RecapInfo {
   recap: RecapData;
   stars: number;
   starDetail: [boolean, boolean, boolean];
+  /** Pantry Panic (§16): generated waves survived — recap shows depth instead of stars. */
+  endlessDepth?: number;
 }
 
 export function buildRecap(
@@ -313,16 +430,21 @@ export function buildRecap(
   const modal = el('div', 'paper-modal');
   const r = info.recap;
 
-  const headline = info.won
-    ? `🎉 The Cake Survives!`
-    : info.lossReason === 'theSwarm'
-      ? `🐜🐜🐜 THE SWARM CAME`
-      : `😭 The Cake... is Gone`;
-  const sub = info.won
-    ? `${info.level.name} — defended with ${info.state.cakeSlices}/${info.state.cakeMax} slices left`
-    : info.lossReason === 'theSwarm'
-      ? 'You let the scent hit 100% and STAY there. They smelled everything.'
-      : 'The wish flickers out. The towers slump. Somewhere, an ant burps.';
+  const endless = info.endlessDepth !== undefined;
+  const headline = endless
+    ? `🥫 PANTRY PANIC — wave ${info.state.waveIndex + 1}`
+    : info.won
+      ? `🎉 The Cake Survives!`
+      : info.lossReason === 'theSwarm'
+        ? `🐜🐜🐜 THE SWARM CAME`
+        : `😭 The Cake... is Gone`;
+  const sub = endless
+    ? `You survived ${info.endlessDepth} endless wave${info.endlessDepth === 1 ? '' : 's'} past the recipe book. The pantry sends its regards.`
+    : info.won
+      ? `${info.level.name} — defended with ${info.state.cakeSlices}/${info.state.cakeMax} slices left`
+      : info.lossReason === 'theSwarm'
+        ? 'You let the scent hit 100% and STAY there. They smelled everything.'
+        : 'The wish flickers out. The towers slump. Somewhere, an ant burps.';
 
   let html = `<h2>${headline}</h2><div class="sub">${sub}</div>`;
 

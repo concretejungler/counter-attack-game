@@ -9,6 +9,9 @@ import { AudioMan } from './audio/audio';
 import { Sfx } from './audio/sfx';
 import { Music, type BossId } from './audio/music';
 import { loadSave, persistSave, type SaveData } from './meta/save';
+import { weeklySeed } from './sim/endless';
+import { evaluateAchievements, evaluateSingle, purchase, type AchievementDef } from './meta/achievements';
+import { metaModsFromSave } from './meta/progress';
 
 type Mode =
   | { kind: 'idle' }
@@ -63,6 +66,7 @@ export class Game {
   private maxScent = 0;
   private bossAlive = false;
   private toastsSeen = new Set<string>();
+  private endlessMode = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new GameRenderer(canvas);
@@ -118,26 +122,40 @@ export class Game {
       onResume: () => {
         this.paused = false;
       },
+      onStartEndless: () => this.startEndless(),
       onChoose: (option) => {
         this.sim?.command({ type: 'choose', option });
       },
       onChoiceTick: () => this.sfx.play('choice-tick'),
       onFlyShooed: () => {
         this.save.flyShooed = true;
+        this.checkAchievement('fly-shooed');
         persistSave(this.save);
-        this.ui.toast('achievement: Wax On. the fly respects you now.');
       },
       onRename: (def, name) => {
         this.save.towerNames[def] = name;
-        persistSave(this.save);
         if (name.trim().toLowerCase() === 'talkie' && def === 'sir-toastsalot') {
           this.ui.toast('🍞 the toaster has OPINIONS now.');
+          this.checkAchievement('renamed-toaster');
         }
+        persistSave(this.save);
         this.refreshInspectSoon();
       },
       onPetChange: (pet) => {
         this.save.settings.pet = pet;
         persistSave(this.save);
+      },
+      onJunkDrawerPurchase: (id) => {
+        const ok = purchase(this.save, id);
+        if (ok) {
+          persistSave(this.save);
+          this.checkAchievement('towers-owned-most');
+          this.applyCorkboardSkin();
+          this.sfx.play('ui-click');
+        } else {
+          this.sfx.play('place-bad');
+        }
+        return ok;
       },
     });
 
@@ -166,9 +184,17 @@ export class Game {
     this.sim = null;
     this.level = null;
     this.paused = false;
+    this.endlessMode = false;
     this.music.intensity = 0;
     this.music.heartbeat = false;
     this.ui.showLevelSelect();
+  }
+
+  /** Pantry Panic (§16): endless siege on the banquet kitchen, weekly seed, personal-best depth. */
+  startEndless(): void {
+    this.endlessMode = true;
+    this.startLevel('kitchen-5', weeklySeed(Date.now()));
+    this.ui.toast('🥫 PANTRY PANIC — the pantry is infinite. you are not. good luck!!');
   }
 
   startLevel(id: string, seed?: number): void {
@@ -183,11 +209,16 @@ export class Game {
       events: true,
       director: difficulty === 'landlord' || difficulty === 'condemned' || !!this.level.director,
       pet: this.save.settings.pet ?? undefined,
+      endless: this.endlessMode,
+      // The Junk Drawer (§18): permanent BP-purchased unlocks, derived fresh from save each
+      // level start so a purchase mid-session takes effect on the very next level.
+      metaMods: metaModsFromSave(this.save),
     });
     this.music.setTheme(this.level.theme);
     this.renderer.loadLevel(this.level, CONTENT);
     this.ui.showHud(this.level);
     this.ui.hud?.refreshClutter(this.sim.state.clutterHand);
+    this.applyCorkboardSkin();
     this.mode = { kind: 'idle' };
     this.acc = 0;
     this.paused = false;
@@ -208,19 +239,84 @@ export class Game {
     if (!this.sim || !this.level) return;
     const state = this.sim.state;
     const bites = state.cakeMax - state.cakeSlices;
+
+    // Pantry Panic (§16): endless runs only ever END — no stars, no BP; the score is depth.
+    if (this.endlessMode) {
+      const depth = state.endlessDepth;
+      const best = this.save.stats.endlessBest ?? 0;
+      if (depth > best) {
+        this.save.stats.endlessBest = depth;
+        this.ui.toast(`🥫 NEW PANTRY RECORD: survived ${depth} endless waves!!`);
+      }
+      this.save.stats.losses++;
+      this.save.stats.kills += state.recap.kills;
+      persistSave(this.save);
+      this.sfx.play('lose');
+      this.music.intensity = 0;
+      this.music.heartbeat = false;
+      this.music.setBoss(null);
+      this.ui.showRecap(
+        {
+          won: false,
+          lossReason: reason,
+          level: this.level,
+          state,
+          recap: state.recap,
+          stars: 0,
+          starDetail: [false, false, false],
+          endlessDepth: depth,
+        },
+        () => {
+          this.ui.closeModal();
+          this.startEndless();
+        },
+        () => {
+          this.ui.closeModal();
+          this.showLevels();
+        },
+        null,
+      );
+      return;
+    }
+
     const challengeMet = this.evalChallenge();
     const starDetail: [boolean, boolean, boolean] = [won, won && bites <= 2, won && challengeMet];
     const stars = starDetail.filter(Boolean).length;
+
+    // Brownie Points (§4/§18): first-time stars pay 10 BP each — re-earning a star already
+    // held pays nothing. Compute the delta against the previously saved star count BEFORE
+    // overwriting it below.
+    const prevStars = this.save.stars[this.level.id] ?? 0;
+    const newStars = won ? Math.max(prevStars, stars) : prevStars;
+    const starDeltaBp = Math.max(0, newStars - prevStars) * 10;
+    this.save.browniePoints.earned += starDeltaBp;
+
     if (won) {
-      this.save.stars[this.level.id] = Math.max(this.save.stars[this.level.id] ?? 0, stars);
+      this.save.stars[this.level.id] = newStars;
       this.save.stats.wins++;
+      if (bites === 0) this.save.stats.winsNoBite++;
+      if (this.save.settings.difficulty === 'condemned') this.save.stats.winsCondemned++;
+      if (this.save.settings.pet) this.save.stats.winsByPet[this.save.settings.pet]++;
     } else {
       this.save.stats.losses++;
     }
     this.save.stats.kills += state.recap.kills;
     this.save.stats.sweeps += state.recap.sweeps;
     this.save.stats.crumbsBanked += state.recap.crumbsBanked;
+
+    // Achievements (§18): evaluated once against the just-updated save + this level's result.
+    const unlocked = evaluateAchievements({
+      save: this.save,
+      levelResult: {
+        won, bites, stars, challengeMet,
+        pet: this.save.settings.pet, difficulty: this.save.settings.difficulty,
+        world: this.level.world,
+      },
+    });
     persistSave(this.save);
+
+    if (starDeltaBp > 0) this.ui.toast(`🧁 +${starDeltaBp} Brownie Points!`);
+    for (const a of unlocked) this.announceAchievement(a);
 
     this.sfx.play(won ? 'win' : 'lose');
     this.music.intensity = 0;
@@ -265,6 +361,18 @@ export class Game {
       case 'clean-victory': return this.maxScent <= 50;
       default: return false;
     }
+  }
+
+  /** Junk Drawer cosmetic (§18): recolors the build-bar trim if a corkboard skin is owned.
+   *  hud.ts is outside this feature's file ownership, so this reaches in from the outside —
+   *  Hud.root is a plain public HTMLElement, so a CSS class toggle is all that's needed; the
+   *  actual styling lives in style.css (.hud-cluster.skin-blue / .skin-mint), which this owns. */
+  private applyCorkboardSkin(): void {
+    const root = this.ui.hud?.root;
+    if (!root) return;
+    root.classList.remove('skin-blue', 'skin-mint');
+    if (this.save.junkDrawer.includes('corkboard-skin-blue')) root.classList.add('skin-blue');
+    else if (this.save.junkDrawer.includes('corkboard-skin-mint')) root.classList.add('skin-mint');
   }
 
   // ---------- main loop ----------
@@ -372,8 +480,12 @@ export class Game {
         // game.ts changes needed.
         case 'jarDone':
           this.save.critterdex.jarred[ev.def] = (this.save.critterdex.jarred[ev.def] ?? 0) + 1;
+          this.save.stats.jarsTotal++;
           this.sfx.play('jar-pop');
           this.ui.toast(`🫙 Jarred! ${CONTENT.critters[ev.def]?.name ?? ev.def} joins the Critterdex.`);
+          this.checkAchievement('first-jar');
+          this.checkAchievement('jars-10');
+          this.checkAchievement('jars-25');
           persistSave(this.save);
           break;
         case 'grudgeBorn':
@@ -387,8 +499,12 @@ export class Game {
           this.updateForecast();
           break;
         case 'grudgeSettled':
+          this.save.stats.grudgesSettled++;
           this.sfx.play('grudge-settled');
           this.ui.toast(`⚖️ ${ev.name}: settled. Bounty collected!`);
+          this.checkAchievement('first-grudge-settled');
+          this.checkAchievement('grudges-5');
+          persistSave(this.save);
           break;
         case 'eventStart': {
           this.sfx.play('event-doorbell');
@@ -414,6 +530,7 @@ export class Game {
           this.save.critterdex.shinySeen[ev.def] = (this.save.critterdex.shinySeen[ev.def] ?? 0) + 1;
           this.sfx.play('shiny-chime');
           this.ui.toast(`✨ SHINY! a ${CONTENT.critters[ev.def]?.name ?? ev.def} sparkles nearby...`);
+          this.checkAchievement('first-shiny');
           persistSave(this.save);
           break;
         case 'fire': {
@@ -490,6 +607,12 @@ export class Game {
           break;
         case 'spellCast':
           this.sfx.play(ev.spell === 'moooom' ? 'spell-mom' : ev.spell === 'forbidden-slipper' ? 'spell-slipper' : 'spell-lemon');
+          if (ev.spell === 'moooom') {
+            this.save.stats.moooomCasts++;
+            this.checkAchievement('moooom-1');
+            this.checkAchievement('moooom-10');
+            persistSave(this.save);
+          }
           break;
         case 'won':
           this.endLevel(true);
@@ -522,6 +645,23 @@ export class Game {
     if (this.toastsSeen.has(key)) return;
     this.toastsSeen.add(key);
     this.ui.toast(text);
+  }
+
+  /** Event-driven achievement check (§18) — evaluates one achievement by id right when its
+   *  triggering SimEvent arrives (jarDone, grudgeSettled, shinySpawn, flyShooed, moooom casts,
+   *  toaster rename), rather than waiting for level end. Caller is responsible for persisting
+   *  save afterward (mirrors the existing mutate-then-persistSave pattern in handleEvents). */
+  private checkAchievement(id: string): void {
+    const def = evaluateSingle(id, { save: this.save });
+    if (def) this.announceAchievement(def);
+  }
+
+  /** Toasts + plays a sting for a newly-unlocked achievement (§18: "Unlocks toast"). Reuses
+   *  'shiny-chime' (the existing "dopamine bell" per §24) rather than adding a new synth
+   *  recipe — src/audio/ is outside this feature's file ownership. */
+  private announceAchievement(def: AchievementDef): void {
+    this.ui.toast(`🏆 achievement: ${def.name} (+${def.bp} BP)`);
+    this.sfx.play('shiny-chime');
   }
 
   /** Appends any live grudges as a taunt line onto forecast/wave-preview text (§2.6). */
@@ -1022,6 +1162,15 @@ export class Game {
           if (i % 11 === 0) this.save.critterdex.shinySeen[id] = 1;
         });
         this.ui.showJournal('title');
+        return;
+      }
+      case 'junkdrawer': {
+        // seed a believable BP balance + a couple of owned items (one sim unlock, one
+        // cosmetic) so the screenshot shows the owned/affordable/locked states side by side.
+        this.save.browniePoints.earned = 620;
+        this.save.browniePoints.spent = 150 + 40;
+        this.save.junkDrawer = ['fourth-flick', 'corkboard-skin-blue'];
+        this.ui.showJunkDrawer('title');
         return;
       }
       case 'hud':

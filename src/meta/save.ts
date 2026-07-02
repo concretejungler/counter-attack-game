@@ -20,6 +20,16 @@ export interface SaveData {
     kills: number;
     sweeps: number;
     crumbsBanked: number;
+    /** Extra counters feeding Achievements (§18) — additive fields, optional-safe like
+     *  critterdex/flyShooed below (loadSave() backfills zeros/empties for older saves). */
+    jarsTotal: number;              // lifetime successful jars (mirrors sum of critterdex.jarred, kept denormalized for O(1) achievement checks)
+    grudgesSettled: number;         // lifetime crowned-elite kills
+    moooomCasts: number;            // lifetime MOOOOM! spell casts
+    winsByPet: Record<'cat' | 'dog' | 'goldfish', number>;
+    winsNoBite: number;             // wins with zero cake slices lost (perfect-cake)
+    winsCondemned: number;          // wins on the 'condemned' difficulty
+    balloonsPopped: number;         // §20.3 red balloon easter egg counter
+    endlessBest: number;            // Pantry Panic (§16): deepest generated wave survived
   };
   seenNotes: string[];                   // dismissed tutorial notes
   /** The Critterdex — kid's field journal. Keyed by critter def id. Optional-safe: added
@@ -37,6 +47,16 @@ export interface SaveData {
    *  tower species everywhere it's placed, matching the "rename unlocks a voice pack" framing
    *  in GAME-PROMPT (the toaster has opinions once renamed "Talkie"). */
   towerNames: Record<string, string>;
+  /** Brownie Points (§4/§18 meta currency) — lifetime totals, not a spendable balance field,
+   *  so `browniePoints.earned - browniePoints.spent` is always the current balance (and the
+   *  ledger is auditable/replay-safe). Earned by first-time stars + achievement unlocks. */
+  browniePoints: { earned: number; spent: number };
+  /** Unlocked achievement ids (src/meta/achievements.ts). A Set would be nicer but arrays
+   *  survive JSON round-trips without a reviver; membership checks are done via a Set built
+   *  at read time in progress.ts helpers. */
+  achievements: string[];
+  /** Purchased Junk Drawer unlock ids (src/meta/achievements.ts JUNK_DRAWER_ITEMS). */
+  junkDrawer: string[];
 }
 
 const KEY = 'counterattack_save_v1';
@@ -46,11 +66,19 @@ export function defaultSave(): SaveData {
     version: 1,
     stars: {},
     settings: { musicVol: 0.7, sfxVol: 0.9, shake: true, difficulty: 'houseguest', pet: null },
-    stats: { wins: 0, losses: 0, kills: 0, sweeps: 0, crumbsBanked: 0 },
+    stats: {
+      wins: 0, losses: 0, kills: 0, sweeps: 0, crumbsBanked: 0,
+      jarsTotal: 0, grudgesSettled: 0, moooomCasts: 0,
+      winsByPet: { cat: 0, dog: 0, goldfish: 0 },
+      winsNoBite: 0, winsCondemned: 0, balloonsPopped: 0, endlessBest: 0,
+    },
     seenNotes: [],
     critterdex: { kills: {}, jarred: {}, shinySeen: {} },
     flyShooed: false,
     towerNames: {},
+    browniePoints: { earned: 0, spent: 0 },
+    achievements: [],
+    junkDrawer: [],
   };
 }
 
@@ -64,7 +92,11 @@ export function loadSave(): SaveData {
       ...defaultSave(),
       ...data,
       settings: { ...defaultSave().settings, ...data.settings },
-      stats: { ...defaultSave().stats, ...data.stats },
+      stats: {
+        ...defaultSave().stats,
+        ...data.stats,
+        winsByPet: { ...defaultSave().stats.winsByPet, ...data.stats?.winsByPet },
+      },
       critterdex: {
         kills: { ...(data.critterdex?.kills ?? {}) },
         jarred: { ...(data.critterdex?.jarred ?? {}) },
@@ -72,6 +104,9 @@ export function loadSave(): SaveData {
       },
       flyShooed: data.flyShooed ?? false,
       towerNames: { ...(data.towerNames ?? {}) },
+      browniePoints: { ...defaultSave().browniePoints, ...data.browniePoints },
+      achievements: [...(data.achievements ?? [])],
+      junkDrawer: [...(data.junkDrawer ?? [])],
     };
   } catch {
     return defaultSave();

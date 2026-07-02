@@ -13,6 +13,7 @@ import {
 import { applyCast, updateSpells } from './spells';
 import { spawnGrudges } from './grudges';
 import { DirectorMemory, augmentWave, forecastText, recordWaveTelemetry } from './director';
+import { ENDLESS_MUTATION_EVERY, nextEndlessWave } from './endless';
 import {
   applyActiveEventEffectsPost, applyActiveEventEffectsPre, applyChoose,
   maybeStartEvent, updateActiveEvents, updatePendingChoice,
@@ -55,6 +56,7 @@ export interface SimCtx {
   eventRng: RNG;    // random event rolls + effect randomness (GAME-PROMPT §11/§12) — inert unless SimOptions.events
   directorRng: RNG; // Director AI augmentation picks (GAME-PROMPT §13) — inert unless SimOptions.director
   petRng: RNG;      // pet chaos-agent rolls (GAME-PROMPT §9) — inert unless SimOptions.pet
+  endlessRng: RNG;  // Pantry Panic procedural wave generation (GAME-PROMPT §16) — inert unless SimOptions.endless
   content: ContentDB;
   diff: DifficultyMods;
   emit(e: SimEvent): void;
@@ -77,6 +79,7 @@ export class Sim implements SimCtx {
   eventRng: RNG;
   directorRng: RNG;
   petRng: RNG;
+  endlessRng: RNG;
   content: ContentDB;
   diff: DifficultyMods;
 
@@ -97,6 +100,8 @@ export class Sim implements SimCtx {
   readonly eventsOn: boolean;
   /** Pet chaos agent (§9) — undefined unless SimOptions.pet is set. */
   readonly petKind: 'cat' | 'dog' | 'goldfish' | undefined;
+  /** Pantry Panic — Endless mode (§16) — inert (constructor default false) unless SimOptions.endless is true. */
+  readonly endlessOn: boolean;
   /** recap.sweeps snapshot at the start of the wave in progress, used to detect zero-sweep waves for the Director. */
   private sweepsAtWaveStart = 0;
   /**
@@ -105,6 +110,14 @@ export class Sim implements SimCtx {
    * every `tick()` return), which would otherwise starve recordWaveTelemetry down to one tick.
    */
   private waveEventLog: SimEvent[] = [];
+  /**
+   * Endless mode (§16) elite-wave mini-boss hp scaling: WaveRuntime/SpawnRequest (waves.ts) only
+   * carry {critter, spawn} — they don't thread a per-entry hp multiplier through. Since a
+   * generated WaveDef's hpMul is only ever set on at most one entry (the mini-boss), sim.ts keeps
+   * a small critter-id -> multiplier side table populated from the generated wave at startWave and
+   * consumes it (delete-on-use) the first time that species spawns this wave.
+   */
+  private endlessHpMulByCritter = new Map<string, number>();
 
   constructor(level: LevelDef, opts: SimOptions) {
     this.level = level;
@@ -115,9 +128,11 @@ export class Sim implements SimCtx {
     this.eventRng = new RNG((opts.seed ^ 0x4556_4e54) >>> 0);    // 'EVNT' XOR-mixed, independent stream
     this.directorRng = new RNG((opts.seed ^ 0x4449_5245) >>> 0); // 'DIRE' XOR-mixed, independent stream
     this.petRng = new RNG((opts.seed ^ 0x5045_5453) >>> 0);      // 'PETS' XOR-mixed, independent stream
+    this.endlessRng = new RNG((opts.seed ^ 0x454e_444c) >>> 0);  // 'ENDL' XOR-mixed, independent stream
     this.directorOn = !!opts.director || !!level.director;
     this.eventsOn = !!opts.events;
     this.petKind = opts.pet;
+    this.endlessOn = !!opts.endless;
     this.diff = DIFFICULTY[opts.difficulty];
     this.grid = new Grid(level);
     this.grid.recompute(level.cakeTile);
@@ -140,9 +155,9 @@ export class Sim implements SimCtx {
       wavesTotal: level.waves.length,
       buildTimer: -1,
       buildTimerMax: BUILD_TIME,
-      crumbs: Math.round(level.startCrumbs * this.diff.startCrumbs),
+      crumbs: Math.round(level.startCrumbs * this.diff.startCrumbs * (1 + (opts.metaMods?.startCrumbsPct ?? 0))),
       mana: 0,
-      manaMax: 100,
+      manaMax: 100 + (opts.metaMods?.manaMax ?? 0),
       scent: 0,
       scentHoldT: 0,
       cakeSlices: level.cakeSlices,
@@ -153,7 +168,7 @@ export class Sim implements SimCtx {
       crumbEnts: new Map(),
       clutter: new Map(),
       clutterHand: [],
-      hand: { flickCharges: 3, flickMax: 3, flickRecharge: 0, squashCd: 0, carryCd: 0, carrying: null, zapT: 0 },
+      hand: { flickCharges: 3 + (opts.metaMods?.flickMax ?? 0), flickMax: 3 + (opts.metaMods?.flickMax ?? 0), flickRecharge: 0, squashCd: 0, carryCd: 0, carrying: null, zapT: 0 },
       spellCds: {},
       mutations: [],
       mutationOffer: null,
@@ -177,6 +192,7 @@ export class Sim implements SimCtx {
       pendingChoice: null,
       ceasefireWaves: 0,
       pet: null,
+      endlessDepth: 0,
     };
     this.dealClutterHand();
     if (this.petKind) this.state.pet = initPet(this, this.petKind);
@@ -286,7 +302,16 @@ export class Sim implements SimCtx {
     if (st.phase === 'assault' && this.waveRt) {
       for (const req of this.waveRt.update(dt)) {
         const spawn = this.level.spawns.find((s) => s.id === req.spawn) ?? this.level.spawns[0];
-        spawnCritter(this, req.critter, spawn.tile);
+        const cr = spawnCritter(this, req.critter, spawn.tile);
+        // Endless mode elite mini-bosses (§16): apply + consume this wave's hp multiplier (if any)
+        // for this species. Scales hp post-spawn so src/sim/critters.ts (out of scope for this
+        // feature) never needs a new spawn parameter.
+        if (this.endlessOn && this.endlessHpMulByCritter.has(req.critter)) {
+          const mul = this.endlessHpMulByCritter.get(req.critter)!;
+          this.endlessHpMulByCritter.delete(req.critter);
+          cr.hp = Math.round(cr.hp * mul);
+          cr.maxHp = Math.round(cr.maxHp * mul);
+        }
       }
     }
 
@@ -423,7 +448,11 @@ export class Sim implements SimCtx {
     const st = this.state;
     st.waveIndex++;
     const authoredWave = this.level.waves[st.waveIndex];
-    if (!authoredWave) return;
+    // Pantry Panic — Endless mode (§16): once authored waves run out, generate the next one
+    // procedurally instead of stalling out. Fully inert unless SimOptions.endless is true.
+    const generatedWave = !authoredWave && this.endlessOn ? nextEndlessWave(this, this.level, st.endlessDepth + 1) : null;
+    if (!authoredWave && !generatedWave) return;
+    if (generatedWave) st.endlessDepth++;
     st.phase = 'assault';
     st.buildTimer = -1;
     if (bonusCrumbs > 0) {
@@ -446,12 +475,18 @@ export class Sim implements SimCtx {
     // sweep count and hit/leak events (this.events alone is drained every single tick).
     this.sweepsAtWaveStart = st.recap.sweeps;
     this.waveEventLog = [];
-    let wave = authoredWave;
-    if (this.directorOn) {
+    let wave = generatedWave ?? authoredWave!;
+    if (this.directorOn && authoredWave) {
       const spawnId = this.level.spawns[0]?.id ?? '';
       const { wave: augmented, note } = augmentWave(this, this.level, authoredWave, this.directorMem, spawnId);
       wave = augmented;
       if (note) st.recap.directorNotes.push(note);
+    }
+    // Endless hp-scaled entries (mini-bosses): index by critter id for the tick loop to consume
+    // (see endlessHpMulByCritter doc comment — WaveRuntime/SpawnRequest don't carry hpMul through).
+    this.endlessHpMulByCritter.clear();
+    if (generatedWave) {
+      for (const e of wave.entries) if (e.hpMul && e.hpMul !== 1) this.endlessHpMulByCritter.set(e.critter, e.hpMul);
     }
     this.waveRt = new WaveRuntime(wave, countScale);
     spawnGrudges(this);
@@ -473,7 +508,9 @@ export class Sim implements SimCtx {
       recordWaveTelemetry(this, this.directorMem, [...this.waveEventLog, ...this.events], sweptCount);
     }
 
-    if (st.waveIndex >= st.wavesTotal - 1) {
+    // Pantry Panic — Endless mode (§16): winning never triggers on wave exhaustion when endless
+    // is on — instead play just continues (startWave will generate the next wave procedurally).
+    if (st.waveIndex >= st.wavesTotal - 1 && !this.endlessOn) {
       st.phase = 'won';
       this.emit({ t: 'won', bitesTaken: st.cakeMax - st.cakeSlices });
       return;
@@ -496,9 +533,11 @@ export class Sim implements SimCtx {
       }
     }
 
-    // mutation draft? (mutationWaves entries are 1-based wave numbers)
+    // mutation draft? (mutationWaves entries are 1-based wave numbers; endless offers one every
+    // ENDLESS_MUTATION_EVERY-th GENERATED wave, reusing this same mutationOffer path per §16).
     const waveNum = st.waveIndex + 1;
-    if (this.level.mutationWaves?.includes(waveNum)) {
+    const endlessMutationDue = this.endlessOn && st.endlessDepth > 0 && st.endlessDepth % ENDLESS_MUTATION_EVERY === 0;
+    if (this.level.mutationWaves?.includes(waveNum) || endlessMutationDue) {
       const all = Object.keys(this.content.mutations).filter((m) => !st.mutations.includes(m));
       const offer = this.rng.shuffle(all).slice(0, Math.min(3, all.length));
       if (offer.length > 0) {

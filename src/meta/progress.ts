@@ -4,8 +4,9 @@
  * since unlock state is fully derivable from stars already keyed by level id.
  */
 import { ALL_LEVELS, CONTENT } from '../content';
-import type { CritterDef, LevelDef, RoomTheme } from '../sim/types';
+import type { CritterDef, LevelDef, RoomTheme, SimOptions } from '../sim/types';
 import type { SaveData } from './save';
+import { JUNK_DRAWER_ITEMS, isPurchased } from './achievements';
 
 /** The 9 rooms in dollhouse cutaway order: top floor -> bottom -> outside. */
 export const ROOM_ORDER: RoomTheme[] = [
@@ -140,4 +141,31 @@ export function critterdexCompletionPct(save: SaveData): number {
   if (order.length === 0) return 0;
   const seen = order.filter((c) => isCritterSeen(save, c.id)).length;
   return Math.round((seen / order.length) * 100);
+}
+
+// ---------- The Junk Drawer (§18) -> SimOptions.metaMods ----------
+
+/** Derives the sim-facing metaMods bag from purchased Junk Drawer unlocks (see
+ *  src/meta/achievements.ts JUNK_DRAWER_ITEMS). Only 'sim'-kind items feed this — cosmetic
+ *  ones are checked directly against save.junkDrawer wherever they render (UI-only, never
+ *  touches src/sim/). Percent-based unlocks (Allowance / Bigger Allowance) sum additively,
+ *  matching the "another +0.10, stacks with Allowance" framing in the item descriptions. */
+export function metaModsFromSave(save: SaveData): NonNullable<SimOptions['metaMods']> {
+  const mods: NonNullable<SimOptions['metaMods']> = {};
+  for (const item of JUNK_DRAWER_ITEMS) {
+    if (item.kind !== 'sim' || !isPurchased(save, item.id)) continue;
+    switch (item.id) {
+      case 'fourth-flick':
+        mods.flickMax = (mods.flickMax ?? 0) + 1;
+        break;
+      case 'static-battery':
+        mods.manaMax = (mods.manaMax ?? 0) + 25;
+        break;
+      case 'allowance':
+      case 'bigger-allowance':
+        mods.startCrumbsPct = Math.round(((mods.startCrumbsPct ?? 0) + 0.10) * 100) / 100;
+        break;
+    }
+  }
+  return mods;
 }

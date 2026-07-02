@@ -47,6 +47,8 @@ export interface WaveEntry {
   interval: number;       // seconds between spawns
   spawn: string;          // SpawnDef id
   delay: number;          // seconds after wave start
+  /** Endless mode only (§16): post-spawn hp/maxHp multiplier applied by sim.ts's wave-spawn call site. Default 1 (undefined = unscaled) — never set by authored campaign waves. */
+  hpMul?: number;
 }
 export interface WaveDef { entries: WaveEntry[] }
 
@@ -479,6 +481,18 @@ export interface SimOptions {
   events?: boolean;
   /** Pet chaos agent (§9). Default undefined = no pet — fully inert, byte-identical to omitting it. */
   pet?: 'cat' | 'dog' | 'goldfish';
+  /**
+   * Pantry Panic — Endless mode (§16). Default false, byte-identical to omitting it. When true,
+   * winning never triggers on wave exhaustion; instead once authored waves run out, src/sim/endless.ts
+   * generates the next WaveDef procedurally and play continues forever until loss.
+   */
+  endless?: boolean;
+  /** Junk Drawer permanent unlocks (§18 meta-progression). Consumed once at construction; default = none. */
+  metaMods?: {
+    startCrumbsPct?: number;   // +0.10 = +10% starting crumbs
+    flickMax?: number;         // bonus flick charges (base 3)
+    manaMax?: number;          // bonus max mana (base 100)
+  };
 }
 
 export interface DifficultyMods {
@@ -536,6 +550,13 @@ export interface SimState {
   ceasefireWaves: number;
   /** Pet chaos agent (§9). null unless SimOptions.pet is set — purely positional flavor plus the pet's own behaviors. */
   pet: PetState | null;
+  /**
+   * Pantry Panic — Endless mode (§16). Count of procedurally generated waves played so far.
+   * Always 0 in campaign (and whenever SimOptions.endless is false/omitted). wavesTotal stays the
+   * authored wave count even in endless — UI shows depth instead so the campaign HUD's
+   * "Wave X of Y" is never broken by this field's existence.
+   */
+  endlessDepth: number;
 }
 
 // ---------- pets (GAME-PROMPT §9) ----------

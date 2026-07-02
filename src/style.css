@@ -693,6 +693,14 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
 .bar-section { display: flex; gap: 7px; align-items: flex-end; }
 .bar-divider { width: 3px; align-self: stretch; background: rgba(110, 68, 38, 0.55); border-radius: 2px; margin: 0 4px; }
 
+/* Junk Drawer cosmetics (§18): corkboard-skin unlocks recolor the build-bar trim (border +
+   divider only — the cork texture underneath stays, this is "gingham ribbon pinned around the
+   edge" flavor, not a full retexture). Applied via a class on Hud.root from game.ts. */
+.skin-blue .build-bar { border-color: #3f5d7d; }
+.skin-blue .bar-divider { background: rgba(63, 93, 125, 0.6); }
+.skin-mint .build-bar { border-color: #3c8a5e; }
+.skin-mint .bar-divider { background: rgba(60, 138, 94, 0.6); }
+
 .card {
   width: 74px;
   background: #fdfdfb;
@@ -1118,6 +1126,107 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   color: var(--ink);
 }
 
+/* ---------- The Junk Drawer (§18 meta-progression): a literal messy kitchen drawer that
+   slides open toward the viewer — permanent BP-purchased unlocks live "inside" as loose
+   objects (buttons), tape-and-marker labeled like everything else in this house. ---------- */
+.drawer-screen {
+  background: radial-gradient(ellipse at 50% 15%, #4a3826 0%, #241a10 75%);
+  align-items: flex-start;
+  padding-top: 18px;
+}
+.drawer-wrap {
+  width: min(980px, 94vw);
+  max-height: 90vh;
+  display: flex; flex-direction: column;
+  min-height: 0;
+}
+.drawer-title-row {
+  display: flex; align-items: center; justify-content: center;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+.drawer-title {
+  font-size: 30px; color: #fff4e0;
+  text-shadow: 2px 3px 0 rgba(0,0,0,0.35);
+  text-align: center;
+  transform: rotate(-1deg);
+}
+.drawer-bp-chip {
+  font-size: 16px; font-weight: bold;
+  color: #5a3c0f;
+  background: var(--butter);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  padding: 5px 14px;
+  white-space: nowrap;
+  transform: rotate(1.5deg);
+}
+.drawer-sub {
+  text-align: center;
+  font-size: 13px;
+  color: #d8c8a8;
+  margin-bottom: 14px;
+}
+/* the drawer body itself: a wood front-panel "slides open" via a one-shot animation, then
+   a corkish/felt-lined interior grid holds the item cards. */
+.drawer-body {
+  background: linear-gradient(180deg, #7a5334, #5a3c22);
+  border: 5px solid #3a2814;
+  border-radius: 8px;
+  box-shadow: inset 0 3px 10px rgba(0,0,0,0.45), 0 20px 50px rgba(0,0,0,0.55);
+  padding: 20px;
+  overflow-y: auto;
+  min-height: 0;
+  animation: drawer-slide 0.45s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+@keyframes drawer-slide {
+  0% { transform: translateY(-18px) scale(0.97); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 14px;
+}
+.drawer-item {
+  background: var(--paper);
+  border: 2.5px solid var(--ink);
+  border-radius: 8px;
+  padding: 12px 14px 12px;
+  box-shadow: 0 5px 12px rgba(0,0,0,0.3);
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 0.12s, box-shadow 0.12s;
+  display: flex; flex-direction: column; gap: 6px;
+  position: relative;
+}
+.drawer-item:not(.owned):not(.locked):hover { transform: rotate(0deg) translateY(-3px) scale(1.02); box-shadow: 0 9px 18px rgba(0,0,0,0.4); }
+.drawer-item.owned { background: #eef7ea; border-color: #3c8a5e; }
+.drawer-item.locked { filter: grayscale(0.7) brightness(0.82); }
+.drawer-item::before { /* tape corner, matching journal-card */
+  content: '';
+  position: absolute; top: -8px; left: 50%; margin-left: -22px;
+  width: 44px; height: 16px;
+  background: rgba(255, 248, 224, 0.7);
+  transform: rotate(-2deg);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.drawer-item-head { display: flex; align-items: center; gap: 8px; }
+.drawer-item-ico { font-size: 26px; line-height: 1; }
+.drawer-item-name { font-size: 15px; font-weight: bold; color: var(--ink); flex: 1; }
+.drawer-item-desc { font-size: 12px; color: #6a5c48; line-height: 1.3; min-height: 32px; }
+.drawer-item-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.drawer-item-cost { font-size: 13px; font-weight: bold; color: #8a6e1c; }
+.drawer-item-req { font-size: 10.5px; color: #a06848; font-style: italic; }
+.drawer-item .wood-btn.small { align-self: stretch; }
+.drawer-item.owned .drawer-item-foot { color: #3c8a5e; font-weight: bold; }
+.drawer-item-owned-tag { font-size: 13px; font-weight: bold; color: #3c8a5e; }
+.drawer-section-label {
+  font-size: 16px; font-weight: bold;
+  color: #f0e0c0;
+  margin: 4px 0 10px 2px;
+}
+.drawer-back-row { display: flex; justify-content: center; margin-top: 14px; }
+
 @media (max-width: 820px), (max-height: 500px) {
   .choice-note { padding: 12px 14px 14px; }
   .choice-header { font-size: 18px; }
@@ -1374,6 +1483,22 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   .boss-card .journal-portrait.silhouette { width: 52px; height: 52px; font-size: 22px; }
   .boss-card .journal-name { font-size: 15px; }
   .journal-card.boss-card { gap: 10px; padding: 10px 12px 10px; }
+
+  /* The Junk Drawer: same scroll-and-shrink treatment as the journal above. */
+  .drawer-screen { padding-top: 6px; align-items: stretch; }
+  .drawer-wrap { width: 100%; max-width: 100%; }
+  .drawer-title-row { gap: 8px; flex-wrap: wrap; }
+  .drawer-title { font-size: clamp(18px, 6vw, 22px); }
+  .drawer-bp-chip { font-size: 12px; padding: 3px 10px; }
+  .drawer-sub { font-size: 11px; margin-bottom: 8px; }
+  .drawer-body { padding: 10px; border-width: 3px; max-height: 80vh; }
+  .drawer-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 9px; }
+  .drawer-item { padding: 8px 9px 9px; gap: 4px; }
+  .drawer-item-ico { font-size: 20px; }
+  .drawer-item-name { font-size: 12.5px; }
+  .drawer-item-desc { font-size: 10px; min-height: 0; }
+  .drawer-item-cost { font-size: 11px; }
+  .drawer-item-req { font-size: 9px; }
 }
 
 /* short landscape phones (e.g. 844x390) — menus/modals need to fit without
@@ -1404,6 +1529,9 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   .journal-title { font-size: 16px; }
   .journal-bar { margin-bottom: 10px; height: 7px; }
   .journal-section-label { margin: 10px 0 6px 10px; }
+  .drawer-body { max-height: 90vh; padding: 8px; }
+  .drawer-title { font-size: 16px; }
+  .drawer-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 
   .paper-modal { padding: 12px 16px; max-height: 92vh; }
   .paper-modal h2 { font-size: clamp(16px, 4.5vw, 20px); margin-bottom: 2px; }

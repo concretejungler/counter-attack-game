@@ -1,7 +1,7 @@
 import type { ContentDB, LevelDef, PendingChoice, SimState, Tower } from '../sim/types';
 import type { SaveData } from '../meta/save';
 import { Hud, InspectPanel, type HudCallbacks, type InspectCallbacks } from './hud';
-import { buildJournal, buildLevelSelect, buildRecap, buildSettings, buildTitle, type RecapInfo } from './screens';
+import { buildJournal, buildJunkDrawer, buildLevelSelect, buildRecap, buildSettings, buildTitle, type RecapInfo } from './screens';
 import { MUTATION_ICONS } from './icons';
 import { isMobileViewport, isPortrait } from '../core/device';
 import { ChoicePanel, type ChoicePanelCallbacks } from './choicePanel';
@@ -16,6 +16,7 @@ const el = (tag: string, cls = '', html = ''): HTMLElement => {
 
 export interface UICallbacks extends HudCallbacks, InspectCallbacks {
   onStartLevel(id: string): void;
+  onStartEndless?(): void;
   onBackToTitle(): void;
   onToLevels(): void;
   onPickMutation(id: string): void;
@@ -25,6 +26,9 @@ export interface UICallbacks extends HudCallbacks, InspectCallbacks {
   onChoiceTick(): void;
   onFlyShooed(): void;
   onPetChange(pet: 'cat' | 'dog' | 'goldfish' | null): void;
+  /** The Junk Drawer (§18): attempts a purchase, returns true on success (deducts BP,
+   *  persists save) — screens.ts re-renders the drawer screen itself on success. */
+  onJunkDrawerPurchase(id: string): boolean;
 }
 
 export type JournalReturnTo = 'title' | 'levels';
@@ -103,6 +107,7 @@ export class UI {
       () => this.cb.onToLevels(),
       () => this.showSettings(),
       () => this.showJournal('title'),
+      () => this.showJunkDrawer('title'),
     );
     this.root.append(this.screenEl);
   }
@@ -115,6 +120,8 @@ export class UI {
       () => this.cb.onBackToTitle(),
       () => this.showJournal('levels'),
       (pet) => this.cb.onPetChange(pet),
+      () => this.showJunkDrawer('levels'),
+      () => this.cb.onStartEndless?.(),
     );
     this.root.append(this.screenEl);
   }
@@ -127,6 +134,21 @@ export class UI {
       if (returnTo === 'title') this.showTitle();
       else this.showLevelSelect();
     });
+    this.root.append(this.screenEl);
+  }
+
+  /** The Junk Drawer (§18). Reachable from the title fridge and from level select, same
+   *  return-to-caller pattern as the Critterdex above. */
+  showJunkDrawer(returnTo: JournalReturnTo): void {
+    this.clearScreen();
+    this.screenEl = buildJunkDrawer(
+      this.save,
+      (id) => this.cb.onJunkDrawerPurchase(id),
+      () => {
+        if (returnTo === 'title') this.showTitle();
+        else this.showLevelSelect();
+      },
+    );
     this.root.append(this.screenEl);
   }
 
