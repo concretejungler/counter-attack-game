@@ -88,6 +88,11 @@ export interface ThemePalette {
   practicalColor: number;  // lamp/bulb/glow accent color
   fogColor: number;
   bgColor: number;         // scene background tint for this room (applied via fog-matched plane, not scene.background)
+  // backdrop dome ("the diorama is on display, not floating in the void")
+  domeTop: number;         // dusk sky color at the top of the backdrop dome
+  domeBottom: number;      // deep plum/shadow color at the horizon/base
+  tableColor: number;      // display-table disc under the whole room
+  tableRimColor: number;   // subtle rim-light color on the table edge
 }
 
 const kitchen: ThemePalette = {
@@ -115,6 +120,10 @@ const kitchen: ThemePalette = {
   practicalColor: 0xffd9a0,
   fogColor: 0x33261a,
   bgColor: 0x33261a,
+  domeTop: 0xf7b98a,
+  domeBottom: 0x3a2340,
+  tableColor: 0x2a1c28,
+  tableRimColor: 0xffb870,
 };
 
 const living: ThemePalette = {
@@ -142,6 +151,10 @@ const living: ThemePalette = {
   practicalColor: 0x8fc6ff, // TV glow accent
   fogColor: 0x3a2a1c,
   bgColor: 0x3a2a1c,
+  domeTop: 0xf0a875,
+  domeBottom: 0x35223a,
+  tableColor: 0x2c1e26,
+  tableRimColor: 0xffab6a,
 };
 
 const bathroom: ThemePalette = {
@@ -169,6 +182,10 @@ const bathroom: ThemePalette = {
   practicalColor: 0xbfeaff,
   fogColor: 0x1e3438,
   bgColor: 0x1e3438,
+  domeTop: 0xbfe2e8,
+  domeBottom: 0x1c3438,
+  tableColor: 0x18292c,
+  tableRimColor: 0x9fe0ec,
 };
 
 const bedroom: ThemePalette = {
@@ -197,6 +214,10 @@ const bedroom: ThemePalette = {
   practicalColor: 0xffb870,     // warm lamp pools are the *main* light source
   fogColor: 0x0e0c1c,
   bgColor: 0x0e0c1c,
+  domeTop: 0x2e2c58,
+  domeBottom: 0x0a0816,
+  tableColor: 0x0e0c1a,
+  tableRimColor: 0x8f9cff,
 };
 
 const garage: ThemePalette = {
@@ -224,6 +245,10 @@ const garage: ThemePalette = {
   practicalColor: 0xfff2c8,     // hanging bulb cones
   fogColor: 0x1c1c1c,
   bgColor: 0x1c1c1c,
+  domeTop: 0x8a8478,
+  domeBottom: 0x161614,
+  tableColor: 0x1a1a18,
+  tableRimColor: 0xe8dcb8,
 };
 
 const basement: ThemePalette = {
@@ -251,6 +276,10 @@ const basement: ThemePalette = {
   practicalColor: 0xffe9a8,     // bare bulb / string lights
   fogColor: 0x0c0e10,
   bgColor: 0x0c0e10,
+  domeTop: 0x262c30,
+  domeBottom: 0x08090a,
+  tableColor: 0x0a0c0c,
+  tableRimColor: 0xffe0a0,
 };
 
 const attic: ThemePalette = {
@@ -278,6 +307,10 @@ const attic: ThemePalette = {
   practicalColor: 0xffdf9c,
   fogColor: 0x3c2e18,
   bgColor: 0x3c2e18,
+  domeTop: 0xf0b878,
+  domeBottom: 0x3a2818,
+  tableColor: 0x2c2014,
+  tableRimColor: 0xffcf8a,
 };
 
 const backyard: ThemePalette = {
@@ -306,6 +339,10 @@ const backyard: ThemePalette = {
   practicalColor: 0xfff2c8,
   fogColor: 0x8fd0f7,
   bgColor: 0x8fd0f7,
+  domeTop: 0xa0d8f7,
+  domeBottom: 0x6fa652,
+  tableColor: 0x5f9345,
+  tableRimColor: 0xfff2c8,
 };
 
 const sewer: ThemePalette = {
@@ -333,6 +370,10 @@ const sewer: ThemePalette = {
   practicalColor: 0x7dffb0,
   fogColor: 0x08120a,
   bgColor: 0x08120a,
+  domeTop: 0x1c3020,
+  domeBottom: 0x040806,
+  tableColor: 0x060a08,
+  tableRimColor: 0x6fdc8a,
 };
 
 export const THEME_PALETTES: Record<RoomTheme, ThemePalette> = {

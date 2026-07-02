@@ -11,6 +11,7 @@ export function buildRoom(level: LevelDef): THREE.Group {
   const W = floor.cols;
   const D = floor.rows;
 
+  room.add(buildBackdrop(W, D, TP));
   room.add(buildLighting(TP, W, D));
   room.add(buildFloor(floor, TP));
   room.add(buildWalls(W, D, TP));
@@ -26,6 +27,96 @@ export function buildRoom(level: LevelDef): THREE.Group {
   room.add(buildSunbeams(W, D, TP));
   room.add(buildDecor(W, D, TP, level.theme));
   return room;
+}
+
+/**
+ * "It's a diorama on display, not floating in the void." A big gradient-sky dome (dusk peach
+ * top → deep plum bottom, per-theme tinted) plus a soft circular display-table disc beneath the
+ * room, plus a very subtle darkening ring beyond the room's own floor. Cheap: one dome mesh with
+ * a tiny canvas-gradient texture (unlit, so it costs nothing per-pixel beyond a texture sample),
+ * one flat disc, one soft shadow ring. No lights, no shadow casters — background dressing only.
+ */
+function buildBackdrop(W: number, D: number, TP: ThemePalette): THREE.Group {
+  const g = new THREE.Group();
+  const cx = W / 2;
+  const cz = D / 2;
+  const radius = Math.max(W, D) * 3 + 20;
+
+  // gradient sky dome — vertical canvas gradient mapped onto the inside of a big sphere.
+  // Near-full sphere (phi 0..~0.97*PI) centered at floor level so it fully surrounds the camera
+  // regardless of orbit/pitch — no risk of a gap showing raw scene-background black through a cap edge.
+  const domeTex = canvasTexture(8, 128, (ctx) => {
+    const grad = ctx.createLinearGradient(0, 0, 0, 128);
+    const top = '#' + TP.domeTop.toString(16).padStart(6, '0');
+    const mid = '#' + mixHex(TP.domeTop, TP.domeBottom, 0.55).toString(16).padStart(6, '0');
+    const bottom = '#' + TP.domeBottom.toString(16).padStart(6, '0');
+    grad.addColorStop(0, top);
+    grad.addColorStop(0.55, mid);
+    grad.addColorStop(1, bottom);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 8, 128);
+  });
+  domeTex.wrapS = THREE.ClampToEdgeWrapping;
+  domeTex.wrapT = THREE.ClampToEdgeWrapping;
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.97),
+    new THREE.MeshBasicMaterial({ map: domeTex, side: THREE.BackSide, fog: false, depthWrite: false, toneMapped: false }),
+  );
+  dome.position.set(cx, 0, cz);
+  dome.renderOrder = -10;
+  g.add(dome);
+
+  // soft circular display-table disc under the whole room — reads as "a toy on a shelf/table"
+  const tableR = Math.max(W, D) * 1.35 + 6;
+  const tableTex = canvasTexture(128, 128, (ctx) => {
+    const grad = ctx.createRadialGradient(64, 64, 8, 64, 64, 64);
+    const rim = '#' + TP.tableRimColor.toString(16).padStart(6, '0');
+    const base = '#' + TP.tableColor.toString(16).padStart(6, '0');
+    grad.addColorStop(0, base);
+    grad.addColorStop(0.78, base);
+    grad.addColorStop(0.92, rim);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+  });
+  const table = new THREE.Mesh(
+    new THREE.CircleGeometry(tableR, 40),
+    new THREE.MeshBasicMaterial({ map: tableTex, transparent: true, fog: false, depthWrite: false, toneMapped: false }),
+  );
+  table.rotation.x = -Math.PI / 2;
+  table.position.set(cx, -0.42, cz);
+  table.renderOrder = -9;
+  g.add(table);
+
+  // subtle darker vignette shadow on the floor plane just beyond the room bounds — grounds the
+  // room into the table without a hard edge.
+  const shadowTex = canvasTexture(128, 128, (ctx) => {
+    const grad = ctx.createRadialGradient(64, 64, 40, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.35)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+  });
+  const shadowR = Math.max(W, D) * 0.95 + 5;
+  const shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(shadowR, 40),
+    new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, fog: false, depthWrite: false, toneMapped: false }),
+  );
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set(cx, -0.28, cz);
+  shadow.renderOrder = -8;
+  g.add(shadow);
+
+  return g;
+}
+
+function mixHex(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+  const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+  const r = Math.round(ar + (br - ar) * t);
+  const gc = Math.round(ag + (bg - ag) * t);
+  const bl = Math.round(ab + (bb - ab) * t);
+  return (r << 16) | (gc << 8) | bl;
 }
 
 /** Per-theme practical light rig — hemisphere fill + a key light standing in for sun/moon/glow. */
@@ -158,12 +249,63 @@ function buildWalls(W: number, D: number, TP: ThemePalette): THREE.Group {
   return g;
 }
 
+/** Soft dark contact-shadow decal on the floor beneath a furniture footprint — grounds cabinets/
+ *  shelves/stoves into the tile instead of them looking like they hover just above it. Shelves
+ *  (which have open space underneath, not a solid cabinet body) get a fainter, tighter version. */
+let floorContactTex: THREE.CanvasTexture | null = null;
+function floorContactTexture(): THREE.CanvasTexture {
+  if (!floorContactTex) {
+    floorContactTex = canvasTexture(64, 64, (ctx) => {
+      ctx.clearRect(0, 0, 64, 64);
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.fillRect(6, 6, 52, 52);
+      const grad = ctx.createLinearGradient(0, 0, 0, 12);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.4)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 64, 14);
+      ctx.save();
+      ctx.translate(64, 0);
+      ctx.rotate(Math.PI / 2);
+      ctx.fillRect(0, 0, 64, 14);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(64, 64);
+      ctx.rotate(Math.PI);
+      ctx.fillRect(0, 0, 64, 14);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(0, 64);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillRect(0, 0, 64, 14);
+      ctx.restore();
+    });
+  }
+  return floorContactTex;
+}
+
 function buildElevatedSurface(surf: SurfaceDef, TP: ThemePalette): THREE.Group {
   const g = new THREE.Group();
   const { origin, cols, rows } = surf;
   const h = origin.y;
   const cx = origin.x + cols / 2;
   const cz = origin.z + rows / 2;
+
+  // floor-contact darkening beneath the footprint — grounds it into the tile
+  const contact = new THREE.Mesh(
+    new THREE.PlaneGeometry(cols + 0.3, rows + 0.3),
+    new THREE.MeshBasicMaterial({
+      map: floorContactTexture(),
+      transparent: true,
+      depthWrite: false,
+      toneMapped: false,
+      opacity: surf.kind === 'shelf' ? 0.45 : 0.85,
+    }),
+  );
+  contact.rotation.x = -Math.PI / 2;
+  contact.position.set(cx, 0.012, cz);
+  contact.renderOrder = -1;
+  g.add(contact);
 
   // top slab — tint/texture per surface kind and theme (garage shelf = metal, bathroom counter = porcelain, etc.)
   const topColor = surf.kind === 'stove' ? TP.metal : surf.kind === 'shelf' ? TP.wood : TP.counterTop;

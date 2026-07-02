@@ -10,8 +10,8 @@ import { buildBossView } from './models/critterModels';
 import { CakeView, buildClutterCell, buildSliceProp, projectileTemplate, PROJECTILE_LOOKS } from './models/props';
 import { Vfx } from './vfx';
 import { HandView, type HandPose } from './handView';
-import { PAL } from './palette';
-import { toonMat } from './build';
+import { PAL, themePalette } from './palette';
+import { toonMat, canvasTexture } from './build';
 import { dprCap } from '../core/device';
 
 interface CritterViewData {
@@ -27,6 +27,8 @@ interface CritterViewData {
   scale: number;
   sliceProp: THREE.Group | null;
   bossView: { group: THREE.Group; animate: (dt: number, t: number) => void } | null;
+  frozen: boolean;
+  iceOverlay: THREE.Mesh | null;
 }
 
 interface TowerViewData {
@@ -38,6 +40,7 @@ interface TowerViewData {
 }
 
 const CRUMB_CAP = 160;
+const SHADOW_BLOB_CAP = 340; // critters (300 max, per GAME-PROMPT §22 perf target) + towers + clutter
 
 export class GameRenderer {
   readonly renderer: THREE.WebGLRenderer;
@@ -56,6 +59,7 @@ export class GameRenderer {
   private clutterShake = new Map<number, number>();
   private projMeshes = new Map<string, THREE.InstancedMesh>();
   private crumbMesh: THREE.InstancedMesh;
+  private shadowBlobMesh: THREE.InstancedMesh;
   private vfx = new Vfx();
   readonly hand = new HandView();
   private pickPlanes: THREE.Mesh[] = [];
@@ -69,12 +73,26 @@ export class GameRenderer {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, dprCap()));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    // Tonemapping is intentionally OFF here: Three.js bakes tonemapping into every standard
+    // material's fragment shader unconditionally (screen or offscreen target alike), so if this
+    // were ACESFilmicToneMapping every toon-shaded object would get tonemapped once during the
+    // scene render AND again in Post's final composite shader (which does its own ACES fit +
+    // sRGB output-transfer, since it's the only pass that writes to the actual screen). Keeping
+    // the renderer's own tonemapping off makes the scene-render step true linear HDR and leaves
+    // Post as the single source of truth for tonemap + color grade.
+    this.renderer.toneMapping = THREE.NoToneMapping;
+    // Likewise: standard materials also bake an unconditional linear->sRGB encode into their
+    // fragment shader based on renderer.outputColorSpace (same "runs regardless of target" deal
+    // as tonemapping above). Setting this to the *linear* working color space means the scene
+    // render step writes true-linear values with no gamma curve baked in — Post's final shader
+    // (a raw, non-standard ShaderMaterial, so it isn't affected by this setting at all) applies
+    // the one-and-only sRGB output-transfer right before the pixels hit the actual screen.
+    this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.info.autoReset = false; // accumulate full-frame stats (reset in frame())
 
+    // default (pre-level-load) — real values come from the theme's backdrop dome on loadLevel()
     this.scene.background = new THREE.Color(0x33261a);
-    this.scene.fog = new THREE.Fog(0x33261a, 26, 55);
+    this.scene.fog = new THREE.Fog(0x33261a, 40, 95);
 
     this.rig = new CameraRig(innerWidth / innerHeight);
     this.post = new Post(this.renderer, this.scene, this.rig.camera);
@@ -112,6 +130,29 @@ export class GameRenderer {
     this.crumbMesh.frustumCulled = false;
     this.crumbMesh.count = 0;
     this.scene.add(this.crumbMesh);
+
+    // contact/AO shadow blobs — one pooled InstancedMesh, a radial-gradient quad per critter/
+    // tower/clutter piece. Cheap grounding: nothing casts a real shadow-map shadow at this scale
+    // for small critters, so a soft dark blob under their feet reads as contact without the cost.
+    const blobTex = canvasTexture(64, 64, (ctx) => {
+      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+      grad.addColorStop(0.6, 'rgba(0,0,0,0.32)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 64, 64);
+    });
+    this.shadowBlobMesh = new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, toneMapped: false }),
+      SHADOW_BLOB_CAP,
+    );
+    this.shadowBlobMesh.rotation.x = -Math.PI / 2; // (rotation on a Mesh is unused once instanced — baked per-instance below)
+    this.shadowBlobMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.shadowBlobMesh.frustumCulled = false;
+    this.shadowBlobMesh.renderOrder = -1; // draw after room/floor, before critters — sits flush on tiles
+    this.shadowBlobMesh.count = 0;
+    this.scene.add(this.shadowBlobMesh);
 
     addEventListener('resize', () => this.resize());
     addEventListener('orientationchange', () => {
@@ -164,6 +205,14 @@ export class GameRenderer {
       if (o.userData.burner) this.burnerRings.push(o);
     });
 
+    // theme-tinted background/fog — matches the backdrop dome so its bottom edge (if ever visible
+    // past the far draw distance) blends seamlessly instead of hard-cutting to a flat void color.
+    const TP = themePalette(level.theme);
+    (this.scene.background as THREE.Color).set(TP.domeBottom);
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.color.set(TP.fogColor);
+    }
+
     if (this.cake) this.scene.remove(this.cake.group);
     this.cake = new CakeView(level.cakeSlices);
     const cakePos = this.tileWorld(level.cakeTile.s, level.cakeTile.c, level.cakeTile.r);
@@ -214,6 +263,8 @@ export class GameRenderer {
           scale: 0.01, // pop in
           sliceProp: null,
           bossView: def?.boss ? buildBossView(cr.def) ?? buildCrumbKing() : null,
+          frozen: false,
+          iceOverlay: null,
         };
         if (v.bossView) this.scene.add(v.bossView.group);
         this.critterViews.set(id, v);
@@ -225,11 +276,13 @@ export class GameRenderer {
       v.target.set(cr.pos.x, cr.pos.y, cr.pos.z);
       v.facing = cr.facing;
       v.state = cr.state;
+      v.frozen = !!cr.statuses.frozen && cr.statuses.frozen > 0;
     }
     for (const [id, v] of this.critterViews) {
       if (!state.critters.has(id)) {
         if (v.bossView) this.scene.remove(v.bossView.group);
         if (v.sliceProp) this.scene.remove(v.sliceProp);
+        if (v.iceOverlay) this.scene.remove(v.iceOverlay);
         this.critterViews.delete(id);
       }
     }
@@ -299,9 +352,13 @@ export class GameRenderer {
     // cake
     this.cake?.setSlices(state.cakeSlices);
 
-    // events
+    // events — chain-lightning hits (kind 'chain' surfaces as consecutive 'hit' events with
+    // dmgType 'zap' within the same tick) get connected tower->victim->victim with arc lines.
+    this.lastZapAt = null;
     for (const ev of events) this.handleEvent(ev, state);
   }
+
+  private lastZapAt: THREE.Vector3Like | null = null;
 
   private handleEvent(ev: SimEvent, state: SimState): void {
     switch (ev.t) {
@@ -317,14 +374,29 @@ export class GameRenderer {
       case 'hit': {
         const v = this.critterViews.get(ev.critterId);
         if (v) v.flash = 1;
-        if (ev.dmgType === 'spray') this.vfx.splash(ev.at);
-        else if (ev.dmgType === 'heat') this.vfx.fire(ev.at);
-        else if (ev.dmgType === 'zap') this.vfx.sparks(ev.at);
+        // per-damage-type hit vocabulary — every DamageType gets a distinct, readable sparkle
+        switch (ev.dmgType) {
+          case 'spray': this.vfx.splash(ev.at); break;
+          case 'heat': this.vfx.fire(ev.at); break;
+          case 'zap':
+            this.vfx.sparks(ev.at);
+            // consecutive zap hits within the same tick = a chain-lightning jump; connect them
+            if (this.lastZapAt) this.vfx.chainArc(this.lastZapAt, ev.at);
+            this.lastZapAt = ev.at;
+            break;
+          case 'cold': this.vfx.iceShards(ev.at); break;
+          case 'gas': this.vfx.gasPuff(ev.at); break;
+          case 'swat': this.vfx.starPop(ev.at); break;
+          case 'sonic': this.vfx.sonicPulse(ev.at); break;
+          case 'light': this.vfx.lensGlint(ev.at); break;
+          default: break;
+        }
         break;
       }
       case 'fire': {
         const v = this.towerViews.get(ev.towerId);
         v?.view.onFire();
+        this.vfx.muzzleFlash(ev.at);
         break;
       }
       case 'cakeBite': {
@@ -346,6 +418,7 @@ export class GameRenderer {
         break;
       case 'spawn': {
         if (ev.shiny) this.vfx.sparks(ev.at);
+        if (this.content?.critters[ev.def]?.boss) this.rig.bossIntro();
         break;
       }
       case 'evolve':
@@ -516,6 +589,20 @@ export class GameRenderer {
         v.sliceProp.position.set(v.pos.x, v.pos.y + 0.75, v.pos.z);
         v.sliceProp.rotation.y = v.facing;
       }
+
+      // frozen: an ice-cube lollipop overlay while statuses.frozen is active (GAME-PROMPT §22)
+      if (v.frozen && !v.iceOverlay) {
+        v.iceOverlay = buildIceOverlay();
+        this.scene.add(v.iceOverlay);
+      } else if (!v.frozen && v.iceOverlay) {
+        this.scene.remove(v.iceOverlay);
+        v.iceOverlay = null;
+      }
+      if (v.iceOverlay) {
+        v.iceOverlay.position.set(v.pos.x, v.pos.y + 0.32, v.pos.z);
+        v.iceOverlay.rotation.y = this.time * 0.6;
+      }
+
       if (v.bossView) {
         v.bossView.group.position.copy(v.pos);
         v.bossView.group.rotation.y = v.facing;
@@ -591,11 +678,62 @@ export class GameRenderer {
       b.scale.setScalar(1 + Math.sin(this.time * 3 + i) * 0.05);
     });
 
+    this.syncShadowBlobs();
+
     this.cake?.animate(this.time);
     this.vfx.update(dt);
     this.hand.update(dt, this.time);
     this.rig.update(dt);
-    this.post.render();
+    if ((window as unknown as { __rawRender?: boolean }).__rawRender) {
+      this.renderer.render(this.scene, this.rig.camera);
+    } else {
+      this.post.render();
+    }
+  }
+
+  private static readonly shadowM = new THREE.Matrix4();
+  private static readonly shadowQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+  private static readonly shadowP = new THREE.Vector3();
+  private static readonly shadowS = new THREE.Vector3();
+
+  /** Pooled contact-shadow blobs: one flat quad per critter/tower/clutter piece, grounding them. */
+  private syncShadowBlobs(): void {
+    let i = 0;
+    const M = GameRenderer.shadowM;
+    const Q = GameRenderer.shadowQ;
+    const P = GameRenderer.shadowP;
+    const S = GameRenderer.shadowS;
+
+    for (const v of this.critterViews.values()) {
+      if (i >= SHADOW_BLOB_CAP) break;
+      if (v.state === 'flung' || v.state === 'fall') continue; // airborne — no ground contact
+      const r = 0.34 * v.scale;
+      P.set(v.pos.x, v.pos.y + 0.015, v.pos.z);
+      S.set(r, r, 1);
+      M.compose(P, Q, S);
+      this.shadowBlobMesh.setMatrixAt(i++, M);
+    }
+    for (const v of this.towerViews.values()) {
+      if (i >= SHADOW_BLOB_CAP) break;
+      if (v.carried) continue; // held aloft by the Hand — no ground contact
+      P.set(v.basePos.x, v.basePos.y + 0.015, v.basePos.z);
+      S.set(0.52, 0.52, 1);
+      M.compose(P, Q, S);
+      this.shadowBlobMesh.setMatrixAt(i++, M);
+    }
+    for (const g of this.clutterViews.values()) {
+      for (const cell of g.children) {
+        if (i >= SHADOW_BLOB_CAP) break;
+        P.set(cell.position.x + g.position.x, cell.position.y + g.position.y + 0.015, cell.position.z + g.position.z);
+        S.set(0.5, 0.5, 1);
+        M.compose(P, Q, S);
+        this.shadowBlobMesh.setMatrixAt(i++, M);
+      }
+      if (i >= SHADOW_BLOB_CAP) break;
+    }
+
+    this.shadowBlobMesh.count = i;
+    this.shadowBlobMesh.instanceMatrix.needsUpdate = true;
   }
 
   /** Sync projectiles directly from state each frame-ish tick. */
@@ -744,4 +882,22 @@ export class GameRenderer {
   drawCallCount(): number {
     return this.renderer.info.render.calls;
   }
+}
+
+/** A translucent ice-cube shell around a frozen critter — "ice-cube lollipops" per GAME-PROMPT §22. */
+function buildIceOverlay(): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.34, 0),
+    new THREE.MeshPhysicalMaterial({
+      color: 0xcdeffc,
+      transparent: true,
+      opacity: 0.55,
+      roughness: 0.15,
+      metalness: 0,
+      transmission: 0.35,
+      depthWrite: false,
+    }),
+  );
+  mesh.renderOrder = 5;
+  return mesh;
 }

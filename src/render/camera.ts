@@ -12,6 +12,7 @@ export class CameraRig {
   private shakeT = 0;
   private shakeAmp = 0;
   private punchT = 0;
+  private bossIntroT = 0;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(42, aspect, 0.1, 200);
@@ -59,9 +60,16 @@ export class CameraRig {
     this.shakeT = Math.max(this.shakeT, dur);
   }
 
-  /** Quick zoom-punch for boss intros / jar moments. */
+  /** Quick zoom-punch for wave starts / jar moments. */
   punch(): void {
     this.punchT = 1;
+  }
+
+  /** Slower, deeper dolly-in-then-settle punch for boss spawns — a beat longer and heavier than
+   *  the plain wave-start punch() so a boss entrance actually reads as an entrance. */
+  bossIntro(): void {
+    this.bossIntroT = 1;
+    this.shake(0.22, 0.35);
   }
 
   update(dt: number): void {
@@ -72,6 +80,16 @@ export class CameraRig {
     if (this.punchT > 0) {
       this.punchT = Math.max(0, this.punchT - dt * 2.2);
       d *= 1 - 0.18 * Math.sin(this.punchT * Math.PI);
+    }
+    if (this.bossIntroT > 0) {
+      // ~1.4s dolly-in-then-settle: quick punch in over the first ~30%, hold close, ease back
+      // out to normal framing over the remaining ~70%. Triangular envelope, 0 at both ends.
+      this.bossIntroT = Math.max(0, this.bossIntroT - dt * 0.72);
+      const k = 1 - this.bossIntroT; // progresses 0 -> 1 across the intro
+      const dipIn = Math.min(1, k / 0.3);
+      const dipOut = k < 0.55 ? 0 : Math.min(1, (k - 0.55) / 0.45);
+      const envelope = dipIn * (1 - dipOut);
+      d *= 1 - 0.3 * envelope;
     }
     const sp = Math.sin(this.pitch);
     const cp = Math.cos(this.pitch);

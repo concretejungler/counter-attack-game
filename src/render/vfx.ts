@@ -26,6 +26,9 @@ export class Vfx {
   private pool: Particle[] = [];
   private halos: { mesh: THREE.Mesh; t: number }[] = [];
   private rings: { mesh: THREE.Mesh; t: number }[] = [];
+  private flashes: { mesh: THREE.Mesh; t: number; maxT: number }[] = [];
+  private glints: { group: THREE.Group; t: number; maxT: number }[] = [];
+  private arcs: { line: THREE.Line; t: number; maxT: number }[] = [];
 
   constructor() {
     const geo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
@@ -111,6 +114,92 @@ export class Vfx {
     this.emit(12, at, { color: [0x9aa84c, 0x76914c, 0xbac86a], speed: 0.9, up: 0.9, life: 1.6, size: 2.2, gravity: -0.6 });
   }
 
+  // ---- per-damage-type hit vocabulary (GAME-PROMPT §22: VFX stylized and readable) ----
+
+  /** cold: brittle ice shards, barely arc, shatter-fast */
+  iceShards(at: THREE.Vector3Like): void {
+    this.emit(7, at, { color: [0xbfe8f7, 0xe8f7ff, 0x9fd8e8], speed: 2.6, up: 1.8, life: 0.35, size: 0.7, gravity: 6 });
+  }
+
+  /** gas: small green puffs (lighter/faster than the big gasCloud used for area denial) */
+  gasPuff(at: THREE.Vector3Like): void {
+    this.emit(6, at, { color: [0x9aa84c, 0x76914c, 0xbac86a], speed: 1.0, up: 1.4, life: 0.6, size: 0.9, gravity: 0.5 });
+  }
+
+  /** swat: a cartoon "star pop" burst — impact stars, mickey-moused */
+  starPop(at: THREE.Vector3Like): void {
+    this.emit(6, at, { color: [0xffe27a, 0xffffff, PAL.butter], speed: 3.4, up: 2.6, life: 0.32, size: 0.9, gravity: 5 });
+  }
+
+  /** sonic: a fast double-ring shockwave */
+  sonicPulse(at: THREE.Vector3Like): void {
+    this.ring(at, 0xcfe3ee);
+    const mesh = new THREE.Mesh(
+      new THREE.TorusGeometry(0.3, 0.05, 6, 22),
+      new THREE.MeshBasicMaterial({ color: 0xcfe3ee, transparent: true, toneMapped: false }),
+    );
+    mesh.position.set(at.x, at.y + 0.12, at.z);
+    mesh.rotation.x = Math.PI / 2;
+    this.root.add(mesh);
+    this.rings.push({ mesh, t: 0.7 });
+  }
+
+  /** light: a tiny lens-glint cross-flare */
+  lensGlint(at: THREE.Vector3Like): void {
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.5, 0.06),
+      new THREE.MeshBasicMaterial({ color: 0xfff8d8, transparent: true, toneMapped: false, depthWrite: false }),
+    );
+    mesh.position.set(at.x, at.y + 0.3, at.z);
+    const mesh2 = mesh.clone();
+    mesh2.rotation.z = Math.PI / 2;
+    const g = new THREE.Group();
+    g.add(mesh, mesh2);
+    this.root.add(g);
+    this.glints.push({ group: g, t: 0.4, maxT: 0.4 });
+  }
+
+  /** a bright, near-instant flash at a tower's muzzle when it fires — sells the "shot" */
+  muzzleFlash(at: THREE.Vector3Like, color = 0xfff2b8): void {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 8, 6),
+      new THREE.MeshBasicMaterial({ color, transparent: true, toneMapped: false }),
+    );
+    mesh.position.set(at.x, at.y, at.z);
+    this.root.add(mesh);
+    this.flashes.push({ mesh, t: 0.14, maxT: 0.14 });
+  }
+
+  /** chain lightning: a jagged line between two points, gone in a blink */
+  chainArc(from: THREE.Vector3Like, to: THREE.Vector3Like): void {
+    const segs = 6;
+    const pts: THREE.Vector3[] = [];
+    const dir = new THREE.Vector3(to.x - from.x, to.y - from.y, to.z - from.z);
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      const p = new THREE.Vector3(from.x + dir.x * t, from.y + dir.y * t + 0.4, from.z + dir.z * t);
+      if (i > 0 && i < segs) {
+        p.x += (Math.random() - 0.5) * 0.3;
+        p.y += (Math.random() - 0.5) * 0.3;
+        p.z += (Math.random() - 0.5) * 0.3;
+      }
+      pts.push(p);
+    }
+    const geom = new THREE.BufferGeometry().setFromPoints(pts);
+    const mat = new THREE.LineBasicMaterial({ color: 0xcfe8ff, transparent: true, toneMapped: false, linewidth: 2 });
+    const line = new THREE.Line(geom, mat);
+    this.root.add(line);
+    this.arcs.push({ line, t: 0.22, maxT: 0.22 });
+    this.sparks(from);
+    this.sparks(to);
+  }
+
+  /** a soap-bubble popping — expanding translucent ring + a couple of droplets */
+  bubblePop(at: THREE.Vector3Like): void {
+    this.ring(at, 0xdfefff);
+    this.emit(5, at, { color: [0xdfefff, 0xffffff, 0xbfe3f7], speed: 1.2, up: 1.6, life: 0.4, size: 0.5, gravity: 3 });
+  }
+
   /** Cartoon soul ascending. Mandatory. */
   private halo(at: THREE.Vector3Like): void {
     const mesh = new THREE.Mesh(
@@ -189,6 +278,43 @@ export class Vfx {
         this.root.remove(ring.mesh);
         ring.mesh.geometry.dispose();
         this.rings.splice(r, 1);
+      }
+    }
+    for (let f = this.flashes.length - 1; f >= 0; f--) {
+      const fl = this.flashes[f];
+      fl.t -= dt;
+      const k = Math.max(0, fl.t / fl.maxT);
+      fl.mesh.scale.setScalar(1.4 - k * 0.6);
+      (fl.mesh.material as THREE.MeshBasicMaterial).opacity = k;
+      if (fl.t <= 0) {
+        this.root.remove(fl.mesh);
+        fl.mesh.geometry.dispose();
+        this.flashes.splice(f, 1);
+      }
+    }
+    for (let g = this.glints.length - 1; g >= 0; g--) {
+      const gl = this.glints[g];
+      gl.t -= dt;
+      const k = Math.max(0, gl.t / gl.maxT);
+      gl.group.scale.setScalar(0.6 + (1 - k) * 1.4);
+      for (const child of gl.group.children) {
+        ((child as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = k;
+      }
+      if (gl.t <= 0) {
+        this.root.remove(gl.group);
+        gl.group.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+        this.glints.splice(g, 1);
+      }
+    }
+    for (let a = this.arcs.length - 1; a >= 0; a--) {
+      const arc = this.arcs[a];
+      arc.t -= dt;
+      const k = Math.max(0, arc.t / arc.maxT);
+      (arc.line.material as THREE.LineBasicMaterial).opacity = k;
+      if (arc.t <= 0) {
+        this.root.remove(arc.line);
+        arc.line.geometry.dispose();
+        this.arcs.splice(a, 1);
       }
     }
   }
