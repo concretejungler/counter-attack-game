@@ -1,7 +1,10 @@
 /** Versioned localStorage save with export/import codes. */
 export interface SaveData {
   version: 1;
-  stars: Record<string, number>;        // levelId -> 0..3
+  /** levelId -> 0..3 stars. Keyed by id (not world/index), so this already spans every
+   *  world's levels — no migration needed as the campaign grows. Progression/unlock state
+   *  (which levels/worlds are open) is derived from this map at read time; see meta/progress.ts. */
+  stars: Record<string, number>;
   settings: {
     musicVol: number;
     sfxVol: number;

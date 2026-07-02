@@ -1,7 +1,10 @@
-import { ALL_LEVELS } from '../content';
-import type { LevelDef, RecapData, SimState } from '../sim/types';
+import type { LevelDef, RecapData, SimState, RoomTheme } from '../sim/types';
 import type { SaveData } from '../meta/save';
 import { LEVEL_ICONS } from './icons';
+import {
+  ROOM_COLOR, ROOM_LABEL, worldsGrouped, isLevelUnlocked, isWorldUnlocked,
+  starsFor, prerequisiteRoomLabel, furthestUnlockedLevel,
+} from '../meta/progress';
 
 const el = (tag: string, cls = '', html = ''): HTMLElement => {
   const e = document.createElement(tag);
@@ -53,34 +56,101 @@ export function buildTitle(onPlay: () => void, onSettings: () => void): HTMLElem
   return screen;
 }
 
-export function buildLevelSelect(save: SaveData, onPick: (id: string) => void, onBack: () => void): HTMLElement {
-  const screen = el('div', 'screen corkboard-screen');
-  const board = el('div', 'corkboard');
-  board.append(el('div', 'cork-title', '🏠 World 1 — The Kitchen'));
-  const row = el('div', 'level-row');
+/** Fallback room icon when a level has no bespoke LEVEL_ICONS entry. */
+const ROOM_ICON: Record<RoomTheme, string> = {
+  kitchen: '🍰', living: '🛋️', bathroom: '🚿', bedroom: '🛏️', garage: '🚗',
+  basement: '🕸️', attic: '📦', backyard: '🌳', sewer: '🚽', secret: '❓',
+};
 
-  const PHOTOS = ['#ffe8c0', '#cfe3ee', '#f8d0c0', '#e0d8f0', '#f0e0a0'];
-  ALL_LEVELS.forEach((lvl: LevelDef, i: number) => {
-    const stars = save.stars[lvl.id] ?? 0;
-    const prevStars = i === 0 ? 1 : (save.stars[ALL_LEVELS[i - 1].id] ?? 0);
-    const locked = prevStars < 1;
-    const card = el('div', `polaroid${locked ? ' locked' : ''}`, `
-      <div class="photo" style="background:${PHOTOS[i % PHOTOS.length]}">${locked ? '🔒' : LEVEL_ICONS[lvl.id] ?? '🏠'}</div>
-      <div class="label">${lvl.index}. ${lvl.name}</div>
-      <div class="stars">${'★'.repeat(stars)}<span class="off">${'★'.repeat(Math.max(0, 3 - stars))}</span></div>
-    `);
-    card.style.setProperty('--tilt', `${((i * 31) % 7) - 3}deg`);
-    card.style.setProperty('--pin', TITLE_COLORS[i % TITLE_COLORS.length]);
-    card.title = locked ? 'Win the previous level first!' : `${lvl.blurb}\n⭐ Beat it  ⭐ ≤2 bites  ⭐ ${lvl.challenge?.text ?? ''}`;
-    if (!locked) card.onclick = () => onPick(lvl.id);
-    row.append(card);
+/** Cross-section grid position for each room, laid out like a kid's dollhouse
+ *  drawing: attic on top, ground-floor rooms in a row, basement/sewer below,
+ *  garage + backyard flanking the house like lean-tos. Grid is 4 cols, and rows
+ *  are auto-sized (`grid-auto-flow: row` + `align-items: start`) so a room's
+ *  height always matches how many sticky-note levels it holds — no fixed row
+ *  tracks to overflow when a world's level count differs. */
+const ROOM_LAYOUT: Record<RoomTheme, { col: string; row: string }> = {
+  attic: { col: '2 / 4', row: '1' },
+  bedroom: { col: '1 / 3', row: '2' },
+  bathroom: { col: '3 / 4', row: '2' },
+  garage: { col: '4 / 5', row: '2 / 4' },
+  living: { col: '1 / 3', row: '3' },
+  kitchen: { col: '3 / 4', row: '3' },
+  basement: { col: '1 / 4', row: '4' },
+  backyard: { col: '4 / 5', row: '4' },
+  sewer: { col: '1 / 4', row: '5' },
+  secret: { col: '4 / 5', row: '5' },
+};
+
+export function buildLevelSelect(save: SaveData, onPick: (id: string) => void, onBack: () => void): HTMLElement {
+  const screen = el('div', 'screen house-screen');
+  const wrap = el('div', 'house-wrap');
+  wrap.append(el('div', 'house-title', '🏠 The Whole House'));
+
+  const scroller = el('div', 'house-scroller');
+  const house = el('div', 'house-map');
+  const worlds = worldsGrouped();
+  const focusId = furthestUnlockedLevel(save).id;
+
+  worlds.forEach((worldLevels, worldIdx) => {
+    const theme = worldLevels[0].theme;
+    const unlocked = isWorldUnlocked(save, worldLevels);
+    const layout = ROOM_LAYOUT[theme] ?? { col: 'auto', row: 'auto' };
+    const room = el('div', `room${unlocked ? '' : ' locked'}`);
+    room.style.gridColumn = layout.col;
+    room.style.gridRow = layout.row;
+    room.style.setProperty('--room-color', ROOM_COLOR[theme]);
+
+    const label = el('div', 'room-label', `<span class="room-num">${worldLevels[0].world}</span>${ROOM_ICON[theme]} ${ROOM_LABEL[theme]}`);
+    room.append(label);
+
+    if (!unlocked) {
+      const prereq = prerequisiteRoomLabel(worldIdx);
+      room.append(el('div', 'room-padlock', '🔒'));
+      room.append(el('div', 'room-scribble', `beat ${prereq ?? 'the last room'} first!!`));
+    } else {
+      const notes = el('div', 'room-notes');
+      worldLevels.slice().sort((a, b) => a.index - b.index).forEach((lvl: LevelDef, i: number) => {
+        const stars = starsFor(save, lvl.id);
+        const levelUnlocked = isLevelUnlocked(save, lvl);
+        const isBoss = i === worldLevels.length - 1 && worldLevels.length > 1;
+        const note = el(
+          'div',
+          `sticky-lvl${levelUnlocked ? '' : ' locked'}${isBoss ? ' boss' : ''}${lvl.id === focusId ? ' focus' : ''}`,
+          `
+          <div class="sticky-ico">${levelUnlocked ? (LEVEL_ICONS[lvl.id] ?? ROOM_ICON[theme]) : '🔒'}</div>
+          <div class="sticky-num">${lvl.index}${isBoss ? ' 👑' : ''}</div>
+          <div class="sticky-name">${lvl.name}</div>
+          <div class="sticky-stars">${'★'.repeat(stars)}<span class="off">${'★'.repeat(Math.max(0, 3 - stars))}</span></div>
+        `,
+        );
+        note.style.setProperty('--tilt', `${((i * 23 + worldIdx * 11) % 7) - 3}deg`);
+        note.title = levelUnlocked
+          ? `${lvl.blurb}\n⭐ Beat it  ⭐ ≤2 bites  ⭐ ${lvl.challenge?.text ?? ''}`
+          : 'Win the previous level first!';
+        if (levelUnlocked) note.onclick = () => onPick(lvl.id);
+        notes.append(note);
+      });
+      room.append(notes);
+    }
+
+    house.append(room);
   });
-  board.append(row);
+
+  scroller.append(house);
+  wrap.append(scroller);
 
   const back = el('button', 'wood-btn small', '← Fridge');
-  back.style.marginTop = '18px';
+  back.style.marginTop = '14px';
   back.onclick = onBack;
-  screen.append(board, back);
+  wrap.append(back);
+  screen.append(wrap);
+
+  // default focus/scroll to the furthest-unlocked level
+  requestAnimationFrame(() => {
+    const focusEl = house.querySelector('.sticky-lvl.focus');
+    focusEl?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
+  });
+
   return screen;
 }
 

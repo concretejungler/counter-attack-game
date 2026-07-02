@@ -230,6 +230,117 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
 .polaroid .stars { text-align: center; font-size: 15px; letter-spacing: 2px; color: #d8a020; height: 20px; }
 .polaroid .stars .off { color: #c8bca8; }
 
+/* ---------- level select: the house map (crayon dollhouse cutaway) ---------- */
+.house-screen {
+  background: radial-gradient(ellipse at 50% 15%, #4a3826 0%, #241a10 75%);
+  align-items: flex-start;
+  padding-top: 18px;
+}
+.house-wrap {
+  display: flex; flex-direction: column; align-items: center;
+  width: 100%;
+  max-width: 1180px;
+  padding: 0 12px;
+}
+.house-title {
+  font-size: 30px; color: #fff4e0;
+  text-shadow: 2px 3px 0 rgba(0,0,0,0.35);
+  text-align: center;
+  margin-bottom: 12px;
+  transform: rotate(-1deg);
+}
+.house-scroller {
+  width: 100%;
+  max-width: 1080px;
+  max-height: 78vh;
+  overflow: auto;
+  border: 5px solid var(--ink);
+  border-radius: 4px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.55);
+}
+.house-map {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  grid-auto-rows: minmax(150px, auto);
+  align-items: start;
+  gap: 10px;
+  width: 100%;
+  padding: 14px;
+  background: var(--paper);
+  background-image:
+    repeating-linear-gradient(0deg, rgba(46,38,32,0.04) 0 1px, transparent 1px 26px),
+    repeating-linear-gradient(90deg, rgba(46,38,32,0.04) 0 1px, transparent 1px 26px);
+}
+.room {
+  border: 3px dashed var(--ink);
+  border-radius: 10px;
+  background: var(--room-color, var(--paper));
+  padding: 8px 10px 10px;
+  position: relative;
+  display: flex; flex-direction: column;
+  min-height: 150px;
+}
+.room.locked {
+  filter: grayscale(0.85) brightness(0.72);
+}
+.room-label {
+  font-size: 15px; font-weight: bold;
+  text-align: center;
+  margin-bottom: 6px;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.4);
+}
+.room-num {
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  margin-right: 4px;
+  background: var(--ink);
+  color: var(--cream);
+  border-radius: 50%;
+  font-size: 10.5px;
+  vertical-align: middle;
+}
+.room-padlock {
+  font-size: 34px;
+  text-align: center;
+  margin: 10px 0 4px;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4));
+}
+.room-scribble {
+  text-align: center;
+  font-size: 12.5px;
+  color: #6e2424;
+  transform: rotate(-2deg);
+  padding: 0 6px;
+}
+.room-notes {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  justify-content: center;
+  align-content: flex-start;
+}
+.sticky-lvl {
+  width: 78px;
+  background: linear-gradient(180deg, #fff8a8, #f7e87a);
+  padding: 6px 5px 5px;
+  font-size: 11px;
+  text-align: center;
+  box-shadow: 2px 4px 8px rgba(0,0,0,0.3);
+  transform: rotate(var(--tilt, -1.5deg));
+  transition: transform 0.12s, box-shadow 0.12s;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.sticky-lvl:hover { transform: rotate(0deg) scale(1.08); z-index: 3; box-shadow: 3px 6px 12px rgba(0,0,0,0.4); }
+.sticky-lvl.locked { filter: grayscale(0.9) brightness(0.7); cursor: not-allowed; background: linear-gradient(180deg, #d8d0b0, #c8bc90); }
+.sticky-lvl.boss { background: linear-gradient(180deg, #ffc8a8, #f7a87a); }
+.sticky-lvl.boss.locked { background: linear-gradient(180deg, #d8c0b0, #c8a890); }
+.sticky-lvl.focus { outline: 3px solid var(--cherry); box-shadow: 0 0 0 4px rgba(232,80,79,0.35), 3px 6px 12px rgba(0,0,0,0.4); }
+.sticky-ico { font-size: 24px; line-height: 1; }
+.sticky-num { font-size: 10px; font-weight: bold; color: #6e5a14; }
+.sticky-name { font-weight: bold; line-height: 1.1; margin: 2px 0; min-height: 22px; }
+.sticky-stars { letter-spacing: 1px; color: #d8a020; font-size: 12px; }
+.sticky-stars .off { color: #9a8c60; }
+
 /* ---------- HUD ---------- */
 .hud-top {
   position: absolute; top: 12px; left: 14px; right: 14px;
@@ -801,6 +912,29 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   .polaroid .photo { height: 74px; font-size: 34px; }
 
   .toast-msg { bottom: 108px; font-size: 13px; max-width: 80vw; white-space: normal; text-align: center; }
+
+  /* house map: scale the whole dollhouse down and let it scroll — landscape
+     phones are short, so the grid needs real rows to breathe. */
+  .house-screen { padding-top: 6px; align-items: stretch; }
+  .house-wrap { padding: 0 6px; max-width: 100%; }
+  .house-title { font-size: clamp(16px, 5vw, 20px); margin-bottom: 6px; }
+  .house-scroller { max-height: 72vh; border-width: 3px; }
+  .house-map {
+    grid-template-columns: repeat(4, minmax(112px, 1fr));
+    grid-auto-rows: minmax(112px, auto);
+    gap: 6px;
+    padding: 8px;
+  }
+  .room { padding: 5px 6px 6px; min-height: 112px; border-width: 2px; }
+  .room-label { font-size: 11.5px; margin-bottom: 3px; }
+  .room-padlock { font-size: 24px; margin: 4px 0 2px; }
+  .room-scribble { font-size: 10px; }
+  .room-notes { gap: 4px; }
+  .sticky-lvl { width: 56px; padding: 4px 3px 3px; font-size: 9px; }
+  .sticky-ico { font-size: 17px; }
+  .sticky-num { font-size: 8px; }
+  .sticky-name { min-height: 16px; margin: 1px 0; }
+  .sticky-stars { font-size: 9px; }
 }
 
 /* short landscape phones (e.g. 844x390) — menus/modals need to fit without
@@ -819,6 +953,8 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   .polaroid { width: 96px; padding: 6px 6px 4px; }
   .polaroid .photo { height: 56px; font-size: 26px; }
   .polaroid .label { font-size: 11px; }
+
+  .house-scroller { max-height: 80vh; }
 
   .paper-modal { padding: 12px 16px; max-height: 92vh; }
   .paper-modal h2 { font-size: clamp(16px, 4.5vw, 20px); margin-bottom: 2px; }
