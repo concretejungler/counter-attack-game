@@ -6,6 +6,7 @@ import { Post } from './post';
 import { buildRoom } from './room';
 import { CritterInstances, type CritterRenderState } from './models/critterModels';
 import { buildCrumbKing, buildTowerView, type TowerView } from './models/towerModels';
+import { buildBossView } from './models/critterModels';
 import { CakeView, buildClutterCell, buildSliceProp, projectileTemplate, PROJECTILE_LOOKS } from './models/props';
 import { Vfx } from './vfx';
 import { HandView, type HandPose } from './handView';
@@ -212,7 +213,7 @@ export class GameRenderer {
           shiny: cr.shiny,
           scale: 0.01, // pop in
           sliceProp: null,
-          bossView: def?.boss ? buildCrumbKing() : null,
+          bossView: def?.boss ? buildBossView(cr.def) ?? buildCrumbKing() : null,
         };
         if (v.bossView) this.scene.add(v.bossView.group);
         this.critterViews.set(id, v);
