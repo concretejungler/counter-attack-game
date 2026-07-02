@@ -54,10 +54,15 @@ describe('Level content lint: no shell levels', () => {
         expect(l.startCrumbs, `${l.id} startCrumbs too rich`).toBeLessThanOrEqual(230 + 30 * world + (boss ? 60 : 0));
         expect(l.startCrumbs, `${l.id} startCrumbs too poor`).toBeGreaterThanOrEqual(150);
         expect(l.waves.length, `${l.id} wave count`).toBeGreaterThanOrEqual(boss ? 10 : 5);
-        for (let i = 0; i < l.waves.length; i++) {
-          const waveCount = l.waves[i].entries.reduce((a, e) => a + e.count, 0);
-          expect(waveCount, `${l.id} wave ${i} is empty`).toBeGreaterThanOrEqual(1);
+        const waveCounts = l.waves.map((w) => w.entries.reduce((a, e) => a + e.count, 0));
+        for (let i = 0; i < waveCounts.length; i++) {
+          expect(waveCounts[i], `${l.id} wave ${i} is empty`).toBeGreaterThanOrEqual(1);
         }
+        // waves are SWARMS, not drips: healthy mean size, and single-critter waves are rare accents
+        const mean = waveCounts.reduce((a, b) => a + b, 0) / waveCounts.length;
+        expect(mean, `${l.id} mean wave size (drip-feed shell?)`).toBeGreaterThanOrEqual(4.5);
+        const drips = waveCounts.filter((c) => c < 3).length;
+        expect(drips, `${l.id} has too many near-empty waves`).toBeLessThanOrEqual(2);
         if (world >= 2) {
           expect(l.spawns.length, `${l.id} spawn fronts`).toBeGreaterThanOrEqual(2);
         }
