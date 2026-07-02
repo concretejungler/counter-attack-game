@@ -75,6 +75,38 @@ export class GameRenderer {
   private oneShots: { obj: THREE.Object3D; t: number; anim: (obj: THREE.Object3D, t: number) => void }[] = [];
   private time = 0;
   private burnerRings: THREE.Object3D[] = [];
+  // ACCESSIBILITY SUITE (GAME-PROMPT §23): 0..1 multipliers set from game.ts via
+  // applyAccessibilitySettings(), read by every camera-shake trigger below and by the
+  // full-screen flash pulse hook (onFlashPulse). Default to full intensity so renderer
+  // behavior is unchanged until settings actually load.
+  private shakeMult = 1;
+  private flashMult = 1;
+  /** Fired for "full-screen flash" moments (cake bites, big impacts) — game.ts/ui.ts own the
+   *  actual DOM flash overlay (outside this file's scope); this just hands them a pre-scaled
+   *  0..1 strength so the renderer stays the single source of truth for "how big was this hit." */
+  onFlashPulse: ((strength: number) => void) | null = null;
+
+  /** Called from game.ts constructor + whenever settings change. */
+  setAccessibilitySettings(shakeIntensity: number, flashIntensity: number): void {
+    this.shakeMult = shakeIntensity;
+    this.flashMult = flashIntensity;
+  }
+
+  /** Scaled wrapper around CameraRig.shake() — every camera-shake trigger in this file goes
+   *  through here so settings.shakeIntensity (§23 slider) applies uniformly. A near-zero
+   *  amplitude is skipped outright rather than calling into the rig with a no-op shake. */
+  private shake(amp: number, dur: number): void {
+    const scaled = amp * this.shakeMult;
+    if (scaled <= 0.001) return;
+    this.rig.shake(scaled, dur);
+  }
+
+  /** Scaled full-screen flash pulse — settings.flashIntensity (§23 slider) applies here. */
+  private flashPulse(strength: number): void {
+    const scaled = strength * this.flashMult;
+    if (scaled <= 0.001) return;
+    this.onFlashPulse?.(scaled);
+  }
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -427,7 +459,8 @@ export class GameRenderer {
       }
       case 'cakeBite': {
         this.vfx.crumbs(ev.at, 8);
-        this.rig.shake(0.12, 0.25);
+        this.shake(0.12, 0.25);
+        this.flashPulse(0.35);
         break;
       }
       case 'sliceStolen': {
@@ -436,7 +469,8 @@ export class GameRenderer {
           v.sliceProp = buildSliceProp();
           this.scene.add(v.sliceProp);
         }
-        this.rig.shake(0.18, 0.3);
+        this.shake(0.18, 0.3);
+        this.flashPulse(0.5);
         break;
       }
       case 'sliceRecovered':
@@ -444,7 +478,10 @@ export class GameRenderer {
         break;
       case 'spawn': {
         if (ev.shiny) this.vfx.sparks(ev.at);
-        if (this.content?.critters[ev.def]?.boss) this.rig.bossIntro();
+        if (this.content?.critters[ev.def]?.boss) {
+          this.rig.bossIntro();
+          this.flashPulse(0.4);
+        }
         break;
       }
       case 'evolve':
@@ -456,7 +493,7 @@ export class GameRenderer {
       case 'squash': {
         this.hand.press();
         this.vfx.splat(ev.at);
-        this.rig.shake(0.15, 0.2);
+        this.shake(0.15, 0.2);
         break;
       }
       case 'flick': {
@@ -485,7 +522,7 @@ export class GameRenderer {
       }
       case 'towerGone':
         this.vfx.ceramicBurst(ev.at);
-        this.rig.shake(0.25, 0.3);
+        this.shake(0.25, 0.3);
         break;
       case 'towerDropped':
         this.vfx.poof(ev.at);
@@ -494,19 +531,19 @@ export class GameRenderer {
         this.petView?.view.punch();
         const v = this.towerViews.get(ev.towerId);
         if (v) this.vfx.poof(v.basePos);
-        this.rig.shake(0.1, 0.2);
+        this.shake(0.1, 0.2);
         break;
       }
       case 'petBark': {
         this.petView?.view.punch();
         if (this.petView) this.vfx.sonicPulse(this.petView.basePos);
-        this.rig.shake(0.08, 0.15);
+        this.shake(0.08, 0.15);
         break;
       }
       case 'petPounce': {
         this.petView?.view.punch();
         if (this.petView) this.vfx.confetti(this.petView.basePos);
-        this.rig.shake(0.3, 0.35);
+        this.shake(0.3, 0.35);
         break;
       }
       case 'petMove': {
@@ -541,7 +578,8 @@ export class GameRenderer {
         this.rig.punch();
         break;
       case 'lost':
-        this.rig.shake(0.5, 0.8);
+        this.shake(0.5, 0.8);
+        this.flashPulse(0.7);
         break;
       case 'won':
         if (this.cake) this.vfx.confetti(this.cake.group.position);
@@ -573,7 +611,7 @@ export class GameRenderer {
           obj.rotation.x = (1 - t) * 12;
         },
       });
-      this.rig.shake(0.3, 0.5);
+      this.shake(0.3, 0.5);
     } else if (spell.includes('moooom') || spell.includes('mom')) {
       // MOM'S HAND DESCENDS
       const hand = new THREE.Group();
@@ -595,7 +633,7 @@ export class GameRenderer {
         anim: (obj, t) => {
           const k = 1 - t;
           obj.position.y = k < 0.4 ? 14 - (k / 0.4) * 13.2 : k < 0.6 ? 0.8 : 0.8 + ((k - 0.6) / 0.4) * 13.2;
-          if (k > 0.38 && k < 0.45) this.rig.shake(0.6, 0.2);
+          if (k > 0.38 && k < 0.45) { this.shake(0.6, 0.2); this.flashPulse(0.6); }
         },
       });
     } else {

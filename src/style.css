@@ -16,6 +16,11 @@
   --shadow: rgba(46, 38, 32, 0.4);
   --font-hand: "Segoe Print", "Comic Sans MS", "Chalkboard SE", cursive;
   --font-label: "Verdana", "Segoe UI", sans-serif;
+  /* ACCESSIBILITY SUITE (§23): UI scale slider, 0.85..1.3, default 1. Set from game.ts
+     applyAccessibilitySettings(). Consumed via `zoom` on #ui below — zoom (not transform:scale)
+     so layout AND hit-testing scale together; every absolutely-positioned HUD/menu rule in this
+     file keeps working unmodified because zoom rescales the whole box model, not just paint. */
+  --ui-scale: 1;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -46,7 +51,7 @@ html, body {
   touch-action: none;
   -webkit-user-select: none;
 }
-#ui { position: absolute; inset: 0; pointer-events: none; overflow: hidden; touch-action: none; }
+#ui { position: absolute; inset: 0; pointer-events: none; overflow: hidden; touch-action: none; zoom: var(--ui-scale); }
 #ui > * { pointer-events: auto; }
 #ui button, #ui .card, #ui .polaroid, #ui .fridge-note, #ui .spell-btn, #ui .speed-btn, #ui .choice-btn {
   touch-action: manipulation;
@@ -610,6 +615,18 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
 @keyframes nose-pulse {
   50% { box-shadow: 0 0 18px 4px rgba(232, 80, 79, 0.8); }
 }
+/* ACCESSIBILITY SUITE (§23) colorblind mode: the nose meter's red(danger)->green(safe) fill
+   gradient is the classic red/green-confusable case in this UI. Layer a diagonal hazard-stripe
+   pattern on top once the danger threshold hits, on top of the existing numeric % + pulse cues,
+   so "high scent" reads by shape/motion, not hue alone. */
+body.colorblind .nose-meter.danger .fill {
+  background-image: repeating-linear-gradient(135deg, rgba(255,255,255,0.55) 0 5px, transparent 5px 10px);
+}
+
+/* colorblind mode: on/off toggles gain a check/x glyph in the knob, not just a mint/gray fill +
+   knob position (already a shape cue, but the glyph makes "on" vs "off" unambiguous at a glance). */
+body.colorblind .toggle::after { content: '✕'; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #a83c3c; font-weight: bold; }
+body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
 
 /* mana mason jar */
 .mana-jar {
@@ -905,9 +922,18 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
 .recap-stars .off { color: #d8d0c0; }
 
 /* settings thermostat */
+.thermo-modal { max-width: min(560px, 90vw); }
+.thermo-section { margin-top: 18px; }
+.thermo-section:first-of-type { margin-top: 8px; }
+.thermo-section h3 {
+  font-size: 15px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--toast); border-bottom: 2px dashed var(--cork); padding-bottom: 4px; margin-bottom: 2px;
+}
 .thermo-row { display: flex; align-items: center; gap: 13px; margin: 13px 0; font-size: 17px; }
-.thermo-row label { min-width: 150px; }
-.thermo-row input[type=range] { flex: 1; accent-color: var(--cherry); }
+.thermo-row label { min-width: 150px; display: flex; flex-direction: column; line-height: 1.25; }
+.thermo-row input[type=range] { flex: 1; accent-color: var(--cherry); min-width: 0; }
+.thermo-val { min-width: 34px; text-align: right; font-size: 13px; font-family: var(--font-label); color: #7a6a55; }
+.thermo-hint { font-size: 10.5px; font-weight: normal; color: #9a8a70; white-space: normal; }
 .toggle {
   width: 56px; height: 30px;
   background: #c8bca8;
@@ -966,6 +992,23 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   z-index: 4;
 }
 @keyframes alarm-pulse { 50% { opacity: 0.35; } }
+
+/* ---------- ACCESSIBILITY SUITE (§23): full-screen flash/vignette pulse ----------
+   One-shot impact flash for big moments (cake bites, boss intros, MOOOOM! slam, losing).
+   renderer.ts computes a 0..1 strength already pre-scaled by settings.flashIntensity and
+   hands it to game.ts, which sets --flash-k and retriggers the animation (see ui.ts pulseFlash). */
+.flash-pulse {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0;
+  background: radial-gradient(circle, rgba(255,255,255,0) 55%, rgba(232,80,79,var(--flash-k, 0)) 100%);
+}
+.flash-pulse.pulsing { animation: flash-pulse-anim 0.4s ease-out; }
+@keyframes flash-pulse-anim {
+  0% { opacity: var(--flash-k, 0); }
+  100% { opacity: 0; }
+}
 
 /* ---------- Oh-Crap choice panel (§12): torn-notebook "EMERGENCY!!" note. The sim keeps
    ticking behind this — it does NOT pause, so the drain-bar is a real countdown, not decor. ---------- */
@@ -1748,6 +1791,16 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   .paper-modal { padding: 12px 16px; max-height: 92vh; }
   .paper-modal h2 { font-size: clamp(16px, 4.5vw, 20px); margin-bottom: 2px; }
   .paper-modal .sub { font-size: 11px; margin-bottom: 8px; }
+
+  /* thermostat: stack label above the control so sliders/toggles keep a real touch target
+     width instead of being squeezed by a fixed-width label column. */
+  .thermo-row { flex-wrap: wrap; margin: 9px 0; font-size: 14px; gap: 4px 10px; }
+  .thermo-row label { min-width: 0; flex: 1 1 100%; }
+  .thermo-row input[type=range] { flex: 1 1 auto; min-height: 28px; }
+  .thermo-row .toggle { margin-left: auto; }
+  .thermo-section { margin-top: 12px; }
+  .thermo-section h3 { font-size: 12.5px; }
+  .thermo-hint { font-size: 9.5px; }
   .recap-graph { margin: 6px 0; }
   .recap-stars { font-size: 24px; margin: 4px 0; }
   .mutation-card { width: 130px; padding: 10px 9px; }

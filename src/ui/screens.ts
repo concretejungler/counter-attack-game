@@ -541,19 +541,42 @@ export function buildRecap(
   return wrap;
 }
 
+/** The thermostat (§23 UI/UX + §20.15 accessibility suite). Three diegetic sections: SOUND
+ *  (the volume dials), FEEL (screen shake/flash/UI scale — "how intense does this house feel"),
+ *  ACCESSIBILITY (colorblind patterns, arachnophobia, difficulty). Mobile-friendly: reuses the
+ *  existing .paper-modal scroll/shrink rules, all rows share the same .thermo-row flex layout
+ *  that already collapses gracefully at small widths. */
 export function buildSettings(
   save: SaveData,
   onChange: (s: SaveData['settings']) => void,
   onClose: () => void,
 ): HTMLElement {
   const wrap = el('div', 'modal-wrap');
-  const modal = el('div', 'paper-modal');
+  const modal = el('div', 'paper-modal thermo-modal');
+
+  const rangeRow = (icon: string, label: string, key: string, min: number, max: number, step: number, value: number): string => `
+    <div class="thermo-row"><label>${icon} ${label}</label><input type="range" min="${min}" max="${max}" step="${step}" data-k="${key}" value="${value}"><span class="thermo-val" data-val="${key}">${value.toFixed(2)}</span></div>
+  `;
+  const toggleRow = (icon: string, label: string, key: string, on: boolean, hint = ''): string => `
+    <div class="thermo-row"><label>${icon} ${label}${hint ? `<small class="thermo-hint">${hint}</small>` : ''}</label><button class="toggle ${on ? 'on' : ''}" data-k="${key}"></button></div>
+  `;
+
   modal.innerHTML = `
     <h2>🌡️ The Thermostat</h2>
     <div class="sub">house settings — adjust to taste</div>
-    <div class="thermo-row"><label>🎵 Music</label><input type="range" min="0" max="1" step="0.05" data-k="musicVol" value="${save.settings.musicVol}"></div>
-    <div class="thermo-row"><label>🔊 Sounds</label><input type="range" min="0" max="1" step="0.05" data-k="sfxVol" value="${save.settings.sfxVol}"></div>
-    <div class="thermo-row"><label>📳 Screen shake</label><button class="toggle ${save.settings.shake ? 'on' : ''}" data-k="shake"></button></div>
+
+    <div class="thermo-section"><h3>🔊 Sound</h3></div>
+    ${rangeRow('🎵', 'Music', 'musicVol', 0, 1, 0.05, save.settings.musicVol)}
+    ${rangeRow('🔊', 'Sounds', 'sfxVol', 0, 1, 0.05, save.settings.sfxVol)}
+
+    <div class="thermo-section"><h3>💥 Feel</h3></div>
+    ${rangeRow('📳', 'Screen shake', 'shakeIntensity', 0, 1, 0.05, save.settings.shakeIntensity)}
+    ${rangeRow('⚡', 'Flash intensity', 'flashIntensity', 0, 1, 0.05, save.settings.flashIntensity)}
+    ${rangeRow('🔍', 'UI scale', 'uiScale', 0.85, 1.3, 0.05, save.settings.uiScale)}
+
+    <div class="thermo-section"><h3>♿ Accessibility</h3></div>
+    ${toggleRow('🎨', 'Colorblind-safe patterns', 'colorblind', save.settings.colorblind)}
+    ${toggleRow('🕷️', 'Arachnophobia mode', 'arachnophobia', save.settings.arachnophobia, 'spiders become googly-eyed roombas — takes effect next level')}
     <div class="thermo-row"><label>💀 Difficulty</label>
       <select data-k="difficulty" style="font-family:inherit;font-size:16px;padding:4px 8px">
         ${(['houseguest', 'homeowner', 'landlord', 'condemned'] as const)
@@ -561,23 +584,31 @@ export function buildSettings(
           .join('')}
       </select>
     </div>
+
     <div style="text-align:center;margin-top:16px"><button class="wood-btn" data-act="close">Done</button></div>
   `;
   wrap.append(modal);
 
   modal.querySelectorAll('input[type=range]').forEach((input) => {
     (input as HTMLInputElement).oninput = () => {
-      const k = (input as HTMLElement).dataset.k as 'musicVol' | 'sfxVol';
-      save.settings[k] = parseFloat((input as HTMLInputElement).value);
+      const k = (input as HTMLElement).dataset.k as 'musicVol' | 'sfxVol' | 'shakeIntensity' | 'flashIntensity' | 'uiScale';
+      const v = parseFloat((input as HTMLInputElement).value);
+      save.settings[k] = v;
+      const valEl = modal.querySelector(`[data-val="${k}"]`) as HTMLElement | null;
+      if (valEl) valEl.textContent = v.toFixed(2);
+      // legacy bool kept in sync so any code still reading settings.shake sees a sane value
+      if (k === 'shakeIntensity') save.settings.shake = v > 0;
       onChange(save.settings);
     };
   });
-  const shakeToggle = modal.querySelector('[data-k=shake]') as HTMLElement;
-  shakeToggle.onclick = () => {
-    save.settings.shake = !save.settings.shake;
-    shakeToggle.classList.toggle('on', save.settings.shake);
-    onChange(save.settings);
-  };
+  (['colorblind', 'arachnophobia'] as const).forEach((key) => {
+    const toggle = modal.querySelector(`[data-k=${key}]`) as HTMLElement;
+    toggle.onclick = () => {
+      save.settings[key] = !save.settings[key];
+      toggle.classList.toggle('on', save.settings[key]);
+      onChange(save.settings);
+    };
+  });
   (modal.querySelector('[data-k=difficulty]') as HTMLSelectElement).onchange = (e) => {
     save.settings.difficulty = (e.target as HTMLSelectElement).value as SaveData['settings']['difficulty'];
     onChange(save.settings);

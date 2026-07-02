@@ -19,6 +19,7 @@ import {
   type RunState, type NodeDef,
 } from './meta/infestation';
 import { RNG } from './core/rng';
+import { setArachnophobiaMode } from './render/models/critterModels';
 
 type Mode =
   | { kind: 'idle' }
@@ -130,6 +131,7 @@ export class Game {
       },
       onSettingsChanged: (s) => {
         this.audio.setVolumes(s.musicVol, s.sfxVol);
+        this.applyAccessibilitySettings();
         persistSave(this.save);
       },
       onResume: () => {
@@ -246,6 +248,10 @@ export class Game {
         this.showTitle();
       },
     });
+
+    this.renderer.onFlashPulse = (strength) => this.ui.pulseFlash(strength);
+    this.applyAccessibilitySettings();
+    setArachnophobiaMode(this.save.settings.arachnophobia); // initial boot value; later toggles apply at next finishLevelBoot()
 
     this.bindInput();
     this.music.start();
@@ -442,6 +448,9 @@ export class Game {
   private finishLevelBoot(levelId: string): void {
     if (!this.sim || !this.level) return;
     this.music.setTheme(this.level.theme);
+    // Arachnophobia mode (§20.15) takes effect at level load, not live — see
+    // applyAccessibilitySettings()'s doc comment for why.
+    setArachnophobiaMode(this.save.settings.arachnophobia);
     this.renderer.loadLevel(this.level, CONTENT);
     this.ui.showHud(this.level);
     this.ui.hud?.refreshClutter(this.sim.state.clutterHand);
@@ -734,6 +743,29 @@ export class Game {
     root.classList.remove('skin-blue', 'skin-mint');
     if (this.save.junkDrawer.includes('corkboard-skin-blue')) root.classList.add('skin-blue');
     else if (this.save.junkDrawer.includes('corkboard-skin-mint')) root.classList.add('skin-mint');
+  }
+
+  /** ACCESSIBILITY SUITE (GAME-PROMPT §23 + §20.15) — applies every accessibility setting to
+   *  the live view layer EXCEPT arachnophobia. Called once at boot and again from
+   *  onSettingsChanged whenever the thermostat panel changes anything (shake/flash/uiScale/
+   *  colorblind all apply immediately, mid-level is fine — nothing about them depends on when
+   *  a critter view was built). Arachnophobia is handled separately: setArachnophobiaMode() is
+   *  only called from the constructor (initial boot value) and finishLevelBoot() (§20.15's own
+   *  "next level load" contract), because boss Group views are built once per critter instance
+   *  (critterModels.ts) — flipping the module flag mid-level could swap Grandma Longlegs' model
+   *  out from under an in-progress boss fight. */
+  private applyAccessibilitySettings(): void {
+    const s = this.save.settings;
+    this.renderer.setAccessibilitySettings(s.shakeIntensity, s.flashIntensity);
+    const root = document.documentElement;
+    root.style.setProperty('--ui-scale', `${s.uiScale}`);
+    document.body.classList.toggle('colorblind', s.colorblind);
+  }
+
+  /** Screenshot/QA hook only (see exposeDebug's `setSettings`) — lets tools/shot*.mjs stage
+   *  accessibility settings (e.g. uiScale extremes) without going through the settings UI. */
+  applyAccessibilitySettingsForDebug(): void {
+    this.applyAccessibilitySettings();
   }
 
   // ---------- main loop ----------
@@ -1513,6 +1545,10 @@ export class Game {
       case 'levels':
         this.showLevels();
         return;
+      case 'settings':
+        this.showTitle();
+        this.ui.showSettings();
+        return;
       case 'journal': {
         // seed some fake Critterdex progress so the screenshot shows a mix of filled-in
         // pages, silhouette "???" cards, and a boss spread — not an all-empty journal.
@@ -1569,6 +1605,21 @@ export class Game {
         sim.debugSpawn('crumb-king', { s: 0, c: 3, r: 8 });
         for (let i = 0; i < 8; i++) sim.debugSpawn('ant-worker', { s: 0, c: 2 + (i % 4), r: 9 });
         this.fastForward(Math.round(2.5 / SIM_DT));
+        return;
+      }
+      // §20.15 accessibility QA: spawns Grandma Longlegs so the arachnophobia swap (googly
+      // roomba) can be visually verified. Reads settings.arachnophobia as normal (toggle it via
+      // __game.setSettings before calling this demo — startLevel's finishLevelBoot() picks up
+      // the current value, matching the real "takes effect next level load" contract).
+      case 'arachnophobia': {
+        this.startLevel('kitchen-5', 1337);
+        const sim = this.sim!;
+        sim.debugSpawn('grandma-longlegs', { s: 0, c: 7, r: 9 });
+        this.fastForward(2);
+        // camera placed roughly where the critter is walking TOWARD (the cake, north of spawn)
+        // so its face — which turns to track its facing/walk direction — points at the lens.
+        this.renderer.rig.pose(1.0, 0.85, 4.3);
+        this.renderer.rig.target.set(7.5, 0.4, 9.1);
         return;
       }
       case 'mutation': {
@@ -1735,6 +1786,11 @@ export function exposeDebug(game: Game): void {
     drawCalls: () => game.renderer.drawCallCount(),
     get screenshotReady() {
       return game.screenshotReady;
+    },
+    // ---- accessibility QA hook (screenshot tooling only) ----
+    setSettings: (patch: Partial<SaveData['settings']>) => {
+      Object.assign(game.save.settings, patch);
+      game.applyAccessibilitySettingsForDebug();
     },
   };
 }

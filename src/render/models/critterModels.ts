@@ -744,6 +744,75 @@ function buildGrandmaLonglegs(): BossView {
   };
 }
 
+/**
+ * ARACHNOPHOBIA MODE (GAME-PROMPT §20.15 + §23 — "ship it with love"). Grandma Longlegs'
+ * spider-boss model swaps for a big googly-eyed roomba: same footprint/silhouette scale as
+ * buildGrandmaLonglegs (so the boss arena framing/camera bossIntro() dolly still reads right),
+ * zero spider anatomy — a friendly disc chassis, a bump-sensor bumper ring, a happy dome, and
+ * a pair of enormous googly eyes that wobble as it scoots. Charming, not scary, on purpose.
+ */
+function buildGooglyRoomba(): BossView {
+  const group = new THREE.Group();
+  const disc = cyl(0.5, 0.54, 0.22, 0xe8e8ee, 20);
+  disc.position.y = 0.5;
+  const bumper = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.05, 8, 24), toonMat(0x3a3a42));
+  bumper.rotation.x = Math.PI / 2;
+  bumper.position.y = 0.5;
+  const topPlate = cyl(0.46, 0.46, 0.04, 0xd0d0d8, 20);
+  topPlate.position.y = 0.62;
+  // face panel mounted flush on the front rim (not a small dome up top) — big, unmissable,
+  // impossible to lose from any camera angle. A rounded plate the eyes and cheeks sit on.
+  const facePanel = new THREE.Mesh(new THREE.CircleGeometry(0.24, 16), toonMat(0xfff2d8));
+  facePanel.position.set(0, 0.5, 0.51);
+  facePanel.rotation.x = -0.15; // tilt to face slightly upward/outward, not straight down
+  // one enormous shared googly-eye pair — the whole point of the swap, sized to dominate the
+  // face panel so it reads instantly even at gameplay zoom or an off-angle camera.
+  const face = eyes(0.26, 0.115, 0.5);
+  face.position.set(0, 0.56, 0.54);
+  // small yellow dome up top for silhouette (roomba-shaped, not spider-shaped) — no longer
+  // carries the eyes, so it can stay modest.
+  const dome = sphere(0.16, 0xffd97a, 12);
+  dome.scale.y = 0.55;
+  dome.position.y = 0.7;
+  // little brush-guard "feet" nubs so it still reads as scooting, not floating
+  const nubs: THREE.Mesh[] = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const nub = sphere(0.05, 0x9a9aa4, 6);
+    nub.position.set(Math.sin(a) * 0.5, 0.4, Math.cos(a) * 0.5);
+    nubs.push(nub);
+    group.add(nub);
+  }
+  // twin LED "cheeks" flanking the eyes, on the same face panel — a blush of personality
+  const cheekMat = toonMat(0xff9ab0, { emissive: 0xff6a90 });
+  const cheekL = new THREE.Mesh(new THREE.CircleGeometry(0.05, 10), cheekMat);
+  cheekL.position.set(-0.18, 0.46, 0.53);
+  const cheekR = cheekL.clone();
+  cheekR.position.x = 0.18;
+  // wobble/bump sub-group carries the local jitter animation — the renderer overwrites the
+  // OUTER group's position every frame with the boss's real world position (see renderer.ts
+  // syncTick: `v.bossView.group.position.copy(v.pos)` runs immediately before animate()), so
+  // this inner group is the only safe place to apply a relative scoot wobble without fighting
+  // that assignment (a bug caught by screenshot review: an earlier version wrote directly to
+  // group.position and made the boss render near the origin instead of at its sim position).
+  const wobble = new THREE.Group();
+  wobble.add(disc, bumper, topPlate, dome, facePanel, face, cheekL, cheekR);
+  group.add(wobble);
+  return {
+    group,
+    animate: (dt, time) => {
+      void dt;
+      // scoot-and-spin like a real roomba working a room, plus a happy bob — all relative to
+      // the group's real world position, which the renderer sets before calling animate().
+      group.rotation.y = time * 0.7 + Math.sin(time * 2.2) * 0.35;
+      wobble.position.x = Math.sin(time * 1.1) * 0.15;
+      wobble.position.z = Math.cos(time * 0.8) * 0.12;
+      wobble.position.y = Math.sin(time * 2.8) * 0.03;
+      face.rotation.z = Math.sin(time * 3.5) * 0.06;
+    },
+  };
+}
+
 function buildPossumPhantom(): BossView {
   const group = new THREE.Group();
   // pale blue-white ghost tint reads against the warm kitchen palette much better
@@ -914,10 +983,28 @@ const BOSS_BUILDERS: Record<string, () => BossView> = {
   'the-exterminator': buildTheExterminator,
 };
 
+/** ARACHNOPHOBIA MODE (§20.15/§23): every def id in here has a spider silhouette and gets
+ *  swapped for buildGooglyRoomba() when the mode is on. Currently just the one spider boss —
+ *  add future spider-shaped critters here too, they'll pick up the swap for free. */
+const SPIDER_SILHOUETTE_DEFS = new Set<string>(['grandma-longlegs']);
+
+/** Module-level flag mirroring save.settings.arachnophobia. Set once from game.ts at boot and
+ *  again on every settings change; boss views are built once per critter instance (see
+ *  renderer.ts syncTick), so per GAME-PROMPT the swap is documented to take effect next level
+ *  load rather than hot-swapping mid-fight. */
+let arachnophobiaMode = false;
+
+/** Called from game.ts whenever settings load/change. Deliberately does NOT retroactively
+ *  rebuild any already-spawned boss view — see setArachnophobiaMode doc above. */
+export function setArachnophobiaMode(on: boolean): void {
+  arachnophobiaMode = on;
+}
+
 /** Dispatch a boss critter def to its bespoke Group view. Falls back to null for
  *  unknown/non-boss defs — callers (renderer.ts) should fall back to buildCrumbKing
  *  or skip entirely. */
 export function buildBossView(def: string): BossView | null {
+  if (arachnophobiaMode && SPIDER_SILHOUETTE_DEFS.has(def)) return buildGooglyRoomba();
   const builder = BOSS_BUILDERS[def];
   return builder ? builder() : null;
 }

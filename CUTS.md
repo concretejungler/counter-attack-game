@@ -16,11 +16,92 @@ Nothing here is abandoned; each entry has a reason and a natural return point.
 | Cricket Bard weeping-angel (moves only off-screen) | Camera-coupled sim breaks determinism contract; ships as speed-aura buffer | Needs design rework, maybe never |
 | Lux Interior flier-aggro magnetism | Steering override conflicts with flow-field pathing; reveal+zap ships | P2 back-half |
 | Boss set-pieces (Rat King tower-steal, Bedbug Baron light-swipe, Clogsworth drain-plug puzzle, Grandma web-tear Hand verb, Possum fake-loot bombs, Trash Panda pet-bribe) | Bosses ship with trait-driven mechanics (submerge/stealth/splits/spawner/webber/towerSmash + playDeadTimes); set-pieces need scripted phases | Boss polish pass, one boss at a time |
-| EXTERMINATOR alliance finale (critters fight alongside towers) | Faction-flip needs friendly-critter combat + AI; finale ships as hardest siege with towerSmash pressure | P4 (it's the story payoff — must return) |
-| Condemned/Betrayal/Exterminated loss vignettes | Loss reasons exist in types; only cakeDevoured/theSwarm fully wired | P4 with enders art |
+| ~~EXTERMINATOR alliance finale (critters fight alongside towers)~~ LANDED | Sim-side mechanic shipped this pass (see dedicated section below) — the vignette VISUALS (render/ui/game.ts side: camera punch, defection VFX, recap beat) are still a later pass | render/ui pass, sim contract (allied flag + alliance/allianceKill events) is ready for it |
+| ~~Exterminated loss vignette wiring~~ LANDED (sim-side) · Condemned/Betrayal loss reasons | `exterminated` now fires correctly (see dedicated section below); `condemned` and `betrayal` remain investigated-and-skipped — see dedicated section below for why | Condemned needs a furniture-integrity system; Betrayal needs a way to actually hit the cat. Loss vignette ART (all three) is P4 with enders art regardless |
 | Vroomba bag-burst (full bag ambush) | Suck is instant-kill for now; bag economy adds bookkeeping | Polish pass |
 | Title-screen live 3D backdrop | Title is a DOM overlay above an empty canvas; needs game.ts restructure | P4 polish |
 | 3-star challenge tracking for new worlds' bespoke challenge ids | Kitchen challenge ids are wired; worlds 2-9 challenge ids defined in content but evaluators not yet implemented (3rd star falls back to unearned) | P3 meta pass |
+
+## EXTERMINATOR alliance finale + loss reasons (landed this pass, GAME-PROMPT §8.9/§19)
+
+Sim-side only, per this pass's file ownership (`src/sim/types.ts`, `critters.ts`, `sim.ts`,
+`towers.ts`; `pets.ts` and `content/levels/sewer.ts` were in-scope but needed no changes). No
+render/ui/game.ts touched — the vignette VISUALS (defection VFX, camera beat, recap screen) are a
+later pass, same as every other loss-vignette item already in this file.
+
+**The flip.** `Critter.allied?: boolean` (additive). `sim.ts`'s wave-spawn tick loop watches for
+`req.critter === 'the-exterminator'`; the instant he spawns, `Sim.triggerAlliance()` flips every
+critter that was *already alive* at that tick to `allied: true` and emits `{ t: 'alliance'; count }`
+— the boss himself and any other co-occurring boss are excluded. A flipped critter's in-flight
+state (mid-bite, fleeing, chewing clutter, latched onto a tower) is reset to a clean `walk` so
+`critters.ts`'s new `alliedBrain` takes over immediately — the flip needed to read instantly, not
+finish out a stale action first. A defector caught mid-heist (a thief carrying a stolen slice)
+drops it back (same "slice recovered" treatment a kill would give it). Escort entries authored to
+spawn *after* the boss (his own reinforcements) are untouched and stay hostile — this was an
+explicit design call from the brief ("alive-at-spawn defect" only, keep it simple).
+
+**Allied behavior.** `alliedBrain` ignores the cake/flow-field entirely, steers toward
+`the-exterminator`, and swings at him once in range on a 0.5s per-swing cooldown (`meleeT`, a
+dedicated field — NOT reusing `pulseT`, which several existing traits like `healPulse`/
+`towerSmash`/`spawner` already use for their own per-critter cadence and could collide with).
+Per-swing damage is `def.chewDps ?? max(1, def.bounty / 4)` — the design call the brief invited
+("pick something sane"). **Balance finding during implementation:** the first version applied
+`dps * dt` to `damageCritter` every single tick; `damageCritter`'s armor reduction floors to a
+minimum of 1 damage per *call*, so calling it 30x/sec let even a trivial-dps ally punch through the
+boss's armor-10 at 30x the intended rate (a handful of ants "chipping" him for hundreds of DPS
+combined). Switched to one real swing every `ALLY_MELEE_PERIOD` (0.5s) so armor stays meaningful —
+this is the same reason towers gate their own damage behind a `1/rate` cooldown instead of a
+per-tick dribble. If an ally lands the killing blow, `killCritter` emits
+`{ t: 'allianceKill'; by: <critter def id> }` — the recap/story beat the brief asked for.
+
+**Towers ignore allies.** `towers.ts`'s shared `candidates()` (used by direct-target, aura, and
+splash/cone/slam damage alike) skips `cr.allied`, plus the two call sites that iterate
+`ctx.state.critters` directly instead of through `candidates()` (Vroomba's `suckSize` insta-kill
+loop, and trap-tower triggering) — both needed the same explicit skip since they bypass the shared
+helper. Hand verbs (`squash`/`flick`, in `hand.ts`, out of this pass's file ownership and not asked
+for) were deliberately left untouched — the brief only specified tower targeting, and it's a
+plausible bit of chaos for the player to still be able to flick/squash a newly-defected ally by
+mistake; that's a UI/design nuance for the vignette pass, not a sim bug.
+
+**Wave-clear logic changed.** Was `waveRt.done && critters.size === 0`; is now `waveRt.done && no
+non-allied critter remains` — allied critters (fighting the boss, or idling harmlessly after he's
+already dead) never block a wave from clearing, matching the brief's spec precisely.
+
+**Loss reasons.**
+- `exterminated`: the cake-zero check now also scans for a living `the-exterminator`; if he's still
+  up when the last slice goes, `lose('exterminated')` fires instead of `'cakeDevoured'`. Verified
+  both against a test fixture and against the real sewer-3 content/waves (a scratch probe run
+  against `content/levels/sewer.ts`'s actual finale wave, since deleted — the mechanic and loss
+  reason both fired correctly through the real production spawn path).
+- `condemned` (termite-family `clutterEater` critters destroying the last clutter piece): **skipped,
+  per the brief's own instruction** — there is no furniture-integrity/structural-damage system in
+  the sim at all (clutter destroyed by chewing just... clutters less; nothing tracks a
+  level-wide "percent of furniture destroyed" or distinguishes player-placed clutter from anything
+  else). Building a real one to make this loss condition *fair* (the brief explicitly says "do NOT
+  lose, that'd be unfair" for the naive version) is a system, not a wire-up, and stays a return
+  point for whenever that system lands.
+- `betrayal` (10 stray hits on the cat): **skipped, confirmed unreachable by design** — the cat is a
+  `PetState`, not a `Critter`; nothing in the damage pipeline can target it. Towers' `candidates()`
+  and every splash/slam/aura loop iterate `ctx.state.critters` exclusively. The Hand's `squash`/
+  `flick` (`hand.ts`) take a `critterId` and look it up in `ctx.state.critters` — a pet id would
+  simply fail the lookup and no-op. There is no "stray shot" concept anywhere (towers pick one
+  target and hit it; nothing rolls to miss onto an unrelated entity). This matches the existing
+  Pets section below, which already flagged Betrayal as needing "a 'stray shot hit the cat'
+  detection path in the projectile/damage pipeline" that doesn't exist yet — confirmed again this
+  pass, still the right call to skip rather than bolt on a fake miss-mechanic just to wire an event.
+
+**Tests:** `tests/finale.test.ts` (13 tests) — the flip (alive-at-spawn only, post-boss escorts stay
+hostile, thief slice recovery), tower/splash/trap/roam immunity for allies, allies never reaching
+`eatCake`, allies actually damaging + eventually killing the boss (`allianceKill` with correct
+`by`), wave-clear gating (blocks on hostile stragglers, clears with a lone surviving ally),
+`exterminated` vs `cakeDevoured` loss-reason selection, and two determinism guards (a normal level
+byte-identical to a pre-feature run; a normal level never emits `alliance`/`allianceKill`). All 312
+pre-existing tests plus these 13 are green (325/325), `tsc --noEmit` clean, and `sewer-3`'s
+`tests/balance-w6789.test.ts` par entry needed NO retuning — byte-identical W(0b,w12) across all 3
+seeds before and after (the par garrison is strong enough that the pre-boss escort is usually
+already dead by the time the-exterminator spawns, so the flip's `count > 0` guard often doesn't even
+fire on that specific script — verified separately with a weaker build that it does fire correctly
+against the real content).
 
 ## Director AI + Random Events + Oh-Crap Scenarios (landed this pass)
 

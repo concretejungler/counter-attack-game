@@ -10,11 +10,32 @@ export interface SaveData {
   settings: {
     musicVol: number;
     sfxVol: number;
+    /** Legacy boolean, kept for backward compat with old saves — loadSave() folds this into
+     *  shakeIntensity (true->1, false->0) the first time an old save is read. New code should
+     *  read/write shakeIntensity; this field is left stale afterwards but harmless. */
     shake: boolean;
     difficulty: 'houseguest' | 'homeowner' | 'landlord' | 'condemned';
     /** Player-picked pet chaos agent (GAME-PROMPT §9). Optional-safe like critterdex/flyShooed
      *  below — backfilled to null by loadSave() for saves written before this existed. */
     pet: 'cat' | 'dog' | 'goldfish' | null;
+    // ---------- ACCESSIBILITY SUITE (GAME-PROMPT §23 + §20.15) ----------
+    /** 0..1 multiplier on camera-shake amplitude (renderer.ts / camera.ts consume this).
+     *  Optional-safe: loadSave() backfills from the legacy `shake` boolean for old saves. */
+    shakeIntensity: number;
+    /** 0..1 multiplier on full-screen flash/vignette pulse effects (renderer.ts). Optional-safe,
+     *  backfilled to 1 for saves predating this setting. */
+    flashIntensity: number;
+    /** 0.85..1.3 — CSS --ui-scale multiplier applied to the whole diegetic overlay (see
+     *  style.css :root and game.ts applySettingsToView()). Optional-safe, backfilled to 1. */
+    uiScale: number;
+    /** Colorblind-safe mode (§23): adds shape/icon reinforcement to status/team colors in the
+     *  HUD beyond color alone. Optional-safe, backfilled to false. */
+    colorblind: boolean;
+    /** Arachnophobia mode (§20.15, shipped with love): swaps grandma-longlegs and any other
+     *  spider-silhouette critter models for googly-eyed roombas. Read by critterModels.ts at
+     *  model-build time — takes effect next level load (the toggle's label says so). Optional-safe,
+     *  backfilled to false. */
+    arachnophobia: boolean;
   };
   stats: {
     wins: number;
@@ -75,7 +96,10 @@ export function defaultSave(): SaveData {
   return {
     version: 1,
     stars: {},
-    settings: { musicVol: 0.7, sfxVol: 0.9, shake: true, difficulty: 'houseguest', pet: null },
+    settings: {
+      musicVol: 0.7, sfxVol: 0.9, shake: true, difficulty: 'houseguest', pet: null,
+      shakeIntensity: 1, flashIntensity: 1, uiScale: 1, colorblind: false, arachnophobia: false,
+    },
     stats: {
       wins: 0, losses: 0, kills: 0, sweeps: 0, crumbsBanked: 0,
       jarsTotal: 0, grudgesSettled: 0, moooomCasts: 0,
@@ -103,7 +127,14 @@ export function loadSave(): SaveData {
     return {
       ...defaultSave(),
       ...data,
-      settings: { ...defaultSave().settings, ...data.settings },
+      settings: {
+        ...defaultSave().settings,
+        ...data.settings,
+        // backward compat: old saves only had the boolean `shake`. If this save predates
+        // shakeIntensity (no numeric field present), fold the boolean in; otherwise trust
+        // whatever shakeIntensity value is already on the save (a later explicit 0 must stick).
+        shakeIntensity: data.settings?.shakeIntensity ?? (data.settings?.shake === false ? 0 : 1),
+      },
       stats: {
         ...defaultSave().stats,
         ...data.stats,

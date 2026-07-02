@@ -167,6 +167,8 @@ function candidates(ctx: SimCtx, tw: Tower, def: TowerDef, range: number): Critt
   for (const cr of ctx.state.critters.values()) {
     if (cr.state === 'playDead') continue;
     if (cr.hidden) continue;
+    // Alliance finale (§8.9): allied critters are ignored by every tower — direct-target, aura, and splash.
+    if (cr.allied) continue;
     if (def.groundOnly && cr.flying) continue;
     const d = Math.hypot(cr.pos.x - tw.pos.x, cr.pos.z - tw.pos.z);
     if (d <= range) out.push(cr);
@@ -244,6 +246,7 @@ function updateRoamTower(ctx: SimCtx, tw: Tower, stats: TowerStats, dt: number):
   let sucks = 0;
   for (const cr of ctx.state.critters.values()) {
     if (sucks >= 2) break;
+    if (cr.allied) continue; // Alliance finale (§8.9): allies are immune to friendly towers
     if (cr.hidden || cr.surface !== tw.tile.s) continue;
     const d = Math.hypot(cr.pos.x - tw.pos.x, cr.pos.z - tw.pos.z);
     if (d > stats.range) continue;
@@ -288,6 +291,7 @@ export function updateTowers(ctx: SimCtx, dt: number): void {
     if (def.attack === 'trap') {
       if (!tw.armed) continue;
       for (const cr of ctx.state.critters.values()) {
+        if (cr.allied) continue; // Alliance finale (§8.9): allies are immune to friendly towers
         if (cr.flying || cr.state === 'playDead') continue;
         if (cr.hidden) continue;
         if (Math.abs(cr.pos.y - tw.pos.y) > 0.6) continue;

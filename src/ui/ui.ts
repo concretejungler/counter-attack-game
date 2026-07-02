@@ -66,6 +66,9 @@ export class UI {
   private rotateEl: HTMLElement;
   private inGameplay = false;
   private runStripEl: HTMLElement | null = null;
+  /** ACCESSIBILITY SUITE (§23): full-screen flash/vignette pulse, driven by renderer.ts'
+   *  onFlashPulse hook (game.ts wires it). Mounted once and reused — see pulseFlash(). */
+  private flashEl: HTMLElement;
 
   constructor(
     private content: ContentDB,
@@ -95,6 +98,20 @@ export class UI {
 
     this.fly = new Fly(document.body, { onShooed: () => this.cb.onFlyShooed() });
     if (this.save.flyShooed) this.fly.markShooed();
+
+    this.flashEl = el('div', 'flash-pulse');
+    this.root.append(this.flashEl);
+  }
+
+  /** ACCESSIBILITY SUITE (§23): trigger the full-screen flash pulse at the given 0..1 strength
+   *  (already pre-scaled by settings.flashIntensity in renderer.ts — a strength of 0 never
+   *  reaches here at all, see GameRenderer.flashPulse). Retriggerable: forces a reflow so back-
+   *  to-back pulses (e.g. rapid cake bites) each restart the fade-out animation cleanly. */
+  pulseFlash(strength: number): void {
+    this.flashEl.style.setProperty('--flash-k', `${Math.min(1, Math.max(0, strength)) * 0.6}`);
+    this.flashEl.classList.remove('pulsing');
+    void this.flashEl.offsetWidth; // reflow to restart the CSS animation
+    this.flashEl.classList.add('pulsing');
   }
 
   private refreshRotateOverlay(): void {

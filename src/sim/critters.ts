@@ -283,6 +283,45 @@ function clutterEaterBrain(ctx: SimCtx, cr: Critter, def: CritterDef, speed: num
   steerToward(cr, bestCell, speed, dt);
 }
 
+const ALLY_MELEE_RANGE = 0.6;
+const ALLY_MELEE_PERIOD = 0.5; // seconds between swings — a real per-swing hit, not a tiny per-tick nibble
+
+/** Finds the (single) living exterminator boss on the board, if any. */
+function findExterminator(ctx: SimCtx): Critter | null {
+  for (const cr of ctx.state.critters.values()) {
+    if (cr.def === 'the-exterminator') return cr;
+  }
+  return null;
+}
+
+/**
+ * Alliance finale brain (GAME-PROMPT §8.9, sewer-3 only): allied critters ignore the cake entirely
+ * and instead steer toward THE EXTERMINATOR and chip him with melee dps once in range. If the boss
+ * is already dead (or somehow absent), an allied critter just holds position — wave-clear logic
+ * (sim.ts onWaveClear/tick) already excludes allied critters from the "still fighting" count, so an
+ * idle ally never blocks the level from clearing.
+ *
+ * Damage is applied as one swing every ALLY_MELEE_PERIOD seconds (like a tower's rate-gated
+ * attack) rather than a tiny dps*dt nibble every tick — damageCritter's armor reduction floors to
+ * a minimum of 1 damage per CALL, so calling it 30x/sec would let even a low-dps ally punch
+ * through heavy armor at 30x its intended rate. A real per-swing hit keeps armor meaningful.
+ */
+function alliedBrain(ctx: SimCtx, cr: Critter, def: CritterDef, speed: number, dt: number): void {
+  const boss = findExterminator(ctx);
+  if (!boss) return; // nothing left to fight; harmless idle
+  const d = Math.hypot(boss.pos.x - cr.pos.x, boss.pos.z - cr.pos.z);
+  if (d > ALLY_MELEE_RANGE) {
+    steerToward(cr, boss.pos, speed, dt);
+    return;
+  }
+  cr.facing = Math.atan2(boss.pos.x - cr.pos.x, boss.pos.z - cr.pos.z);
+  cr.meleeT = (cr.meleeT ?? 0) + dt;
+  if (cr.meleeT < ALLY_MELEE_PERIOD) return;
+  cr.meleeT = 0;
+  const dps = def.chewDps ?? Math.max(1, def.bounty / 4);
+  damageCritter(ctx, boss, dps * ALLY_MELEE_PERIOD, 'swat', 'ally', { allyDef: cr.def });
+}
+
 /** Walking brain: follow the cake flow field; climb, chew, or bite as the path demands. */
 function walkBrain(ctx: SimCtx, cr: Critter, def: CritterDef, speed: number, dt: number): void {
   const grid = ctx.grid;
@@ -575,7 +614,9 @@ export function updateCritters(ctx: SimCtx, dt: number): void {
       case 'walk': {
         if (statusMul === 0) break;
         const speed = effectiveSpeed(ctx, cr, def, statusMul);
-        if (cr.statuses.confused || cr.statuses.feared) {
+        if (cr.allied) {
+          alliedBrain(ctx, cr, def, speed, dt);
+        } else if (cr.statuses.confused || cr.statuses.feared) {
           confusedFleeBrain(ctx, cr, speed, dt);
         } else {
           walkBrain(ctx, cr, def, speed, dt);
@@ -767,6 +808,8 @@ export interface DamageOpts {
   statusDur?: number;
   statusChance?: number;
   bountyPct?: number;
+  /** Alliance finale (§8.9): critter def id of the allied attacker, so a killing blow can emit `allianceKill`. */
+  allyDef?: string;
 }
 
 /** Central damage entry — handles resist/weak, armor, playDead fakeouts, and death. */
@@ -775,7 +818,7 @@ export function damageCritter(
   cr: Critter,
   amount: number,
   type: DamageType,
-  cause: 'tower' | 'squash' | 'fall' | 'spell' | 'flick' | 'chain',
+  cause: 'tower' | 'squash' | 'fall' | 'spell' | 'flick' | 'chain' | 'ally',
   opts: DamageOpts = {},
 ): void {
   if (!ctx.state.critters.has(cr.id)) return;
@@ -819,11 +862,16 @@ export function damageCritter(
 export function killCritter(
   ctx: SimCtx,
   cr: Critter,
-  cause: 'tower' | 'squash' | 'fall' | 'spell' | 'flick' | 'chain',
+  cause: 'tower' | 'squash' | 'fall' | 'spell' | 'flick' | 'chain' | 'ally',
   opts: DamageOpts = {},
 ): void {
   const def = critterDef(ctx, cr.def);
   ctx.state.critters.delete(cr.id);
+
+  // Alliance finale (§8.9): an allied critter just landed the killing blow on the boss — the recap/story beat.
+  if (cause === 'ally' && def.boss && opts.allyDef) {
+    ctx.emit({ t: 'allianceKill', by: opts.allyDef });
+  }
 
   // stink bombs: disable nearby towers on death
   if (def.traits?.includes('deathGas')) {

@@ -292,6 +292,16 @@ export interface Critter {
   pulseT?: number;          // healPulse / spawner / towerSmash / webber accumulator
   wobble: number;           // render phase
   spawnedAt: number;        // tick
+  /**
+   * THE EXTERMINATOR ALLIANCE FINALE (GAME-PROMPT §8.9, sewer-3 only): true for critters that were
+   * alive the instant the-exterminator spawned and flipped sides. Allied critters are ignored by
+   * tower targeting, never bite the cake, don't block wave-clear, and steer toward + melee the
+   * boss instead (see critters.ts alliedBrain). Undefined/false for every critter in every other
+   * level — additive, zero-cost elsewhere.
+   */
+  allied?: boolean;
+  /** Alliance finale: melee swing cooldown accumulator for alliedBrain — dedicated field so it never collides with pulseT's other trait uses. */
+  meleeT?: number;
 }
 
 export interface Tower {
@@ -396,7 +406,7 @@ export type LossReason = 'cakeDevoured' | 'theSwarm' | 'condemned' | 'betrayal' 
 
 export type SimEvent =
   | { t: 'spawn'; id: number; def: string; at: Vec3; shiny: boolean }
-  | { t: 'die'; id: number; def: string; at: Vec3; cause: 'tower' | 'squash' | 'fall' | 'spell' | 'flick' | 'chain'; bounty: number }
+  | { t: 'die'; id: number; def: string; at: Vec3; cause: 'tower' | 'squash' | 'fall' | 'spell' | 'flick' | 'chain' | 'ally'; bounty: number }
   | { t: 'fire'; towerId: number; def: string; at: Vec3; target: Vec3 | null }
   | { t: 'hit'; critterId: number; at: Vec3; dmgType: DamageType; amount: number; kind: AttackKind }
   | { t: 'fakeDeath'; id: number; at: Vec3 }
@@ -455,7 +465,10 @@ export type SimEvent =
   | { t: 'petPounce'; kills: number }                          // cat: once-per-level, kills a seeded % of live critters then swats the top-kill tower
   | { t: 'petMove'; at: Vec3 }                                 // cat: relocates to a new seeded sunbeam each build phase
   | { t: 'petBark'; stunned: number }                          // dog: stuns `stunned` live critters for 2s
-  | { t: 'petProphecy'; wave: number; composition: { critter: string; count: number }[] }; // goldfish: full next-wave composition
+  | { t: 'petProphecy'; wave: number; composition: { critter: string; count: number }[] } // goldfish: full next-wave composition
+  // ---- EXTERMINATOR alliance finale (§8.9, sewer-3) ----
+  | { t: 'alliance'; count: number }                            // every alive non-boss critter just defected
+  | { t: 'allianceKill'; by: string };                          // an allied critter (critter def id `by`) landed the killing blow on the boss
 
 // ---------- recap / telemetry ----------
 export interface RecapData {

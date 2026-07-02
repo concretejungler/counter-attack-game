@@ -338,6 +338,11 @@ export class Sim implements SimCtx {
           cr.hp = Math.round(cr.hp * mul);
           cr.maxHp = Math.round(cr.maxHp * mul);
         }
+        // EXTERMINATOR ALLIANCE FINALE (GAME-PROMPT §8.9, sewer-3): the instant the boss himself
+        // spawns, every critter that was ALREADY alive defects — the dramatic beat is the flip.
+        // Authored escort entries that spawn later (his goons) stay hostile by design; only the
+        // alive-at-spawn set turns. The exterminator's own fresh spawn is excluded (it's the boss).
+        if (req.critter === 'the-exterminator') this.triggerAlliance(cr.id);
       }
     }
 
@@ -363,15 +368,27 @@ export class Sim implements SimCtx {
     // 6. centralized loss: the cake is gone AND nobody is carrying a recoverable slice
     if (st.cakeSlices <= 0) {
       let carrierAlive = false;
+      let exterminatorAlive = false;
       for (const c of st.critters.values()) {
-        if (c.carriedSlice) { carrierAlive = true; break; }
+        if (c.carriedSlice) carrierAlive = true;
+        if (c.def === 'the-exterminator') exterminatorAlive = true;
       }
-      if (!carrierAlive) this.lose('cakeDevoured');
+      if (!carrierAlive) {
+        // Alliance finale (§8.9): losing sewer-3's final wave with the boss still up is a
+        // different ending than the ordinary cake-devoured loss — GAME-PROMPT §19 "Exterminated".
+        this.lose(exterminatorAlive ? 'exterminated' : 'cakeDevoured');
+      }
     }
 
-    // 7. wave clear / win
-    if (st.phase === 'assault' && this.waveRt?.done && st.critters.size === 0) {
-      this.onWaveClear();
+    // 7. wave clear / win: the boss + every non-allied critter are gone. Allied critters (§8.9)
+    // may still be alive fighting the exterminator (or idling, harmlessly, after he's already
+    // dead) — they never block a wave from clearing.
+    if (st.phase === 'assault' && this.waveRt?.done) {
+      let blocking = false;
+      for (const c of st.critters.values()) {
+        if (!c.allied) { blocking = true; break; }
+      }
+      if (!blocking) this.onWaveClear();
     }
 
     // 8. recap sampling (1/s)
@@ -571,6 +588,39 @@ export class Sim implements SimCtx {
         this.emit({ t: 'mutationOffer', options: [...offer] });
       }
     }
+  }
+
+  /**
+   * EXTERMINATOR ALLIANCE FINALE (GAME-PROMPT §8.9, sewer-3): flips every currently-alive
+   * non-boss critter (everyone except the exterminator itself, id `exterminatorId`) to `allied`.
+   * Any in-flight action state (mid-bite, fleeing, chewing clutter, climbing, latched onto a
+   * tower...) is reset to a clean 'walk' state so alliedBrain (critters.ts) takes over immediately
+   * — that's the dramatic beat, it should read instantly, not finish out a stale action first.
+   * Latched towers are released so they don't stay disabled by a critter that no longer means it
+   * harm. A defector caught mid-heist (Mouse Thief carrying a stolen slice) drops it back — same
+   * "slice recovered" treatment a kill would give it, since it's on our side now.
+   */
+  private triggerAlliance(exterminatorId: number): void {
+    const st = this.state;
+    let count = 0;
+    for (const cr of st.critters.values()) {
+      if (cr.id === exterminatorId) continue;
+      const def = this.content.critters[cr.def];
+      if (def?.boss) continue; // other bosses (shouldn't co-occur, but stay hostile defensively)
+      if (cr.allied) continue;
+      cr.allied = true;
+      cr.state = 'walk';
+      cr.chewTarget = undefined;
+      cr.decoyTarget = undefined;
+      cr.latchTarget = undefined;
+      if (cr.carriedSlice) {
+        cr.carriedSlice = false;
+        st.cakeSlices = Math.min(st.cakeMax, st.cakeSlices + 1);
+        this.emit({ t: 'sliceRecovered', at: { ...cr.pos } });
+      }
+      count++;
+    }
+    if (count > 0) this.emit({ t: 'alliance', count });
   }
 
   /**
