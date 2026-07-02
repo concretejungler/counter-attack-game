@@ -14,6 +14,7 @@ import { HandView, type HandPose } from './handView';
 import { PAL, themePalette } from './palette';
 import { toonMat, canvasTexture } from './build';
 import { dprCap } from '../core/device';
+import { EggsController } from './eggs';
 
 interface CritterViewData {
   def: string;
@@ -70,6 +71,7 @@ export class GameRenderer {
   private shadowBlobMesh: THREE.InstancedMesh;
   private vfx = new Vfx();
   readonly hand = new HandView();
+  readonly eggs: EggsController;
   private pickPlanes: THREE.Mesh[] = [];
   private critterPickMap = new Map<THREE.InstancedMesh, number[]>();
   private oneShots: { obj: THREE.Object3D; t: number; anim: (obj: THREE.Object3D, t: number) => void }[] = [];
@@ -157,6 +159,7 @@ export class GameRenderer {
     this.scene.add(fill);
 
     this.scene.add(this.critters.root, this.vfx.root, this.hand.group);
+    this.eggs = new EggsController(this.scene);
 
     // crumb instancing — little golden tetrahedra
     const crumbGeo = new THREE.TetrahedronGeometry(0.09);
@@ -240,7 +243,8 @@ export class GameRenderer {
     this.oneShots.forEach((o) => this.scene.remove(o.obj));
     this.oneShots = [];
 
-    this.roomGroup = buildRoom(level);
+    this.eggs.reset(level);
+    this.roomGroup = buildRoom(level, (sunflower) => this.eggs.registerSunflower(sunflower));
     this.scene.add(this.roomGroup);
     this.burnerRings = [];
     this.roomGroup.traverse((o) => {
@@ -777,6 +781,7 @@ export class GameRenderer {
     this.vfx.update(dt);
     this.hand.update(dt, this.time);
     this.rig.update(dt);
+    this.eggs.update(dt, this.time);
     if ((window as unknown as { __rawRender?: boolean }).__rawRender) {
       this.renderer.render(this.scene, this.rig.camera);
     } else {
@@ -917,6 +922,51 @@ export class GameRenderer {
     return bestId;
   }
 
+  /** §20.3 red balloon: click-to-pop. Uses the real raycaster (not the cheap screen-projection
+   *  trick pickCritter/pickTower use) since the balloon is a single sparse target, not hundreds. */
+  pickBalloon(ndcX: number, ndcY: number): boolean {
+    this.raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.rig.camera);
+    return this.eggs.pickBalloon(this.raycaster);
+  }
+
+  /** §20.2 windowsill sunflower: click-to-hum. Same real-raycast approach as pickBalloon. */
+  pickSunflower(ndcX: number, ndcY: number): boolean {
+    this.raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.rig.camera);
+    return this.eggs.pickSunflower(this.raycaster);
+  }
+
+  /** §20.2 — triggers the sunflower's happy sway anim (called every click, hum or not). */
+  eggsSwaySunflower(): void {
+    this.eggs.swaySunflower();
+  }
+
+  /** §20.13 idle campfire — spawns near the given world point (game.ts picks a tower/cake spot). */
+  spawnCampfire(at: { x: number; y: number; z: number }): void {
+    this.eggs.spawnCampfire(at);
+  }
+
+  clearCampfire(): void {
+    this.eggs.clearCampfire();
+  }
+
+  get campfireActive(): boolean {
+    return this.eggs.campfireActive;
+  }
+
+  /** §20.3 — level start roll (outside the deterministic sim, Math.random is fine here). */
+  maybeSpawnBalloon(chance = 1 / 6): void {
+    if (this.level) this.eggs.maybeSpawnBalloon(this.level, chance);
+  }
+
+  /** §20.6 Wave-42 towel: drapes every currently-live tower for one wave. */
+  drapeTowelsOnTowers(): void {
+    this.eggs.drapeTowels([...this.towerViews.values()].map((v) => v.view.group));
+  }
+
+  clearTowels(): void {
+    this.eggs.clearTowels();
+  }
+
   pickTower(ndcX: number, ndcY: number, state: SimState): number | null {
     let bestId: number | null = null;
     let bestD = 0.07;
@@ -981,6 +1031,32 @@ export class GameRenderer {
 
   drawCallCount(): number {
     return this.renderer.info.render.calls;
+  }
+
+  // ---------- PHOTO MODE (GAME-PROMPT §18) ----------
+
+  /** Tilt-shift focus band position (0..1, screen-space Y) — live uniform on the Diorama pass. */
+  setPhotoFocusY(v: number): void {
+    this.post.setUniform('uFocusY', v);
+  }
+
+  /** Tilt-shift blur strength — live uniform on the Diorama pass. */
+  setPhotoBlurStrength(v: number): void {
+    this.post.setUniform('uBlurStrength', v);
+  }
+
+  /** Konami-code Retro Mode (§20.1) — chunky-pixel post pass, session-only. */
+  setRetroMode(on: boolean): void {
+    this.post.setRetro(on);
+  }
+
+  /** Renders one synchronous frame straight to the canvas (bypassing the rAF loop timing) and
+   *  hands back a PNG blob — used by Photo Mode's snap button. No preserveDrawingBuffer needed:
+   *  we read the canvas via toBlob() immediately after this render call, before anything else
+   *  gets a chance to clear/overwrite the default framebuffer. */
+  snapPhoto(): Promise<Blob | null> {
+    this.frame(0);
+    return new Promise((resolve) => this.renderer.domElement.toBlob(resolve, 'image/png'));
   }
 }
 

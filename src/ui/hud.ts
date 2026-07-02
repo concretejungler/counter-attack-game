@@ -9,6 +9,8 @@ export interface HudCallbacks {
   onCallWave(): void;
   onSpeed(mult: 1 | 2 | 3): void;
   onPause(): void;
+  /** PHOTO MODE (§18): the small camera button in the HUD corner. */
+  onPhotoMode(): void;
 }
 
 const el = (tag: string, cls = '', html = ''): HTMLElement => {
@@ -123,6 +125,10 @@ export class Hud {
     const pauseB = el('button', 'speed-btn', '⏸') as HTMLButtonElement;
     pauseB.onclick = () => this.cb.onPause();
     speed.append(pauseB);
+    const photoB = el('button', 'speed-btn photo-btn', '📸') as HTMLButtonElement;
+    photoB.title = 'Photo Mode (P)';
+    photoB.onclick = () => this.cb.onPhotoMode();
+    speed.append(photoB);
 
     bar.append(scroll);
 

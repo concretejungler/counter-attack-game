@@ -369,6 +369,22 @@ export const ACHIEVEMENT_DEFS: AchievementDef[] = [
     bp: 10,
     check: ({ save }) => (save.towerNames['sir-toastsalot'] ?? '').trim().toLowerCase() === 'talkie',
   },
+
+  // ---------- easter eggs (§20) ----------
+  {
+    id: 'balloon-pop-1',
+    name: 'Gotcha',
+    desc: 'Pop the red balloon that drifts past the window.',
+    bp: 10,
+    check: ({ save }) => save.stats.balloonsPopped >= 1,
+  },
+  {
+    id: 'balloon-pop-100',
+    name: 'Monkey Business',
+    desc: 'Pop 100 red balloons, lifetime.',
+    bp: 40,
+    check: ({ save }) => save.stats.balloonsPopped >= 100,
+  },
 ];
 
 export const ACHIEVEMENTS_BY_ID: Record<string, AchievementDef> = Object.fromEntries(

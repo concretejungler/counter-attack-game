@@ -252,6 +252,30 @@ const RECIPES: Record<string, Recipe> = {
     noise(c, o, 0.02, 0.3, 2800, 5, 0, 'bandpass');
     tone(c, o, 'square', 1800, 1800, 0.02, 0.1, 0);
   },
+
+  // ---- P4 easter eggs (GAME-PROMPT §20) ----
+
+  // Sunflower hum (§20.2 "a PvZ wink"): 8-note familiar-ish plucky hum, triangle-wave and
+  // deliberately jaunty — a nod without being a note-for-note copy.
+  'sunflower-hum': (c, o) => {
+    [392, 440, 392, 349, 392, 440, 494, 440].forEach((f, i) => tone(c, o, 'triangle', f, f, 0.22, 0.22, i * 0.14));
+  },
+  // Red balloon pop (§20.3): a bright transient pop + a little rubbery pitch-drop squeak tail.
+  'balloon-pop': (c, o) => {
+    noise(c, o, 0.04, 0.55, 3000, 3, 0, 'bandpass');
+    tone(c, o, 'square', 1400, 220, 0.14, 0.3, 0.01);
+  },
+  // Fridge door pop-open (§20.4 magnet reward): a suction-release thunk + a little shimmer.
+  'fridge-open': (c, o) => {
+    noise(c, o, 0.1, 0.4, 500, 1, 0, 'lowpass');
+    tone(c, o, 'sine', 180, 110, 0.2, 0.4, 0.02);
+    [1047, 1319, 1568].forEach((f, i) => tone(c, o, 'triangle', f, f, 0.3, 0.16, 0.15 + i * 0.06));
+  },
+  // Photo-mode shutter click (§18): a crisp two-part camera-click.
+  'camera-shutter': (c, o) => {
+    noise(c, o, 0.015, 0.5, 4500, 4, 0, 'bandpass');
+    noise(c, o, 0.02, 0.35, 2200, 4, 0.05, 'bandpass');
+  },
 };
 
 export class Sfx {

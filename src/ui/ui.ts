@@ -30,6 +30,8 @@ export interface UICallbacks extends HudCallbacks, InspectCallbacks {
   onChoiceTick(): void;
   onFlyShooed(): void;
   onPetChange(pet: 'cat' | 'dog' | 'goldfish' | null): void;
+  /** Fridge poetry magnets (§20.4) — fired once, the instant OPEN+SESAME land adjacent. */
+  onMagnetsSolved(): void;
   /** The Junk Drawer (§18): attempts a purchase, returns true on success (deducts BP,
    *  persists save) — screens.ts re-renders the drawer screen itself on success. */
   onJunkDrawerPurchase(id: string): boolean;
@@ -66,6 +68,10 @@ export class UI {
   private rotateEl: HTMLElement;
   private inGameplay = false;
   private runStripEl: HTMLElement | null = null;
+  /** PHOTO MODE (§18) floating control panel — not a blocking modal (the 3D view stays
+   *  interactable underneath for free-orbit), so it's a plain root-appended overlay like
+   *  runStripEl rather than routed through showRecap/showSettings's modalEl slot. */
+  private photoPanelEl: HTMLElement | null = null;
   /** ACCESSIBILITY SUITE (§23): full-screen flash/vignette pulse, driven by renderer.ts'
    *  onFlashPulse hook (game.ts wires it). Mounted once and reused — see pulseFlash(). */
   private flashEl: HTMLElement;
@@ -131,6 +137,7 @@ export class UI {
     this.hideChoice();
     this.hideRunStrip();
     this.dismissEventBanner();
+    this.hidePhotoMode();
     this.inGameplay = false;
     this.refreshRotateOverlay();
   }
@@ -145,6 +152,7 @@ export class UI {
       () => this.showJunkDrawer('title'),
       () => this.cb.onInfestationStart(),
       () => this.cb.onDailyChoreStart(),
+      () => this.cb.onMagnetsSolved(),
     );
     this.root.append(this.screenEl);
   }
@@ -255,6 +263,50 @@ export class UI {
     this.refreshRotateOverlay();
     // The Fly (§20.14): rare per-level-start roll, no-op forever once shooed.
     this.fly.maybeSpawn();
+  }
+
+  // ---------- PHOTO MODE (GAME-PROMPT §18) ----------
+
+  /** Free-orbit + tilt-shift slider + hide-HUD toggle + snap button, floating over the paused
+   *  gameplay view. Non-blocking (no modal-wrap dimmer) so the diorama stays fully visible and
+   *  orbit-draggable underneath while this panel is open. */
+  showPhotoMode(cb: {
+    onFocusY: (v: number) => void;
+    onBlurStrength: (v: number) => void;
+    onToggleHud: () => void;
+    onSnap: () => void;
+    onClose: () => void;
+  }): void {
+    this.hidePhotoMode();
+    const panel = el('div', 'photo-panel');
+    panel.innerHTML = `
+      <div class="photo-panel-head">📸 Photo Mode</div>
+      <div class="photo-row"><label>Focus band</label><input type="range" min="0" max="1" step="0.01" value="0.45" data-k="focus"></div>
+      <div class="photo-row"><label>Blur</label><input type="range" min="0" max="4" step="0.05" value="1.6" data-k="blur"></div>
+      <div class="photo-row"><button class="wood-btn small" data-act="hud">🙈 Hide HUD</button></div>
+      <div class="photo-row"><button class="wood-btn" data-act="snap">📸 Snap!</button></div>
+      <div class="photo-row"><button class="wood-btn small" data-act="close">✕ Done</button></div>
+      <div class="photo-hint">drag to orbit · scroll to zoom · Esc to exit</div>
+    `;
+    (panel.querySelector('[data-k=focus]') as HTMLInputElement).oninput = (e) => cb.onFocusY(parseFloat((e.target as HTMLInputElement).value));
+    (panel.querySelector('[data-k=blur]') as HTMLInputElement).oninput = (e) => cb.onBlurStrength(parseFloat((e.target as HTMLInputElement).value));
+    (panel.querySelector('[data-act=hud]') as HTMLElement).onclick = () => cb.onToggleHud();
+    (panel.querySelector('[data-act=snap]') as HTMLElement).onclick = () => cb.onSnap();
+    (panel.querySelector('[data-act=close]') as HTMLElement).onclick = () => cb.onClose();
+    this.photoPanelEl = panel;
+    this.root.append(panel);
+  }
+
+  hidePhotoMode(): void {
+    this.photoPanelEl?.remove();
+    this.photoPanelEl = null;
+  }
+
+  /** Hides/shows the campaign HUD + inspect panel for a clean shot — the photo panel itself
+   *  stays visible (you still need its controls to turn the HUD back on). */
+  setHudHidden(hidden: boolean): void {
+    this.hud?.root.classList.toggle('hidden', hidden);
+    this.inspect?.root.classList.toggle('hidden', hidden);
   }
 
   /** Run HUD strip (§15): floor/node, slices carried, deck size, relic icons — a small pinned

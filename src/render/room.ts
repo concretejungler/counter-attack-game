@@ -3,8 +3,10 @@ import type { LevelDef, RoomTheme, SurfaceDef } from '../sim/types';
 import { PAL, themePalette, type ThemePalette } from './palette';
 import { at, box, canvasTexture, cyl, rot, toonMat } from './build';
 
-/** Builds the whole diorama environment for a level: floor, walls, furniture, light shafts, spawn props. */
-export function buildRoom(level: LevelDef): THREE.Group {
+/** Builds the whole diorama environment for a level: floor, walls, furniture, light shafts, spawn props.
+ *  onSunflower (§20.2 easter egg): called with the windowsill sunflower's mesh group, if this
+ *  theme has a window to put one on — renderer.ts wires it to EggsController.registerSunflower(). */
+export function buildRoom(level: LevelDef, onSunflower?: (g: THREE.Group) => void): THREE.Group {
   const room = new THREE.Group();
   const TP = themePalette(level.theme);
   const floor = level.surfaces[0];
@@ -26,7 +28,53 @@ export function buildRoom(level: LevelDef): THREE.Group {
   }
   room.add(buildSunbeams(W, D, TP));
   room.add(buildDecor(W, D, TP, level.theme));
+  if (TP.hasWindow) {
+    const sunflower = buildSunflower(W, TP);
+    room.add(sunflower);
+    onSunflower?.(sunflower);
+  }
   return room;
+}
+
+/** The windowsill sunflower (§20.2, "a PvZ wink") — sits on the sill just below the window, a
+ *  friendly cluster of petals that sways idly and reacts to clicks (click handling lives in
+ *  EggsController; this only builds the mesh). Kept as its own top-level room child (not baked
+ *  into buildWalls' window block) so EggsController can rotate it in isolation for the sway anim. */
+function buildSunflower(W: number, TP: ThemePalette): THREE.Group {
+  const g = new THREE.Group();
+  const stem = cyl(0.045, 0.06, 0.55, 0x4a7a34, 6);
+  stem.position.y = 0.28;
+  g.add(stem);
+  const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), toonMat(0x5a9a44));
+  leaf.scale.set(1.6, 0.3, 0.9);
+  leaf.position.set(0.1, 0.35, 0);
+  leaf.rotation.z = 0.5;
+  g.add(leaf);
+
+  const head = new THREE.Group();
+  head.position.y = 0.58;
+  const center = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), toonMat(0x6b3a1c));
+  center.scale.set(1, 0.6, 1);
+  head.add(center);
+  const petalMat = toonMat(0xffd23c);
+  for (let i = 0; i < 10; i++) {
+    const petal = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 5), petalMat);
+    petal.scale.set(1.8, 0.5, 0.7);
+    const a = (i / 10) * Math.PI * 2;
+    petal.position.set(Math.cos(a) * 0.2, 0.02, Math.sin(a) * 0.2);
+    petal.rotation.y = -a;
+    head.add(petal);
+  }
+  g.add(head);
+
+  // little terracotta pot, sitting on the sill
+  const pot = cyl(0.16, 0.12, 0.22, 0xc06a3c, 8);
+  pot.position.y = 0.11;
+  g.add(pot);
+
+  g.position.set(W * 0.62 - 1.3, 2.42, 0.32); // just below/left of the window frame, on the sill
+  g.scale.setScalar(0.62);
+  return g;
 }
 
 /**

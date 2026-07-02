@@ -175,6 +175,34 @@ const DioramaShader = {
 };
 
 /**
+ * Retro Mode (§20.1 Konami egg): blit-with-NearestFilter chunky-pixel pass. Renders whatever the
+ * normal pipeline produced into a small fixed-resolution target, then upsamples it back to full
+ * screen with nearest-neighbor sampling — the blockiness IS the effect, no shader math needed.
+ */
+const RetroBlitShader = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    varying vec2 vUv;
+    void main() {
+      gl_FragColor = texture2D(tDiffuse, vUv);
+    }
+  `,
+};
+
+/** Retro Mode target resolution — low enough to read as unmistakably 8-bit-chunky at any window size. */
+const RETRO_PIXELS_TALL = 135;
+
+/**
  * Manual render pipeline (not EffectComposer's own pass-chain execution — we drive each step by
  * hand so the two bloom sub-passes can run at a small, fixed, DPR-capped half-resolution instead
  * of full framebuffer size, which is what keeps this affordable). All intermediate targets are
@@ -193,6 +221,12 @@ export class Post {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
   private camera: THREE.Camera;
+  // ---- Retro Mode (§20.1) ----
+  private retroTarget: THREE.WebGLRenderTarget;
+  private retroPass: ShaderPass;
+  private retroOn = false;
+  private lastW = 2;
+  private lastH = 2;
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
     this.renderer = renderer;
@@ -210,11 +244,31 @@ export class Post {
     this.brightPass = new ShaderPass(BrightExtractShader);
     this.blurPass = new ShaderPass(SoftBlurShader);
     this.pass = new ShaderPass(DioramaShader);
+
+    this.retroTarget = new THREE.WebGLRenderTarget(2, 2);
+    this.retroTarget.texture.minFilter = THREE.NearestFilter;
+    this.retroTarget.texture.magFilter = THREE.NearestFilter;
+    this.retroTarget.texture.generateMipmaps = false;
+    this.retroPass = new ShaderPass(RetroBlitShader);
+  }
+
+  /** Konami-code Retro Mode toggle (§20.1) — session-only, set by game.ts. */
+  setRetro(on: boolean): void {
+    this.retroOn = on;
+  }
+
+  /** PHOTO MODE (§18): live tilt-shift uniform tweak — uFocusY/uBlurStrength are already
+   *  per-frame-read uniforms on the DioramaShader pass, so a slider can drive them directly
+   *  with zero pipeline changes. */
+  setUniform(name: 'uFocusY' | 'uBlurStrength', v: number): void {
+    this.pass.uniforms[name].value = v;
   }
 
   resize(w: number, h: number): void {
     this.composer.setSize(w, h);
     this.pass.uniforms.uResolution.value.set(w, h);
+    this.lastW = w;
+    this.lastH = h;
 
     // bloom chain runs at a quarter of the *device-capped* resolution — cheap and still reads
     // as a soft glow once additively upsampled back over the sharp full-res image.
@@ -227,6 +281,11 @@ export class Post {
     this.bloomTargetB.setSize(bw, bh);
     this.blurPass.uniforms.uResolution.value.set(bw, bh);
     this.brightPass.uniforms.uSrcResolution.value.set(fullW, fullH);
+
+    // retro target: fixed short-side pixel count, aspect-matched to the real viewport.
+    const rh = RETRO_PIXELS_TALL;
+    const rw = Math.max(2, Math.round(rh * (w / h)));
+    this.retroTarget.setSize(rw, rh);
   }
 
   render(): void {
@@ -245,6 +304,20 @@ export class Post {
     this.blurPass.uniforms.tDiffuse.value = this.bloomTargetA.texture;
     this.renderer.setRenderTarget(this.bloomTargetB);
     this.blurPass.fsQuad.render(this.renderer);
+
+    if (this.retroOn) {
+      // 4a) composite into the small retro target instead of the screen...
+      this.renderer.setRenderTarget(this.retroTarget);
+      this.pass.uniforms.tDiffuse.value = readBuffer.texture;
+      this.pass.uniforms.tBloom.value = this.bloomTargetB.texture;
+      this.pass.fsQuad.render(this.renderer);
+
+      // 4b) ...then blit it back up to full screen with nearest-neighbor sampling — chunky pixels.
+      this.renderer.setRenderTarget(null);
+      this.retroPass.uniforms.tDiffuse.value = this.retroTarget.texture;
+      this.retroPass.fsQuad.render(this.renderer);
+      return;
+    }
 
     // 4) final composite straight to screen: tilt-shift + bloom add + tonemap + vignette + sRGB
     this.renderer.setRenderTarget(null);

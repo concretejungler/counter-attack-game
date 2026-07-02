@@ -1,6 +1,7 @@
 import type { ContentDB, LevelDef, RecapData, SimState, RoomTheme } from '../sim/types';
 import type { SaveData } from '../meta/save';
 import { LEVEL_ICONS, CRITTER_ICONS, TOWER_ICONS, MUTATION_ICONS } from './icons';
+import { FridgeMagnets, type MagnetsCallbacks } from './magnets';
 import {
   ROOM_COLOR, ROOM_LABEL, worldsGrouped, isLevelUnlocked, isWorldUnlocked,
   starsFor, prerequisiteRoomLabel, furthestUnlockedLevel,
@@ -32,6 +33,7 @@ export function buildTitle(
   onJunkDrawer: () => void,
   onInfestation: () => void,
   onDailyChore: () => void,
+  onMagnetsSolved: () => void,
 ): HTMLElement {
   const screen = el('div', 'screen');
   const fridge = el('div', 'fridge');
@@ -95,6 +97,23 @@ export function buildTitle(
     menu,
     el('div', 'fridge-foot', 'the wish came true at 7:42pm. defend the birthday cake.'),
   );
+
+  // Fridge poetry magnets (§20.4) — a scatter of draggable word tiles pinned below the menu.
+  // Arranging OPEN + SESAME adjacent pops a hidden relic note open (+50 BP, once per save).
+  const magnetsCb: MagnetsCallbacks = {
+    onSolved: () => {
+      doorNote.classList.add('open');
+      onMagnetsSolved();
+    },
+  };
+  const magnets = new FridgeMagnets(magnetsCb, save.eggs.fridgeMagnetsSolved);
+  fridge.append(magnets.root);
+
+  const doorNote = el('div', `fridge-door-note${save.eggs.fridgeMagnetsSolved ? ' open' : ''}`, `
+    🔓 the magnets spelled it out... <b>OPEN SESAME</b><br>a rare relic tumbles out. <b>+50 🧁 BP!</b>
+  `);
+  fridge.append(doorNote);
+
   screen.append(fridge);
   return screen;
 }

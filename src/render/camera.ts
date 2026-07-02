@@ -13,6 +13,8 @@ export class CameraRig {
   private shakeAmp = 0;
   private punchT = 0;
   private bossIntroT = 0;
+  /** PHOTO MODE (§18): relaxes orbit/zoom limits for free-camera framing while active. */
+  private freeOrbit = false;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(42, aspect, 0.1, 200);
@@ -34,7 +36,8 @@ export class CameraRig {
 
   orbit(dx: number, dy: number): void {
     this.yaw -= dx * 0.005;
-    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.004, 0.45, 1.25);
+    const [lo, hi] = this.freeOrbit ? [0.08, 1.5] : [0.45, 1.25];
+    this.pitch = THREE.MathUtils.clamp(this.pitch - dy * 0.004, lo, hi);
   }
 
   spin(velocity: number): void {
@@ -42,7 +45,13 @@ export class CameraRig {
   }
 
   zoom(delta: number): void {
-    this.targetDist = THREE.MathUtils.clamp(this.targetDist * (delta > 0 ? 1.1 : 0.9), 7, 34);
+    const [lo, hi] = this.freeOrbit ? [2.5, 55] : [7, 34];
+    this.targetDist = THREE.MathUtils.clamp(this.targetDist * (delta > 0 ? 1.1 : 0.9), lo, hi);
+  }
+
+  /** PHOTO MODE (§18): expanded orbit-pitch and zoom limits for free-camera framing. */
+  setFreeOrbit(on: boolean): void {
+    this.freeOrbit = on;
   }
 
   /** Current target distance — pinch gestures snapshot this at gesture start. */
@@ -52,7 +61,8 @@ export class CameraRig {
 
   /** Pinch-to-zoom: baseDist is targetDist snapshotted at gesture start, spanRatio is current/start finger span (>1 = fingers apart = zoom in). */
   pinchZoom(baseDist: number, spanRatio: number): void {
-    this.targetDist = THREE.MathUtils.clamp(baseDist / Math.max(0.1, spanRatio), 7, 34);
+    const [lo, hi] = this.freeOrbit ? [2.5, 55] : [7, 34];
+    this.targetDist = THREE.MathUtils.clamp(baseDist / Math.max(0.1, spanRatio), lo, hi);
   }
 
   shake(amp = 0.3, dur = 0.4): void {

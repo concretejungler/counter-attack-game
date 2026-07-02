@@ -21,6 +21,8 @@ Nothing here is abandoned; each entry has a reason and a natural return point.
 | Vroomba bag-burst (full bag ambush) | Suck is instant-kill for now; bag economy adds bookkeeping | Polish pass |
 | Title-screen live 3D backdrop | Title is a DOM overlay above an empty canvas; needs game.ts restructure | P4 polish |
 | 3-star challenge tracking for new worlds' bespoke challenge ids | Kitchen challenge ids are wired; worlds 2-9 challenge ids defined in content but evaluators not yet implemented (3rd star falls back to unearned) | P3 meta pass |
+| Photo Mode GIF export ("one-click GIF export of the last 10 seconds", §18) | Static PNG snap shipped this pass (`GameRenderer.snapPhoto()` + download link). A rolling 10s GIF needs either an in-browser frame-ring-buffer + encoder (gif.js or similar, pure-JS to keep the zero-asset/legally-clean deploy contract) or a MediaRecorder canvas-capture pipeline — meaningfully bigger scope than the slider/snap work in this pass | P4 polish continuation, or P5 alongside other capture/sharing features |
+| Fridge poetry magnets: the other 10 secret-word combos ("12 words total, other secret words do other things", §20.4) | This pass ships OPEN+SESAME (the one explicitly spec'd reward) plus 8 flavor-only tiles with no behavior; a full secret-word table (CAKE/DOOM/MOM/etc. each doing something) is its own content-design pass | P4 polish continuation |
 
 ## EXTERMINATOR alliance finale + loss reasons (landed this pass, GAME-PROMPT §8.9/§19)
 

@@ -185,6 +185,66 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
 .fridge-note.magnet-sticker small { display: block; font-size: 11px; font-weight: normal; color: #8a6e1c; margin-top: 1px; }
 .fridge-foot { margin-top: 22px; text-align: center; font-size: 12px; color: #8a9098; font-family: var(--font-label); }
 
+/* ---------- fridge poetry magnets (§20.4 easter egg) ---------- */
+.magnet-board {
+  position: relative;
+  width: 100%;
+  height: 116px;
+  margin-top: 12px;
+  border-top: 2px dashed rgba(154, 110, 64, 0.35);
+  padding-top: 8px;
+}
+.magnet-tile {
+  position: absolute;
+  top: 0; left: 8px;
+  min-width: 56px;
+  padding: 6px 10px;
+  background: linear-gradient(165deg, #fffef8, #f2e9d0);
+  border: 2px solid #cfc09a;
+  border-radius: 5px;
+  box-shadow: 0 3px 6px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.6);
+  font-family: var(--font-label);
+  font-weight: bold;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  text-align: center;
+  color: #3a2e1c;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition: box-shadow 0.1s;
+}
+.magnet-tile:hover { box-shadow: 0 4px 9px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.6); }
+.magnet-tile.dragging {
+  cursor: grabbing;
+  z-index: 5;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.6);
+}
+.magnet-tile.magnet-solved {
+  background: linear-gradient(165deg, #fff6c8, #ffe27a);
+  border-color: #d8a020;
+}
+.fridge-door-note {
+  margin-top: 10px;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-6px) rotate(-1deg);
+  transition: max-height 0.4s ease, opacity 0.4s ease, transform 0.4s ease;
+  background: var(--paper);
+  border-radius: 4px;
+  padding: 0 14px;
+  font-size: 13px;
+  text-align: center;
+  box-shadow: 0 4px 9px rgba(0,0,0,0.25);
+}
+.fridge-door-note.open {
+  max-height: 80px;
+  opacity: 1;
+  padding: 10px 14px;
+  transform: translateY(0) rotate(-1deg);
+}
+
 /* ---------- level select: the corkboard ---------- */
 .corkboard-screen {
   background: radial-gradient(ellipse at 50% 20%, #4a3826 0%, #2a1f14 75%);
@@ -786,6 +846,32 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
   box-shadow: 0 3px 7px var(--shadow);
 }
 .speed-btn.active { background: var(--butter); }
+.speed-btn.photo-btn { font-size: 18px; }
+
+/* ---------- Photo Mode (GAME-PROMPT §18) ---------- */
+.photo-panel {
+  position: absolute;
+  right: 14px;
+  bottom: 64px;
+  width: 220px;
+  background: var(--paper);
+  border-radius: 10px;
+  padding: 12px 14px 10px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+  z-index: 20;
+}
+.photo-panel-head { font-weight: bold; font-size: 16px; margin-bottom: 8px; text-align: center; }
+.photo-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.photo-row label { flex: 1; font-size: 12px; font-family: var(--font-label); color: #5a5048; }
+.photo-row input[type=range] { flex: 1; }
+.photo-row .wood-btn { width: 100%; }
+.photo-hint {
+  margin-top: 4px;
+  font-size: 10px;
+  text-align: center;
+  color: #8a8070;
+  font-family: var(--font-label);
+}
 
 /* tower inspect popover */
 .inspect {
@@ -997,7 +1083,12 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
    One-shot impact flash for big moments (cake bites, boss intros, MOOOOM! slam, losing).
    renderer.ts computes a 0..1 strength already pre-scaled by settings.flashIntensity and
    hands it to game.ts, which sets --flash-k and retriggers the animation (see ui.ts pulseFlash). */
-.flash-pulse {
+/* #ui > .flash-pulse (not just .flash-pulse) so this beats the #ui > * { pointer-events: auto }
+   rule above on specificity (ID+class > ID+universal) — otherwise this full-screen overlay
+   silently eats every click/tap across the whole canvas, since pointer-events:none here would
+   lose the cascade to that rule despite coming later in the file. Found while wiring up the
+   easter-egg click-picking (§20) and clicks kept landing on this div instead of the 3D scene. */
+#ui > .flash-pulse {
   position: absolute; inset: 0;
   pointer-events: none;
   z-index: 5;

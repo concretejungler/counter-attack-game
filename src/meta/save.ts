@@ -88,6 +88,17 @@ export interface SaveData {
   /** Daily Chores (§16): UTC day-number (src/meta/infestation.ts dayNumber()) of the last
    *  completed chore, or null if none yet. Prevents repeat claims within the same day. */
   lastDailyChoreDay: number | null;
+  /** EASTER EGGS (§20) — additive per-save flags, all optional-safe (backfilled by loadSave()
+   *  for saves written before P4). Kept flat rather than nested so they round-trip through
+   *  export/import codes with zero extra plumbing, same pattern as flyShooed above. */
+  eggs: {
+    /** §20.4 Fridge poetry magnets: true once OPEN+SESAME has been arranged adjacent and the
+     *  +50 BP reward granted — a one-time-per-save reward, checked before granting again. */
+    fridgeMagnetsSolved: boolean;
+    /** §20.2 Sunflower hum: lifetime click count on the windowsill sunflower prop (any level).
+     *  The 8-note hum + sway fires every 5th click (count % 5 === 0), not just once ever. */
+    sunflowerClicks: number;
+  };
 }
 
 const KEY = 'counterattack_save_v1';
@@ -115,6 +126,7 @@ export function defaultSave(): SaveData {
     junkDrawer: [],
     infestation: null,
     lastDailyChoreDay: null,
+    eggs: { fridgeMagnetsSolved: false, sunflowerClicks: 0 },
   };
 }
 
@@ -152,6 +164,7 @@ export function loadSave(): SaveData {
       junkDrawer: [...(data.junkDrawer ?? [])],
       infestation: data.infestation ?? null,
       lastDailyChoreDay: data.lastDailyChoreDay ?? null,
+      eggs: { ...defaultSave().eggs, ...data.eggs },
     };
   } catch {
     return defaultSave();

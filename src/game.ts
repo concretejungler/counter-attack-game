@@ -82,6 +82,23 @@ export class Game {
   private infestFight: { floor: 1 | 2 | 3; nodeIndex: number } | null = null;
   private dailyChoreActive = false;
 
+  // ---------- EASTER EGGS (§20) ----------
+  /** §20.1 Konami code: rolling buffer of recent keydowns, checked on title screen only. Session
+   *  flag (retroModeArmed) makes the *next* level load in Retro Mode — set once, consumed once. */
+  private konamiBuffer: string[] = [];
+  private retroModeArmed = false;
+  /** §20.13 idle campfire: seconds of zero input accumulated during the current build phase.
+   *  Any input event (bindInput's pointerdown/keydown) resets this to 0. */
+  private idleSeconds = 0;
+  private readonly IDLE_CAMPFIRE_SECONDS = 180;
+  /** §20.6 Wave-42 towel: true for the one endless wave where endlessDepth === 42, so the
+   *  drape+toast only fires once (on the waveStart transition into it) rather than every tick. */
+  private towelWaveActive = false;
+  // ---------- PHOTO MODE (GAME-PROMPT §18) ----------
+  photoMode = false;
+  private photoWasPaused = false;
+  private photoHudHidden = false;
+
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new GameRenderer(canvas);
     this.save = loadSave();
@@ -98,6 +115,7 @@ export class Game {
         this.sfx.play('ui-click');
       },
       onPause: () => this.togglePause(),
+      onPhotoMode: () => this.togglePhotoMode(),
       onUpgrade: (id) => {
         this.sim?.command({ type: 'upgradeTower', id });
         this.refreshInspectSoon();
@@ -247,6 +265,15 @@ export class Game {
         persistSave(this.save);
         this.showTitle();
       },
+      // ---------- EASTER EGGS (§20) ----------
+      onMagnetsSolved: () => {
+        if (this.save.eggs.fridgeMagnetsSolved) return; // reward is one-time-per-save
+        this.save.eggs.fridgeMagnetsSolved = true;
+        this.save.browniePoints.earned += 50;
+        persistSave(this.save);
+        this.sfx.play('fridge-open');
+        this.ui.toast('🧊 the magnets spelled OPEN SESAME... +50 🧁 BP!');
+      },
     });
 
     this.renderer.onFlashPulse = (strength) => this.ui.pulseFlash(strength);
@@ -273,6 +300,7 @@ export class Game {
     this.dailyChoreActive = false;
     this.music.intensity = 0;
     this.music.heartbeat = false;
+    this.exitPhotoModeIfOpen();
     this.ui.showTitle();
   }
 
@@ -281,6 +309,7 @@ export class Game {
     this.level = null;
     this.paused = false;
     this.endlessMode = false;
+    this.exitPhotoModeIfOpen();
     this.music.intensity = 0;
     this.music.heartbeat = false;
     // Abandoning mid-fight (pause veil "Abandon level") during a run or a Daily Chore returns to
@@ -469,6 +498,21 @@ export class Game {
     const intro = this.level.tutorial?.find((n) => n.wave === 0);
     if (intro) this.ui.stickyNote(intro.text, `${levelId}-w0`);
     this.sfx.play('ui-click');
+
+    // §20.1 Konami code: consume the one-level arming flag set from the title screen.
+    this.renderer.setRetroMode(this.retroModeArmed);
+    if (this.retroModeArmed) {
+      this.retroModeArmed = false;
+      this.ui.toast('🕹️ RETRO MODE — one level, extra chunky.');
+    }
+    // §20.3 red balloon: ~1/6 chance per level, purely cosmetic/clickable.
+    this.renderer.maybeSpawnBalloon();
+    // §20.13 idle campfire: fresh level, fresh idle clock.
+    this.idleSeconds = 0;
+    this.renderer.clearCampfire();
+    // §20.6 Wave-42 towel: cleared on every level (re-evaluated per endless wave in handleEvents).
+    this.towelWaveActive = false;
+    this.renderer.clearTowels();
   }
 
   /** Resolves an Infestation fight's outcome (called from endLevel when this.infestFight is
@@ -788,10 +832,75 @@ export class Game {
       // real panic against a still-running assault), so the drain-bar tracks sim time live.
       this.ui.updateChoice(this.sim.state.time);
       this.updateGhost();
+      this.updateIdleCampfire(dt);
     }
     this.audio.setVolumes(this.save.settings.musicVol, this.save.settings.sfxVol);
     this.renderer.frame(dt);
     this.screenshotReady = true;
+  }
+
+  /** §20.13 idle campfire: 3+ minutes of zero input during a build phase spawns a tiny campfire
+   *  + marshmallow sticks near the towers; any input (see noteInput(), called from bindInput)
+   *  clears it with a scurry. Only tracked during 'build' — the assault phase is never idle by
+   *  definition (waves are moving/attacking regardless of player input). */
+  private updateIdleCampfire(dt: number): void {
+    if (!this.sim || this.sim.state.phase !== 'build' || this.photoMode) {
+      if (this.renderer.campfireActive) this.renderer.clearCampfire();
+      this.idleSeconds = 0;
+      return;
+    }
+    this.idleSeconds += dt;
+    if (this.idleSeconds >= this.IDLE_CAMPFIRE_SECONDS && !this.renderer.campfireActive) {
+      const spot = this.campfireSpot();
+      if (spot) this.renderer.spawnCampfire(spot);
+    }
+  }
+
+  /** Picks a world point near the player's own towers for the idle campfire to sit — falls back
+   *  to the cake if no towers are placed yet (an idle build phase with zero towers is exactly
+   *  when the game wants to nudge the player, so it shouldn't be a no-op). */
+  private campfireSpot(): { x: number; y: number; z: number } | null {
+    if (!this.sim || !this.level) return null;
+    const towers = [...this.sim.state.towers.values()];
+    if (towers.length > 0) {
+      const t = towers[towers.length - 1];
+      return { x: t.pos.x + 0.9, y: t.pos.y, z: t.pos.z + 0.6 };
+    }
+    const cake = this.sim.state.cakeSlices >= 0 ? this.level.cakeTile : null;
+    if (!cake) return null;
+    const w = this.sim.grid.worldOf(cake);
+    return { x: w.x + 1.2, y: w.y, z: w.z + 0.6 };
+  }
+
+  /** Called from every real user input path (pointerdown, keydown, wheel) — resets the idle
+   *  clock and clears an already-spawned campfire "with a scurry" (the clear itself IS the
+   *  scurry-read; a dedicated poof VFX would need a render hook this feature doesn't own). */
+  private noteInput(): void {
+    this.idleSeconds = 0;
+    if (this.renderer.campfireActive) this.renderer.clearCampfire();
+  }
+
+  /** §20.3 red balloon: popped via a direct click — lifetime counter (Monkey Business
+   *  achievement threshold lives in achievements.ts, reading this same stat). */
+  private onBalloonPopped(): void {
+    this.save.stats.balloonsPopped++;
+    persistSave(this.save);
+    this.sfx.play('balloon-pop');
+    this.ui.toast('🎈 pop!');
+    this.checkAchievement('balloon-pop-1');
+    this.checkAchievement('balloon-pop-100');
+  }
+
+  /** §20.2 windowsill sunflower: every click sways it; the 5th click (and every 5th after)
+   *  plays the 8-note hum — "PvZ wink" per GAME-PROMPT, not a 1:1 copy. */
+  private onSunflowerClicked(): void {
+    this.renderer.eggsSwaySunflower();
+    this.save.eggs.sunflowerClicks++;
+    if (this.save.eggs.sunflowerClicks % 5 === 0) {
+      this.sfx.play('sunflower-hum');
+      this.ui.toast('🌻 hmm hm hmmmm...');
+    }
+    persistSave(this.save);
   }
 
   private updateMusicMood(): void {
@@ -821,6 +930,15 @@ export class Game {
           }
           this.ui.hud?.hideForecast();
           this.ui.dismissSticky();
+          // §20.6 Wave-42 towel: Endless-only, fires once on the transition into depth 42.
+          if (this.endlessMode && this.sim.state.endlessDepth === 42 && !this.towelWaveActive) {
+            this.towelWaveActive = true;
+            this.renderer.drapeTowelsOnTowers();
+            this.ui.toast('🧻 wave 42... everything pauses. towels appear. don\'t panic.');
+          } else if (this.towelWaveActive && this.sim.state.endlessDepth !== 42) {
+            this.towelWaveActive = false;
+            this.renderer.clearTowels();
+          }
           break;
         }
         case 'waveClear':
@@ -1151,6 +1269,12 @@ export class Game {
 
   private togglePause(): void {
     if (!this.sim) return;
+    if (this.photoMode) {
+      // Photo Mode owns pause state while active (see togglePhotoMode) — route the HUD's pause
+      // button/Escape key to exiting Photo Mode instead of desyncing this.paused underneath it.
+      this.togglePhotoMode();
+      return;
+    }
     if (!DIFFICULTY[this.save.settings.difficulty].pauseAllowed && this.sim.state.phase === 'assault') {
       this.ui.toast('landlords do not pause. 😤');
       return;
@@ -1158,6 +1282,86 @@ export class Game {
     this.paused = !this.paused;
     if (this.paused) this.ui.showPause();
     else this.ui.closeModal();
+  }
+
+  // ---------- PHOTO MODE (GAME-PROMPT §18) ----------
+  /** Free-orbit camera + tilt-shift slider + hide-HUD toggle + PNG snap. Reuses the existing
+   *  pause (sim stops ticking) but is its own mode on top: entering always pauses (remembering
+   *  whether the game was already paused, so exiting restores the prior state rather than
+   *  force-unpausing mid-assault), and it expands the camera rig's orbit/zoom limits so players
+   *  can get shots the normal gameplay framing would never allow. */
+  togglePhotoMode(): void {
+    if (!this.sim) return;
+    if (!this.photoMode) {
+      // Same "landlords do not pause" rule as the regular pause button (§13 difficulty engine) —
+      // Photo Mode is a pause superset, so it inherits the restriction rather than sidestepping it.
+      if (!this.paused && !DIFFICULTY[this.save.settings.difficulty].pauseAllowed && this.sim.state.phase === 'assault') {
+        this.ui.toast('landlords do not pause. 😤 (works fine during build phase!)');
+        return;
+      }
+      this.photoWasPaused = this.paused;
+      this.paused = true;
+      this.renderer.rig.setFreeOrbit(true);
+      this.photoMode = true;
+      this.ui.showPhotoMode({
+        onFocusY: (v) => this.renderer.setPhotoFocusY(v),
+        onBlurStrength: (v) => this.renderer.setPhotoBlurStrength(v),
+        onToggleHud: () => this.togglePhotoHud(),
+        onSnap: () => this.snapPhoto(),
+        onClose: () => this.togglePhotoMode(),
+      });
+      this.sfx.play('ui-click');
+    } else {
+      this.photoMode = false;
+      this.renderer.rig.setFreeOrbit(false);
+      // restore live tilt-shift defaults (matches DioramaShader's own uniform defaults)
+      this.renderer.setPhotoFocusY(0.45);
+      this.renderer.setPhotoBlurStrength(1.6);
+      if (this.photoHudHidden) this.togglePhotoHud();
+      this.paused = this.photoWasPaused;
+      this.ui.hidePhotoMode();
+      if (!this.paused) this.ui.closeModal();
+      this.sfx.play('ui-click');
+    }
+  }
+
+  private togglePhotoHud(): void {
+    this.photoHudHidden = !this.photoHudHidden;
+    this.ui.setHudHidden(this.photoHudHidden);
+  }
+
+  /** Defensive reset for screen-flow transitions that can happen while Photo Mode is open (e.g.
+   *  a screenshot/demo tool jumping scenes) — clears the panel + free-orbit + hidden-HUD state
+   *  without going through the normal toggle (which requires a live this.sim). */
+  private exitPhotoModeIfOpen(): void {
+    if (!this.photoMode) return;
+    this.photoMode = false;
+    this.renderer.rig.setFreeOrbit(false);
+    if (this.photoHudHidden) {
+      this.photoHudHidden = false;
+      this.ui.setHudHidden(false);
+    }
+    this.ui.hidePhotoMode();
+  }
+
+  /** Renders one synchronous frame and downloads it as a PNG — the "MOOOOM! killcam shares
+   *  itself" button (§18). No preserveDrawingBuffer plumbing needed: GameRenderer.snapPhoto()
+   *  renders straight to the canvas and reads it back via toBlob() in the same tick, before
+   *  the next frame gets a chance to touch the default framebuffer. */
+  private async snapPhoto(): Promise<void> {
+    this.sfx.play('camera-shutter');
+    const blob = await this.renderer.snapPhoto();
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    a.href = url;
+    a.download = `counter-attack-${this.level?.id ?? 'photo'}-${stamp}.png`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    this.ui.toast('📸 saved!');
   }
 
   // ---------- input ----------
@@ -1252,6 +1456,7 @@ export class Game {
     };
 
     canvas.addEventListener('pointerdown', (e) => {
+      this.noteInput();
       if (e.pointerType === 'touch') {
         activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (activeTouches.size === 2) {
@@ -1262,7 +1467,9 @@ export class Game {
       }
       if (twoFinger) return;
 
-      if (e.button === 1 || e.button === 2) {
+      if (e.button === 1 || e.button === 2 || this.photoMode) {
+        // PHOTO MODE (§18): every primary-button/touch drag is a camera orbit — no gameplay
+        // picking (placing/sweeping/inspecting) while framing a shot.
         orbiting = true;
         lastX = e.clientX;
         lastY = e.clientY;
@@ -1301,6 +1508,17 @@ export class Game {
           this.sim.command({ type: 'carryDrop', at: tile });
           this.cancelMode();
         }
+        return;
+      }
+
+      // §20.3 red balloon + §20.2 sunflower: ambient decor, take priority over gameplay picking
+      // since they're rare/small and a miss just falls through to a normal sweep anyway.
+      if (this.renderer.pickBalloon(this.pointer.ndcX, this.pointer.ndcY)) {
+        this.onBalloonPopped();
+        return;
+      }
+      if (this.renderer.pickSunflower(this.pointer.ndcX, this.pointer.ndcY)) {
+        this.onSunflowerClicked();
         return;
       }
 
@@ -1481,6 +1699,7 @@ export class Game {
     });
 
     canvas.addEventListener('wheel', (e) => {
+      this.noteInput();
       this.renderer.rig.zoom(e.deltaY);
       e.preventDefault();
     }, { passive: false });
@@ -1491,10 +1710,16 @@ export class Game {
     canvas.addEventListener('gesturestart', (e) => e.preventDefault());
 
     addEventListener('keydown', (e) => {
+      this.noteInput();
+      this.trackKonami(e.key);
       // Oh-Crap choice panel eats 1/2 first — it's a forced 5-second decision that shouldn't
       // also flip game speed while it's open.
       if (this.ui.choiceOpen && this.ui.handleChoiceKey(e.key)) {
         e.preventDefault();
+        return;
+      }
+      if (this.photoMode && e.key === 'Escape') {
+        this.togglePhotoMode();
         return;
       }
       if (e.key === 'r' || e.key === 'R') {
@@ -1506,16 +1731,35 @@ export class Game {
         else if (this.inspectedTower !== null) this.closeInspect();
         else if (this.sim) this.togglePause();
       } else if (e.key === ' ') {
-        if (this.sim?.state.phase === 'build') {
+        if (this.sim?.state.phase === 'build' && !this.photoMode) {
           this.sim.command({ type: 'callWave' });
           e.preventDefault();
         }
       } else if (e.key === '1' || e.key === '2' || e.key === '3') {
-        this.speedMult = parseInt(e.key, 10) as 1 | 2 | 3;
+        if (!this.photoMode) this.speedMult = parseInt(e.key, 10) as 1 | 2 | 3;
       } else if (e.key === 'p' || e.key === 'P') {
-        this.togglePause();
+        // PHOTO MODE (§18): P toggles Photo Mode when a level is loaded; plain pause stays on
+        // Escape/the HUD pause button — Photo Mode is a superset (it pauses AND frees the camera).
+        if (this.sim) this.togglePhotoMode();
       }
     });
+  }
+
+  /** §20.1 Konami code, title screen only: ↑↑↓↓←→←→BA arms Retro Mode for the *next* level load
+   *  (consumed once in finishLevelBoot — session-only, no save flag). Rolling buffer, case-
+   *  insensitive on the letter keys, trimmed to the sequence length so it never grows unbounded. */
+  private trackKonami(key: string): void {
+    if (this.sim) return; // title screen only (no sim loaded)
+    const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
+    const norm = key.length === 1 ? key.toLowerCase() : key;
+    this.konamiBuffer.push(norm);
+    if (this.konamiBuffer.length > KONAMI.length) this.konamiBuffer.shift();
+    if (this.konamiBuffer.length === KONAMI.length && this.konamiBuffer.every((k, i) => k === KONAMI[i])) {
+      this.konamiBuffer = [];
+      this.retroModeArmed = true;
+      this.ui.toast('🕹️🕹️🕹️ RETRO MODE ARMED — next level loads extra chunky.');
+      this.sfx.play('wave-clear');
+    }
   }
 
   private updatePointer(e: { clientX: number; clientY: number }): void {
@@ -1693,6 +1937,51 @@ export class Game {
         this.fastForward(2);
         this.renderer.rig.pose(0.05, 0.85, 9);
         this.renderer.rig.target.set(7, 0.4, 7);
+        return;
+      }
+      // ---------- P4 easter egg / photo mode demo scenes ----------
+      case 'photo': {
+        this.startLevel('kitchen-1', 1337);
+        const sim = this.sim!;
+        sim.state.crumbs = 900;
+        sim.command({ type: 'placeClutter', shape: 'tupper-o', rot: 0, at: { s: 0, c: 1, r: 0 } });
+        this.fastForward(2);
+        sim.command({ type: 'placeTower', def: 'sir-toastsalot', at: { s: 0, c: 1, r: 0 } });
+        this.fastForward(2);
+        this.togglePhotoMode();
+        return;
+      }
+      case 'retro': {
+        this.retroModeArmed = true;
+        this.startLevel('kitchen-1', 1337);
+        this.fastForward(2);
+        return;
+      }
+      case 'balloon': {
+        this.startLevel('kitchen-1', 1337);
+        this.renderer.maybeSpawnBalloon(1); // force-spawn for screenshot verification
+        // Balloon drift is centered on the window (see EggsController.reset) with only a ~4.5-unit
+        // half-span each way, so framing on the window at a normal-ish zoom always catches it.
+        this.renderer.rig.pose(0.15, 0.85, 11);
+        this.renderer.rig.target.set(8.7, 4.4, 0.5);
+        return;
+      }
+      case 'campfire': {
+        this.startLevel('kitchen-1', 1337);
+        const sim = this.sim!;
+        sim.command({ type: 'placeClutter', shape: 'tupper-o', rot: 0, at: { s: 0, c: 2, r: 8 } });
+        this.fastForward(2);
+        sim.command({ type: 'placeTower', def: 'sgt-spritz', at: { s: 0, c: 2, r: 8 } });
+        this.fastForward(2);
+        const w = sim.grid.worldOf({ s: 0, c: 4, r: 8 });
+        this.renderer.spawnCampfire(w);
+        this.fastForward(1);
+        this.renderer.rig.pose(0.2, 0.9, 6.5);
+        this.renderer.rig.target.set(w.x, w.y + 0.3, w.z);
+        return;
+      }
+      case 'magnets': {
+        this.showTitle();
         return;
       }
       // ---------- INFESTATION MODE (§15) demo scenes ----------
