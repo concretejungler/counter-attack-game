@@ -4,6 +4,7 @@ import { CRITTER_DEFS } from './critters';
 import { SHAPE_DEFS } from './clutterShapes';
 import { SPELL_DEFS } from './spells';
 import { MUTATION_DEFS } from './mutations';
+import { EVENT_DEFS } from './events';
 import { KITCHEN_LEVELS } from './levels/kitchen';
 import { LIVING_LEVELS } from './levels/living';
 import { BATHROOM_LEVELS } from './levels/bathroom';
@@ -20,6 +21,7 @@ export const CONTENT: ContentDB = {
   shapes: SHAPE_DEFS,
   spells: SPELL_DEFS,
   mutations: MUTATION_DEFS,
+  events: EVENT_DEFS,
 };
 
 export const ALL_LEVELS: LevelDef[] = [

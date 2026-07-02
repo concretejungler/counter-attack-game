@@ -142,10 +142,16 @@ const RECIPES: Record<string, Recipe> = {
     noise(c, o, 0.08, 0.7, 1800, 2, 0.32);
     tone(c, o, 'sine', 150, 60, 0.2, 0.6, 0.32);
   },
+  // MOOOOM! is the ultimate (3-min cooldown, wipes a full lane, "god-rays through the
+  // ceiling" per §10) — it needs to feel bigger than every other cue in the game. Whoosh
+  // (the hand descending) -> huge sub-bass impact -> rumble tail, all layered.
   'spell-mom': (c, o) => {
-    tone(c, o, 'sine', 60, 35, 1.0, 0.8);
-    noise(c, o, 0.5, 0.4, 300, 0.7, 0.5, 'lowpass');
-    tone(c, o, 'sine', 100, 30, 0.6, 0.9, 0.55);
+    tone(c, o, 'sine', 1400, 90, 0.35, 0.35, 0);        // descending whoosh (the hand arriving)
+    noise(c, o, 0.35, 0.25, 2000, 0.5, 0.05, 'lowpass'); // air displacement
+    tone(c, o, 'sine', 55, 32, 1.1, 0.9, 0.32);          // sub-bass impact
+    tone(c, o, 'sine', 90, 28, 0.8, 0.85, 0.36);
+    noise(c, o, 0.6, 0.45, 280, 0.7, 0.34, 'lowpass');   // impact thud
+    tone(c, o, 'sine', 45, 20, 1.4, 0.5, 0.5);           // long rumble tail
   },
   'highfive': (c, o) => {
     noise(c, o, 0.06, 0.55, 2200, 2);
@@ -173,6 +179,79 @@ const RECIPES: Record<string, Recipe> = {
   },
   'fakeout': (c, o) => tone(c, o, 'sine', 500, 100, 0.3, 0.25),
   'scout': (c, o) => tone(c, o, 'triangle', 700, 500, 0.15, 0.2),
+
+  // ---- P4 audio polish (GAME-PROMPT §24 "dopamine bells") ----
+
+  // The shiny chime: THE Pavlovian sparkle cue. A bright major-arp bell (triangle, long
+  // exponential tails so it "sparkles" rather than blips) topped with a high glassy shimmer pair.
+  // Obsessed over per §24 — kept separate from 'upgrade' (square-wave, utilitarian) on purpose.
+  'shiny-chime': (c, o) => {
+    [1319, 1568, 1976, 2637].forEach((f, i) => tone(c, o, 'triangle', f, f, 0.5, 0.22, i * 0.045));
+    tone(c, o, 'sine', 3136, 3136, 0.35, 0.12, 0.05);
+    tone(c, o, 'sine', 4186, 4186, 0.3, 0.08, 0.09);
+    noise(c, o, 0.18, 0.1, 7000, 3, 0.02, 'highpass');
+  },
+  // Jar pop + glass slide: cork-pop transient into a smooth glassy downward slide (the critter
+  // sliding down the jar wall) — two-part, matches the physical action described in §2.5.
+  'jar-pop': (c, o) => {
+    tone(c, o, 'sine', 1600, 2800, 0.05, 0.4, 0);      // pop
+    noise(c, o, 0.03, 0.35, 3500, 4, 0, 'bandpass');   // cork crack
+    tone(c, o, 'sine', 1400, 500, 0.35, 0.22, 0.05);   // glass slide down
+    noise(c, o, 0.3, 0.08, 6000, 2, 0.06, 'highpass'); // glass sheen on the slide
+  },
+  // Grudge-return sting: dun-dun-DUN on a kazoo timbre — comic-dramatic, not scary.
+  'grudge-return': (c, o) => {
+    tone(c, o, 'sawtooth', 165, 165, 0.16, 0.32, 0);
+    tone(c, o, 'sawtooth', 165, 165, 0.16, 0.32, 0.24);
+    tone(c, o, 'sawtooth', 131, 131, 0.4, 0.4, 0.48);
+    noise(c, o, 0.06, 0.15, 1200, 1.2, 0.48, 'bandpass');
+  },
+  // Grudge-settled: a small triumphant resolve — inverse of grudge-return, major and rising.
+  'grudge-settled': (c, o) => {
+    [330, 392, 494, 659].forEach((f, i) => tone(c, o, 'square', f, f, 0.16, 0.22, i * 0.07));
+    noise(c, o, 0.15, 0.12, 5000, 1.5, 0.28, 'highpass');
+  },
+  // Mutation-pick: ominous ratchet — a clicking noise-burst ladder that climbs in pitch,
+  // like a dial being cranked toward something bad, ending on a dread detuned drone.
+  'mutation-ratchet': (c, o) => {
+    for (let i = 0; i < 6; i++) noise(c, o, 0.035, 0.28, 1200 + i * 260, 6, i * 0.055, 'bandpass');
+    tone(c, o, 'sawtooth', 110, 90, 0.6, 0.28, 0.33);
+    tone(c, o, 'sawtooth', 113, 92, 0.6, 0.22, 0.37);
+  },
+  // Chain-zap: crackling arc that hops — a fast electric buzz plus 3 quick decaying sparks
+  // to sell the lightning hopping tower-to-tower (Static's chain lightning, §24 tower).
+  'chain-zap': (c, o) => {
+    tone(c, o, 'sawtooth', 2400, 1200, 0.07, 0.3, 0);
+    noise(c, o, 0.05, 0.3, 6000, 5, 0, 'bandpass');
+    tone(c, o, 'sawtooth', 2200, 1000, 0.05, 0.2, 0.06);
+    noise(c, o, 0.04, 0.22, 5500, 5, 0.09, 'bandpass');
+    tone(c, o, 'sawtooth', 2000, 800, 0.05, 0.14, 0.13);
+    noise(c, o, 0.04, 0.16, 5000, 5, 0.15, 'bandpass');
+  },
+  // Freeze crystal: bright bell-like tinkle with icy high partials — cold-status counterpart
+  // to the existing warmer 'cold-pulse' tower cue.
+  'freeze-crystal': (c, o) => {
+    [1760, 2217, 2637].forEach((f, i) => tone(c, o, 'sine', f, f * 1.4, 0.4, 0.16, i * 0.03));
+    noise(c, o, 0.25, 0.14, 8000, 4, 0.02, 'highpass');
+  },
+  // Generic dramatic boss-intro stinger (per-boss musical leitmotif lives in music.ts;
+  // this is the one-shot sfx hit for the instant the boss banner appears).
+  'boss-intro': (c, o) => {
+    tone(c, o, 'sawtooth', 60, 45, 1.0, 0.7, 0);
+    tone(c, o, 'square', 220, 180, 0.25, 0.3, 0);
+    noise(c, o, 0.5, 0.35, 350, 0.8, 0.03, 'lowpass');
+    tone(c, o, 'sine', 1200, 300, 0.4, 0.2, 0.08);
+  },
+  // Event-alert doorbell: classic two-tone ding-dong for random world events (§11).
+  'event-doorbell': (c, o) => {
+    tone(c, o, 'sine', 784, 784, 0.35, 0.3, 0);
+    tone(c, o, 'sine', 659, 659, 0.45, 0.28, 0.3);
+  },
+  // Choice-timer tick: a dry, urgent clock tick for Oh-Crap 5-second-dilemma countdowns (§12).
+  'choice-tick': (c, o) => {
+    noise(c, o, 0.02, 0.3, 2800, 5, 0, 'bandpass');
+    tone(c, o, 'square', 1800, 1800, 0.02, 0.1, 0);
+  },
 };
 
 export class Sfx {

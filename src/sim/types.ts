@@ -72,6 +72,10 @@ export interface LevelDef {
   mutationWaves?: number[];        // waves after which a mutation draft triggers
   challenge?: { text: string; id: string };  // 3rd star condition id
   tutorial?: { wave: number; text: string }[];
+  /** Director AI (§13) enabled for this level regardless of SimOptions.director. Default false. */
+  director?: boolean;
+  /** Per-wave probability of a random event (§11) when SimOptions.events is on. Default 0.25. */
+  eventChance?: number;
 }
 
 // ---------- critters ----------
@@ -203,6 +207,37 @@ export interface MutationDef {
   mod: Record<string, number>;
 }
 
+// ---------- random events (GAME-PROMPT §11) & Oh-Crap scenarios (§12) ----------
+/**
+ * Sim-consumable event effect keys the engine implements directly. Each EventDef maps to
+ * exactly one of these (instant effects resolve immediately; timed effects apply for durationSec).
+ */
+export type EventEffectKind =
+  | 'crumbRain'      // drop N crumbs at random tiles (instant)
+  | 'powerOutage'    // disable all zap/sonic/light towers for duration
+  | 'gust'           // all fliers +40% speed for duration
+  | 'tvTruce'        // everyone frozen 5s, then critters +100% speed 10s
+  | 'scentSpike'      // +25 scent (instant)
+  | 'quake'          // every tower's aim shuffled + 1s disable; crumbs scatter to random nearby tiles (instant)
+  | 'leftoverNight'  // spawn 3 crumb piles of value 15 at random floor tiles (instant)
+  | 'antDiplomacy'   // choice: pay 50% crumbs for a 3-wave spawn ceasefire vs decline
+  | 'overloadChoice' // choice: zap/light/sonic towers +100% rate for 20s w/ 15% chance disabled 10s later, vs decline
+  | 'crumbAvalanche' // choice: 500-value crumb spill — brace (sweep jackpot) vs refund (instant scent spike)
+  | 'sockStrike';    // choice: all towers stop 10s unless you pay 100 crumbs
+
+export interface EventDef {
+  id: string;
+  name: string;
+  text: string;              // flavor line shown when the event fires
+  weight: number;            // relative pick weight
+  worlds?: number[];         // levels outside these worlds never roll this event; undefined = any world
+  kind: 'instant' | 'timed';
+  durationSec?: number;      // timed events only
+  effect: EventEffectKind;
+  /** Choice events only: prompt + two option labels. Option 1 (index 1) is always the passive/auto-pick default. */
+  choice?: { prompt: string; options: [string, string] };
+}
+
 // ---------- content registry ----------
 export interface ContentDB {
   critters: Record<string, CritterDef>;
@@ -210,6 +245,7 @@ export interface ContentDB {
   shapes: Record<string, ClutterShape>;
   spells: Record<string, SpellDef>;
   mutations: Record<string, MutationDef>;
+  events: Record<string, EventDef>;
 }
 
 // ---------- runtime entities ----------
@@ -350,7 +386,8 @@ export type SimCommand =
   | { type: 'castSpell'; spell: string; surface?: number; x?: number; z?: number }
   | { type: 'pickMutation'; id: string }
   | { type: 'jarStart'; critterId: number }   // 2s channel; hand offline; target must be <20% hp & shiny
-  | { type: 'jarCancel' };
+  | { type: 'jarCancel' }
+  | { type: 'choose'; option: 0 | 1 };        // resolves state.pendingChoice; auto-picks option 1 at deadline
 
 // ---------- events out ----------
 export type LossReason = 'cakeDevoured' | 'theSwarm' | 'condemned' | 'betrayal' | 'exterminated';
@@ -402,7 +439,15 @@ export type SimEvent =
   | { t: 'jarFail'; critterId: number; reason: 'moved' | 'died' | 'cancelled' | 'ineligible' }
   | { t: 'grudgeBorn'; name: string; def: string; escapes: number }  // a biter escaped alive
   | { t: 'grudgeReturn'; name: string; critterId: number; bounty: number }
-  | { t: 'grudgeSettled'; name: string; critterId: number; bounty: number }; // killed a crowned elite
+  | { t: 'grudgeSettled'; name: string; critterId: number; bounty: number } // killed a crowned elite
+  // ---- Director AI (§13) ----
+  | { t: 'forecast'; text: string }                                  // weather-report wave preview at buildPhase
+  // ---- Random events (§11) ----
+  | { t: 'eventStart'; id: string; name: string; text: string }
+  | { t: 'eventEnd'; id: string }
+  // ---- Oh-Crap scenarios (§12) ----
+  | { t: 'choiceOffered'; id: string; prompt: string; options: [string, string]; deadline: number }
+  | { t: 'choiceMade'; id: string; option: number; auto: boolean };
 
 // ---------- recap / telemetry ----------
 export interface RecapData {
@@ -422,6 +467,10 @@ export interface SimOptions {
   seed: number;
   difficulty: DifficultyId;
   content: ContentDB;
+  /** Director AI (§13). Default false — the hand-tuned balance harness assumes static waves. */
+  director?: boolean;
+  /** Random events (§11) + Oh-Crap scenarios (§12). Default false. */
+  events?: boolean;
 }
 
 export interface DifficultyMods {
@@ -469,6 +518,33 @@ export interface SimState {
   jarredStock: string[];
   recap: RecapData;
   speedMult: number;        // shell-set; sim reads for nothing (kept for UI echo)
+  /** Random events (§11) currently in effect this tick (timed events live here until they expire). */
+  activeEvents: ActiveEvent[];
+  /** Count of random events rolled so far this level (capped at 1-2 per level). */
+  eventsThisLevel: number;
+  /** Oh-Crap forced-choice dilemma awaiting a player decision (§12). Auto-resolves to option 1 at deadline. */
+  pendingChoice: PendingChoice | null;
+  /** Ant Diplomacy ceasefire: waves remaining where spawns are skipped (0 = inactive). */
+  ceasefireWaves: number;
+}
+
+export interface ActiveEvent {
+  id: string;               // EventDef id
+  effect: EventEffectKind;
+  t: number;                // seconds remaining (timed) or 0 (instant, cleared same tick)
+  /**
+   * Effect-specific auxiliary data:
+   *  - overloadChoice: tower ids rolled for burnout + the delay (seconds into the window) before burnout kicks in.
+   *  - tvTruce: which phase is active — 'freeze' (phase 1, everyone stunned) or 'speedup' (phase 2, +100% speed).
+   */
+  data?: { burnoutTowerIds?: number[]; burnoutDelay?: number; tvPhase?: 'freeze' | 'speedup' };
+}
+
+export interface PendingChoice {
+  id: string;                      // EventDef id this choice belongs to
+  prompt: string;
+  options: [string, string];
+  deadline: number;                // sim time (state.time) at which it auto-resolves to option 1
 }
 
 export interface GrudgeEntry {

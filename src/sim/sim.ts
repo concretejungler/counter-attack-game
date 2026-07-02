@@ -12,9 +12,14 @@ import {
 } from './hand';
 import { applyCast, updateSpells } from './spells';
 import { spawnGrudges } from './grudges';
+import { DirectorMemory, augmentWave, forecastText, recordWaveTelemetry } from './director';
+import {
+  applyActiveEventEffectsPost, applyActiveEventEffectsPre, applyChoose,
+  maybeStartEvent, updateActiveEvents, updatePendingChoice,
+} from './events';
 import type {
   Critter, ContentDB, DamageType, DifficultyId, DifficultyMods, LevelDef, LossReason,
-  SimCommand, SimEvent, SimOptions, SimState, TileRef, Vec3,
+  SimCommand, SimEvent, SimOptions, SimState, TileRef, Vec3, WaveDef,
 } from './types';
 
 export const SIM_DT = 1 / 30;
@@ -46,6 +51,8 @@ export interface SimCtx {
    */
   shinyRng: RNG;    // shiny-critter roll (GAME-PROMPT §2.5)
   grudgeRng: RNG;   // grudge name picks + crowned-elite spawn-door picks (GAME-PROMPT §2.6)
+  eventRng: RNG;    // random event rolls + effect randomness (GAME-PROMPT §11/§12) — inert unless SimOptions.events
+  directorRng: RNG; // Director AI augmentation picks (GAME-PROMPT §13) — inert unless SimOptions.director
   content: ContentDB;
   diff: DifficultyMods;
   emit(e: SimEvent): void;
@@ -65,6 +72,8 @@ export class Sim implements SimCtx {
   rng: RNG;
   shinyRng: RNG;
   grudgeRng: RNG;
+  eventRng: RNG;
+  directorRng: RNG;
   content: ContentDB;
   diff: DifficultyMods;
 
@@ -78,12 +87,30 @@ export class Sim implements SimCtx {
   /** Most common ground critter in the level — used for scouts and THE SWARM. */
   private swarmDef: string;
 
+  /** Director AI (§13) — inert (constructor default false) unless SimOptions.director or LevelDef.director is true. */
+  readonly directorOn: boolean;
+  private directorMem = new DirectorMemory();
+  /** Random events (§11) + Oh-Crap scenarios (§12) — inert unless SimOptions.events is true. */
+  readonly eventsOn: boolean;
+  /** recap.sweeps snapshot at the start of the wave in progress, used to detect zero-sweep waves for the Director. */
+  private sweepsAtWaveStart = 0;
+  /**
+   * Every event emitted since the current wave started, so onWaveClear's Director telemetry sees
+   * the WHOLE wave — `this.events` alone only holds the current tick's events (it's drained by
+   * every `tick()` return), which would otherwise starve recordWaveTelemetry down to one tick.
+   */
+  private waveEventLog: SimEvent[] = [];
+
   constructor(level: LevelDef, opts: SimOptions) {
     this.level = level;
     this.content = opts.content;
     this.rng = new RNG(opts.seed);
-    this.shinyRng = new RNG((opts.seed ^ 0x5348_4e59) >>> 0);  // 'SHNY' XOR-mixed, independent stream
-    this.grudgeRng = new RNG((opts.seed ^ 0x4752_4447) >>> 0); // 'GRDG' XOR-mixed, independent stream
+    this.shinyRng = new RNG((opts.seed ^ 0x5348_4e59) >>> 0);    // 'SHNY' XOR-mixed, independent stream
+    this.grudgeRng = new RNG((opts.seed ^ 0x4752_4447) >>> 0);   // 'GRDG' XOR-mixed, independent stream
+    this.eventRng = new RNG((opts.seed ^ 0x4556_4e54) >>> 0);    // 'EVNT' XOR-mixed, independent stream
+    this.directorRng = new RNG((opts.seed ^ 0x4449_5245) >>> 0); // 'DIRE' XOR-mixed, independent stream
+    this.directorOn = !!opts.director || !!level.director;
+    this.eventsOn = !!opts.events;
     this.diff = DIFFICULTY[opts.difficulty];
     this.grid = new Grid(level);
     this.grid.recompute(level.cakeTile);
@@ -138,6 +165,10 @@ export class Sim implements SimCtx {
         directorNotes: [],
       },
       speedMult: 1,
+      activeEvents: [],
+      eventsThisLevel: 0,
+      pendingChoice: null,
+      ceasefireWaves: 0,
     };
     this.dealClutterHand();
   }
@@ -247,15 +278,23 @@ export class Sim implements SimCtx {
       }
     }
 
+    // 4b. random events (§11) + Oh-Crap scenarios (§12) — fully inert unless SimOptions.events
+    if (this.eventsOn) {
+      updatePendingChoice(this);
+      applyActiveEventEffectsPre(this);
+    }
+
     // 5. entities & systems
     updateHand(this, dt);
     updateCritters(this, dt);
     updateTowers(this, dt);
+    if (this.eventsOn) applyActiveEventEffectsPost(this);
     this.updateStationaryAutoSweep();
     updateProjectiles(this, dt);
     updateCrumbEating(this, dt);
     updateSpells(this, dt);
     this.updateScent(dt);
+    if (this.eventsOn) updateActiveEvents(this, dt);
 
     // 6. centralized loss: the cake is gone AND nobody is carrying a recoverable slice
     if (st.cakeSlices <= 0) {
@@ -274,6 +313,7 @@ export class Sim implements SimCtx {
     // 8. recap sampling (1/s)
     if (st.tick % 30 === 0) st.recap.scentHistory.push(Math.round(st.scent));
 
+    if (this.directorOn) this.waveEventLog.push(...this.events);
     return this.events.splice(0, this.events.length);
   }
 
@@ -360,16 +400,17 @@ export class Sim implements SimCtx {
       case 'jarCancel':
         applyJarCancel(this);
         return;
+      case 'choose':
+        applyChoose(this, cmd.option);
+        return;
     }
   }
 
   private startWave(bonusCrumbs: number): void {
     const st = this.state;
     st.waveIndex++;
-    const wave = this.level.waves[st.waveIndex];
-    if (!wave) return;
-    const countScale = st.scent >= 25 ? 1.1 : 1.0;
-    this.waveRt = new WaveRuntime(wave, countScale);
+    const authoredWave = this.level.waves[st.waveIndex];
+    if (!authoredWave) return;
     st.phase = 'assault';
     st.buildTimer = -1;
     if (bonusCrumbs > 0) {
@@ -377,7 +418,31 @@ export class Sim implements SimCtx {
       st.recap.crumbsBanked += bonusCrumbs;
       this.emit({ t: 'crumbBank', amount: bonusCrumbs, total: st.crumbs });
     }
+
+    // Ant Diplomacy ceasefire (§12): skip this wave's spawns entirely while the truce holds.
+    if (st.ceasefireWaves > 0) {
+      st.ceasefireWaves--;
+      this.waveRt = new WaveRuntime({ entries: [] }, 1);
+      this.emit({ t: 'waveStart', index: st.waveIndex, total: st.wavesTotal });
+      return;
+    }
+
+    const countScale = st.scent >= 25 ? 1.1 : 1.0;
+    // Director AI (§13): augments the wave (never replaces authored entries) when enabled. The
+    // sweepsAtWaveStart snapshot + a fresh waveEventLog let onWaveClear see exactly this wave's
+    // sweep count and hit/leak events (this.events alone is drained every single tick).
+    this.sweepsAtWaveStart = st.recap.sweeps;
+    this.waveEventLog = [];
+    let wave = authoredWave;
+    if (this.directorOn) {
+      const spawnId = this.level.spawns[0]?.id ?? '';
+      const { wave: augmented, note } = augmentWave(this, this.level, authoredWave, this.directorMem, spawnId);
+      wave = augmented;
+      if (note) st.recap.directorNotes.push(note);
+    }
+    this.waveRt = new WaveRuntime(wave, countScale);
     spawnGrudges(this);
+    if (this.eventsOn) maybeStartEvent(this);
     this.emit({ t: 'waveStart', index: st.waveIndex, total: st.wavesTotal });
   }
 
@@ -385,6 +450,15 @@ export class Sim implements SimCtx {
     const st = this.state;
     this.emit({ t: 'waveClear', index: st.waveIndex, earlyBonus: 0 });
     for (const tw of st.towers.values()) tw.ageWaves++;
+
+    // Director AI (§13): fold this whole wave's events + sweep count into rolling telemetry.
+    // waveEventLog holds everything emitted since startWave (this.events alone only holds the
+    // current tick — it's drained on every tick() return, long before the wave actually ends).
+    if (this.directorOn) {
+      const sweptCount = st.recap.sweeps - this.sweepsAtWaveStart;
+      recordWaveTelemetry(this, this.directorMem, [...this.waveEventLog, ...this.events], sweptCount);
+    }
+
     if (st.waveIndex >= st.wavesTotal - 1) {
       st.phase = 'won';
       this.emit({ t: 'won', bitesTaken: st.cakeMax - st.cakeSlices });
@@ -396,6 +470,16 @@ export class Sim implements SimCtx {
     this.scoutTimer = 0;
     this.dealClutterHand();
     this.emit({ t: 'buildPhase', index: st.waveIndex + 1, clutterHand: [...st.clutterHand] });
+
+    // Director forecast (§13): a deliberately-partial weather-report preview of the next wave,
+    // including whether the Director would currently augment it (telemetry can still shift
+    // before it actually fires at that wave's startWave — the forecast is allowed to be partial).
+    if (this.directorOn) {
+      const nextWave = this.level.waves[st.waveIndex + 1];
+      if (nextWave) {
+        this.emit({ t: 'forecast', text: forecastText(this, this.level, nextWave, this.directorMem) });
+      }
+    }
 
     // mutation draft? (mutationWaves entries are 1-based wave numbers)
     const waveNum = st.waveIndex + 1;

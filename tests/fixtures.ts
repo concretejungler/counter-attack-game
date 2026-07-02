@@ -1,4 +1,4 @@
-import type { LevelDef, CritterDef, TowerDef, ClutterShape, SpellDef, MutationDef, ContentDB } from '../src/sim/types';
+import type { LevelDef, CritterDef, TowerDef, ClutterShape, SpellDef, MutationDef, ContentDB, EventDef } from '../src/sim/types';
 
 /** 8x8 single floor surface. Spawn at (1,1), cake at (6,6). */
 export function tinyLevel(overrides: Partial<LevelDef> = {}): LevelDef {
@@ -77,6 +77,10 @@ export const TEST_CRITTERS: Record<string, CritterDef> = {
     id: 'test-eater', name: 'Test Eater', tier: 1, hp: 10, speed: 2, size: 0.25,
     bounty: 5, bites: 1, resist: null, weak: null, crumbHunger: 10, evolveTo: 'test-tank', desc: 'test',
   },
+  'test-spray-resist': {
+    id: 'test-spray-resist', name: 'Test Spray Resist', tier: 2, hp: 12, speed: 1.5, size: 0.35,
+    bounty: 8, bites: 1, resist: 'spray', weak: null, desc: 'test',
+  },
 };
 
 export const TEST_TOWERS: Record<string, TowerDef> = {
@@ -153,6 +157,31 @@ export const TEST_MUTATIONS: Record<string, MutationDef> = {
   'mut-bounty': { id: 'mut-bounty', name: 'Lean Times', desc: '-20% bounty', mod: { bountyPct: -0.2 } },
 };
 
+export const TEST_EVENTS: Record<string, EventDef> = {
+  'test-crumb-rain': {
+    id: 'test-crumb-rain', name: 'Test Crumb Rain', text: 'crumbs fall from the sky',
+    weight: 1, kind: 'instant', effect: 'crumbRain',
+  },
+  'test-power-outage': {
+    id: 'test-power-outage', name: 'Test Power Outage', text: 'the lights go out',
+    weight: 1, kind: 'timed', durationSec: 6, effect: 'powerOutage',
+  },
+  'test-gust': {
+    id: 'test-gust', name: 'Test Gust', text: 'wind picks up',
+    weight: 1, kind: 'timed', durationSec: 6, effect: 'gust',
+  },
+  'test-ant-diplomacy': {
+    id: 'test-ant-diplomacy', name: 'Test Ant Diplomacy', text: 'an envoy arrives',
+    weight: 1, kind: 'instant', effect: 'antDiplomacy',
+    choice: { prompt: 'ceasefire?', options: ['accept', 'decline'] },
+  },
+  'test-sock-strike': {
+    id: 'test-sock-strike', name: 'Test Sock Strike', text: 'towers threaten to strike',
+    weight: 1, kind: 'instant', effect: 'sockStrike',
+    choice: { prompt: 'pay up?', options: ['pay', 'strike'] },
+  },
+};
+
 export function testContent(): ContentDB {
   return {
     critters: TEST_CRITTERS,
@@ -160,6 +189,7 @@ export function testContent(): ContentDB {
     shapes: TEST_SHAPES,
     spells: TEST_SPELLS,
     mutations: TEST_MUTATIONS,
+    events: TEST_EVENTS,
   };
 }
 

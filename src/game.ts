@@ -7,7 +7,7 @@ import { GameRenderer } from './render/renderer';
 import { UI } from './ui/ui';
 import { AudioMan } from './audio/audio';
 import { Sfx } from './audio/sfx';
-import { Music } from './audio/music';
+import { Music, type BossId } from './audio/music';
 import { loadSave, persistSave, type SaveData } from './meta/save';
 
 type Mode =
@@ -153,7 +153,16 @@ export class Game {
   startLevel(id: string, seed?: number): void {
     this.level = levelById(id);
     const difficulty = this.save.settings.difficulty;
-    this.sim = new Sim(this.level, { seed: seed ?? ((Date.now() % 100000) | 1), difficulty, content: CONTENT });
+    this.sim = new Sim(this.level, {
+      seed: seed ?? ((Date.now() % 100000) | 1),
+      difficulty,
+      content: CONTENT,
+      // Live play gets the full experience; the balance harness never sets these.
+      // Director joins on the two upper tiers (§13: "Director unchained" territory).
+      events: true,
+      director: difficulty === 'landlord' || difficulty === 'condemned' || !!this.level.director,
+    });
+    this.music.setTheme(this.level.theme);
     this.renderer.loadLevel(this.level, CONTENT);
     this.ui.showHud(this.level);
     this.ui.hud?.refreshClutter(this.sim.state.clutterHand);
@@ -273,10 +282,12 @@ export class Game {
       switch (ev.t) {
         case 'waveStart': {
           const wave = this.level.waves[ev.index];
-          const hasBoss = wave?.entries.some((e) => CONTENT.critters[e.critter]?.boss);
-          if (hasBoss) {
-            this.ui.banner('👑 THE CRUMB KING APPROACHES', true);
-            this.sfx.play('boss');
+          const bossEntry = wave?.entries.find((e) => CONTENT.critters[e.critter]?.boss);
+          if (bossEntry) {
+            const bossDef = CONTENT.critters[bossEntry.critter];
+            this.ui.banner(`👑 ${bossDef.name.toUpperCase()} APPROACHES`, true);
+            this.sfx.play('boss-intro');
+            this.music.setBoss(bossEntry.critter as BossId);
             this.bossAlive = true;
           } else {
             this.ui.banner(`Wave ${ev.index + 1} of ${ev.total}`);
@@ -302,7 +313,7 @@ export class Game {
           this.ui.hud?.refreshClutter(this.sim.state.clutterHand);
           break;
         case 'mutationOffer':
-          this.sfx.play('mutation');
+          this.sfx.play('mutation-ratchet');
           this.ui.showMutationDraft(ev.options);
           break;
         case 'cakeBite':
@@ -324,8 +335,9 @@ export class Game {
           this.save.critterdex.kills[ev.def] = (this.save.critterdex.kills[ev.def] ?? 0) + 1;
           if (def?.boss) {
             this.bossAlive = false;
-            this.ui.banner('👑 THE CRUMB KING CRUMBLES!');
-            this.ui.toast('sweep up his royal remains!!');
+            this.music.setBoss(null);
+            this.ui.banner(`👑 ${def.name.toUpperCase()} FALLS!`);
+            this.ui.toast('sweep up the royal remains!!');
           }
           break;
         }
@@ -335,13 +347,37 @@ export class Game {
         // game.ts changes needed.
         case 'jarDone':
           this.save.critterdex.jarred[ev.def] = (this.save.critterdex.jarred[ev.def] ?? 0) + 1;
-          this.sfx.play('ui-click');
+          this.sfx.play('jar-pop');
           this.ui.toast(`🫙 Jarred! ${CONTENT.critters[ev.def]?.name ?? ev.def} joins the Critterdex.`);
           persistSave(this.save);
           break;
+        case 'grudgeBorn':
+          this.sfx.play('grudge-return');
+          this.ui.toast(`😤 ${ev.name} escaped... and will REMEMBER this.`);
+          break;
+        case 'grudgeReturn':
+          this.sfx.play('grudge-return');
+          this.ui.banner(`👑 ${ev.name} IS BACK`, true);
+          break;
+        case 'grudgeSettled':
+          this.sfx.play('grudge-settled');
+          this.ui.toast(`⚖️ ${ev.name}: settled. Bounty collected!`);
+          break;
+        case 'eventStart':
+          this.sfx.play('event-doorbell');
+          this.ui.banner(`📺 ${ev.name}`, true);
+          this.ui.toast(ev.text);
+          break;
+        case 'choiceOffered':
+          this.sfx.play('choice-tick');
+          this.ui.toast(`⚡ ${ev.prompt}`);
+          break;
+        case 'forecast':
+          this.ui.toast(`🌦️ ${ev.text}`);
+          break;
         case 'shinySpawn':
           this.save.critterdex.shinySeen[ev.def] = (this.save.critterdex.shinySeen[ev.def] ?? 0) + 1;
-          this.sfx.play('upgrade'); // closest existing "Pavlovian chime" cue (GAME-PROMPT 2.5) — sfx.ts owned by another workstream
+          this.sfx.play('shiny-chime');
           this.ui.toast(`✨ SHINY! a ${CONTENT.critters[ev.def]?.name ?? ev.def} sparkles nearby...`);
           persistSave(this.save);
           break;
