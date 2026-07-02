@@ -1,12 +1,19 @@
 import type { ContentDB, LevelDef, RecapData, SimState, RoomTheme } from '../sim/types';
 import type { SaveData } from '../meta/save';
-import { LEVEL_ICONS, CRITTER_ICONS } from './icons';
+import { LEVEL_ICONS, CRITTER_ICONS, TOWER_ICONS, MUTATION_ICONS } from './icons';
 import {
   ROOM_COLOR, ROOM_LABEL, worldsGrouped, isLevelUnlocked, isWorldUnlocked,
   starsFor, prerequisiteRoomLabel, furthestUnlockedLevel,
   critterdexOrder, isCritterSeen, killCount, jarCount, shinyCount, critterdexCompletionPct,
 } from '../meta/progress';
 import { JUNK_DRAWER_ITEMS, isPurchased, currentBP, canAfford, type JunkDrawerItem } from '../meta/achievements';
+import {
+  RELICS_BY_ID, DECK_MAX, currentFloorNodes, reachableNodeIndices, shopPrice, rollShopWares,
+  dayNumber, type RunState, type NodeDef, type NodeKind,
+} from '../meta/infestation';
+import { levelById } from '../content';
+
+const dayNumberLocal = (): number => dayNumber(Date.now());
 
 const el = (tag: string, cls = '', html = ''): HTMLElement => {
   const e = document.createElement(tag);
@@ -23,6 +30,8 @@ export function buildTitle(
   onSettings: () => void,
   onJournal: () => void,
   onJunkDrawer: () => void,
+  onInfestation: () => void,
+  onDailyChore: () => void,
 ): HTMLElement {
   const screen = el('div', 'screen');
   const fridge = el('div', 'fridge');
@@ -45,9 +54,18 @@ export function buildTitle(
   const play = el('button', 'fridge-note', '🎂 Defend the Cake');
   play.style.setProperty('--pin', '#e8504f');
   play.onclick = onPlay;
-  const infest = el('button', 'fridge-note locked', '🌀 Infestation Mode <small>(soon)</small>');
+  const infestUnlocked = (save.stars['kitchen-5'] ?? 0) > 0;
+  const inRun = !!save.infestation && !save.infestation.over;
+  const infest = el(
+    'button',
+    `fridge-note magnet-sticker${infestUnlocked ? '' : ' locked'}`,
+    infestUnlocked
+      ? `🐜 Infestation${inRun ? ` <small>resume — floor ${save.infestation!.floor}</small>` : ''}`
+      : '🐜 Infestation Mode <small>(beat the Crumb King first!!)</small>',
+  );
   infest.style.setProperty('--pin', '#3c8a5e');
   infest.style.setProperty('--tilt', '0.8deg');
+  if (infestUnlocked) infest.onclick = onInfestation;
   const journalPct = critterdexCompletionPct(save);
   const journal = el('button', 'fridge-note magnet-sticker', `📔 my journal!! <small>${journalPct}%</small>`);
   journal.style.setProperty('--pin', '#d8a020');
@@ -58,11 +76,18 @@ export function buildTitle(
   drawer.style.setProperty('--pin', '#8a4a9c');
   drawer.style.setProperty('--tilt', '-0.6deg');
   drawer.onclick = onJunkDrawer;
+  const today = dayNumberLocal();
+  const choreDone = save.lastDailyChoreDay === today;
+  const chore = el('button', 'fridge-note magnet-sticker', choreDone ? '📅 Daily Chore <small>done for today! ✔</small>' : '📅 Daily Chore <small>+25 BP</small>');
+  chore.style.setProperty('--pin', '#d87f2e');
+  chore.style.setProperty('--tilt', '-1.6deg');
+  if (!choreDone) chore.onclick = onDailyChore;
+  else chore.classList.add('locked');
   const settings = el('button', 'fridge-note', '🌡️ Settings');
   settings.style.setProperty('--pin', '#3f5d7d');
   settings.style.setProperty('--tilt', '-1deg');
   settings.onclick = onSettings;
-  menu.append(play, journal, drawer, infest, settings);
+  menu.append(play, journal, drawer, infest, chore, settings);
 
   fridge.append(
     title,
@@ -558,5 +583,268 @@ export function buildSettings(
     onChange(save.settings);
   };
   (modal.querySelector('[data-act=close]') as HTMLElement).onclick = onClose;
+  return wrap;
+}
+
+// =========================================================================
+// INFESTATION MODE (GAME-PROMPT §15) — the roguelike run layer.
+// A hand-drawn house cross-section path (run map), polaroid card draft, a
+// lawn-table Garage Sale shop, and a run-over recap. Reuses the same paper /
+// wood-btn / sticky / card visual vocabulary as the campaign screens above.
+// =========================================================================
+
+const NODE_ICON: Record<NodeKind, string> = {
+  fight: '🥊', elite: '👑', shop: '🛒', rest: '🛋️', boss: '💀',
+};
+const NODE_LABEL: Record<NodeKind, string> = {
+  fight: 'Fight', elite: 'Elite', shop: 'Garage Sale', rest: 'Couch Nap', boss: 'Floor Boss',
+};
+
+/** The run map: a branching path drawn like a kid's cross-section of the current floor, node
+ *  icons showing kind + clear state, reachable nodes clickable. */
+export function buildInfestationMap(
+  run: RunState,
+  content: ContentDB,
+  onPickNode: (index: number) => void,
+  onAbandon: () => void,
+): HTMLElement {
+  const screen = el('div', 'screen infest-screen');
+  const wrap = el('div', 'infest-wrap');
+
+  const header = el('div', 'infest-header');
+  header.append(el('div', 'infest-title', `🐜 INFESTATION — Floor ${run.floor} of 3`));
+  const chips = el('div', 'infest-chips');
+  chips.append(el('div', 'infest-chip', `🎂 ${run.slices} slices`));
+  chips.append(el('div', 'infest-chip', `🔩 ${run.scraps} scraps`));
+  chips.append(el('div', 'infest-chip', `🃏 ${run.deck.length}/${DECK_MAX} deck`));
+  header.append(chips);
+  wrap.append(header);
+
+  if (run.relics.length > 0) {
+    const relicRow = el('div', 'infest-relic-row');
+    for (const id of run.relics) {
+      const r = RELICS_BY_ID[id];
+      if (!r) continue;
+      const chip = el('div', 'infest-relic-chip', r.item.split(' ')[0]);
+      chip.title = `${r.name} — ${r.desc}`;
+      relicRow.append(chip);
+    }
+    wrap.append(relicRow);
+  }
+
+  const nodes = currentFloorNodes(run);
+  const reachable = new Set(reachableNodeIndices(run));
+  const board = el('div', 'infest-board');
+
+  // group nodes by column for a branching-path layout (col 0 = entry, 1 = branch, 2 = funnel, 3 = boss)
+  const maxCol = Math.max(...nodes.map((n) => n.col));
+  for (let c = 0; c <= maxCol; c++) {
+    const laneNodes = nodes.map((n, i) => ({ n, i })).filter(({ n }) => n.col === c);
+    const lane = el('div', 'infest-lane');
+    laneNodes.forEach(({ n, i }) => {
+      const isCurrent = run.nodeIndex === i;
+      const isReachable = reachable.has(i) && !n.cleared;
+      const cls = `infest-node infest-node-${n.kind}${n.cleared ? ' cleared' : ''}${isReachable ? ' reachable' : ''}${isCurrent ? ' current' : ''}`;
+      const lvl = n.levelId ? levelById(n.levelId) : null;
+      const btn = el('button', cls, `
+        <div class="infest-node-ico">${NODE_ICON[n.kind]}</div>
+        <div class="infest-node-label">${NODE_LABEL[n.kind]}</div>
+        ${lvl ? `<div class="infest-node-sub">${lvl.name}</div>` : ''}
+        ${n.cleared ? '<div class="infest-node-check">✔</div>' : ''}
+      `) as HTMLButtonElement;
+      btn.disabled = !isReachable;
+      if (isReachable) btn.onclick = () => onPickNode(i);
+      lane.append(btn);
+    });
+    board.append(lane);
+  }
+  wrap.append(board);
+
+  const footer = el('div', 'infest-footer');
+  // Two-step "arm" confirm (no native browser dialogs anywhere else in this diegetic UI) — first
+  // click reveals a "really??" state, second click within the window actually abandons.
+  const abandon = el('button', 'wood-btn small danger', 'Abandon Run') as HTMLButtonElement;
+  let armed = false;
+  let armTimer: ReturnType<typeof setTimeout> | null = null;
+  abandon.onclick = () => {
+    if (armed) { onAbandon(); return; }
+    armed = true;
+    abandon.textContent = 'really?? click again';
+    abandon.classList.add('armed');
+    if (armTimer) clearTimeout(armTimer);
+    armTimer = setTimeout(() => {
+      armed = false;
+      abandon.textContent = 'Abandon Run';
+      abandon.classList.remove('armed');
+    }, 2600);
+  };
+  footer.append(abandon);
+  wrap.append(footer);
+
+  screen.append(wrap);
+  return screen;
+}
+
+/** Card draft modal — reuses the polaroid .card look from the build bar, at a larger scale
+ *  with tower role/desc text so a pick actually feels informed. */
+export function buildInfestationDraft(
+  content: ContentDB,
+  options: string[],
+  onPick: (towerId: string) => void,
+): HTMLElement {
+  const wrap = el('div', 'modal-wrap');
+  const modal = el('div', 'paper-modal');
+  modal.innerHTML = `<h2>🃏 Pick a Tower</h2><div class="sub">victory spoils — one joins the deck:</div>`;
+  const row = el('div', 'draft-row');
+  for (const id of options) {
+    const t = content.towers[id];
+    if (!t) continue;
+    const card = el('div', 'draft-card', `
+      <div class="face">${TOWER_ICONS[id] ?? '🔧'}</div>
+      <b>${t.name}</b>
+      <div class="draft-role">${t.role}</div>
+      <p>${t.desc}</p>
+    `);
+    card.onclick = () => onPick(id);
+    row.append(card);
+  }
+  modal.append(row);
+  wrap.append(modal);
+  return wrap;
+}
+
+/** Garage Sale — a lawn-table shop (§23 aesthetic): buy a random tower card, remove a curse,
+ *  buy a random relic, or top up slices. Prices reflect any Expired-Coupons-style discount
+ *  already baked into `shopPrice()`. */
+export function buildGarageSale(
+  run: RunState,
+  content: ContentDB,
+  floor: number,
+  nodeIndex: number,
+  onBuyTower: (id: string) => void,
+  onBuyRelic: (id: string) => void,
+  onRemoveCurse: (id: string) => void,
+  onBuySlices: () => void,
+  onLeave: () => void,
+): HTMLElement {
+  const screen = el('div', 'screen infest-screen shop-screen');
+  const wrap = el('div', 'shop-wrap');
+
+  wrap.append(el('div', 'shop-header', '🛒 GARAGE SALE'));
+  wrap.append(el('div', 'shop-sub', 'everything must go. cash or crumbs, no refunds.'));
+  wrap.append(el('div', 'infest-chip shop-scraps-chip', `🔩 ${run.scraps} scraps`));
+
+  const { towerCards, relicOffer } = rollShopWares(run, floor, nodeIndex);
+  const table = el('div', 'shop-table');
+
+  towerCards.forEach((id) => {
+    const t = content.towers[id];
+    if (!t) return;
+    const price = shopPrice(run, 'towerCard');
+    const affordable = run.scraps >= price && run.deck.length < DECK_MAX;
+    const item = el('div', `shop-item${affordable ? '' : ' locked'}`, `
+      <div class="face">${TOWER_ICONS[id] ?? '🔧'}</div>
+      <b>${t.name}</b>
+      <p>${t.role}</p>
+      <div class="shop-price">🔩 ${price}</div>
+    `);
+    const btn = el('button', 'wood-btn small', run.deck.length >= DECK_MAX ? 'deck full' : 'buy') as HTMLButtonElement;
+    btn.disabled = !affordable;
+    btn.onclick = () => onBuyTower(id);
+    item.append(btn);
+    table.append(item);
+  });
+
+  if (relicOffer) {
+    const r = RELICS_BY_ID[relicOffer];
+    const price = shopPrice(run, 'relic');
+    const affordable = run.scraps >= price;
+    const item = el('div', `shop-item shop-item-relic${affordable ? '' : ' locked'}`, `
+      <div class="face">${r.item.split(' ')[0]}</div>
+      <b>${r.name}</b>
+      <p>${r.desc}</p>
+      <div class="shop-price">🔩 ${price}</div>
+    `);
+    const btn = el('button', 'wood-btn small', 'buy') as HTMLButtonElement;
+    btn.disabled = !affordable;
+    btn.onclick = () => onBuyRelic(relicOffer);
+    item.append(btn);
+    table.append(item);
+  }
+
+  if (run.curses.length > 0) {
+    const curseId = run.curses[0];
+    const curseDef = content.mutations[curseId];
+    const price = shopPrice(run, 'removeCurse');
+    const affordable = run.scraps >= price;
+    const item = el('div', `shop-item shop-item-curse${affordable ? '' : ' locked'}`, `
+      <div class="face">${MUTATION_ICONS[curseId] ?? '🧬'}</div>
+      <b>Remove: ${curseDef?.name ?? curseId}</b>
+      <p>${curseDef?.desc ?? ''}</p>
+      <div class="shop-price">🔩 ${price}</div>
+    `);
+    const btn = el('button', 'wood-btn small', 'cleanse') as HTMLButtonElement;
+    btn.disabled = !affordable;
+    btn.onclick = () => onRemoveCurse(curseId);
+    item.append(btn);
+    table.append(item);
+  }
+
+  {
+    const price = shopPrice(run, 'slices');
+    const affordable = run.scraps >= price;
+    const item = el('div', `shop-item${affordable ? '' : ' locked'}`, `
+      <div class="face">🎂</div>
+      <b>+2 Cake Slices</b>
+      <p>patch the cake up before the next fight.</p>
+      <div class="shop-price">🔩 ${price}</div>
+    `);
+    const btn = el('button', 'wood-btn small', 'buy') as HTMLButtonElement;
+    btn.disabled = !affordable;
+    btn.onclick = () => onBuySlices();
+    item.append(btn);
+    table.append(item);
+  }
+
+  wrap.append(table);
+
+  const leave = el('button', 'wood-btn', 'Leave the Sale →');
+  leave.style.marginTop = '16px';
+  leave.onclick = onLeave;
+  wrap.append(leave);
+
+  screen.append(wrap);
+  return screen;
+}
+
+export interface RunOverInfo {
+  won: boolean;
+  run: RunState;
+}
+
+/** Run-over recap (won the floor-3 boss, or died) — kills/floors/relics collected. */
+export function buildRunOver(info: RunOverInfo, onReturn: () => void): HTMLElement {
+  const wrap = el('div', 'modal-wrap');
+  const modal = el('div', 'paper-modal');
+  const { run, won } = info;
+  const headline = won ? '🏆 THE HOUSE IS CLEAN' : '💀 THE RUN ENDS HERE';
+  const sub = won
+    ? 'Three floors. Every boss. The infestation is over — for now.'
+    : `Made it to floor ${run.floor}, ${run.floorsCleared} floor${run.floorsCleared === 1 ? '' : 's'} fully cleared.`;
+  let html = `<h2>${headline}</h2><div class="sub">${sub}</div>`;
+  html += `<div class="recap-cols">
+    <div><h4>📋 Run Stats</h4><ul>
+      <li>kills: ${run.kills}</li>
+      <li>floors cleared: ${run.floorsCleared}</li>
+      <li>deck size: ${run.deck.length}</li>
+      <li>scraps left: ${run.scraps}</li>
+    </ul></div>
+    <div><h4>🏺 Relics Collected</h4><ul>${run.relics.length ? run.relics.map((id) => `<li>${RELICS_BY_ID[id]?.name ?? id}</li>`).join('') : '<li>none this run</li>'}</ul></div>
+    <div><h4>🃏 Final Deck</h4><ul>${run.deck.map((id) => `<li>${TOWER_ICONS[id] ?? '🔧'} ${id}</li>`).join('')}</ul></div>
+  </div>`;
+  html += `<div style="text-align:center;margin-top:16px"><button class="wood-btn" data-act="return">Back to the Fridge</button></div>`;
+  modal.innerHTML = html;
+  wrap.append(modal);
+  (modal.querySelector('[data-act=return]') as HTMLElement).onclick = onReturn;
   return wrap;
 }

@@ -41,6 +41,12 @@ export function towerStats(ctx: SimCtx, tw: Tower): TowerStats {
   rate *= 1 + (tw.buffRatePct ?? 0);
   dmg *= 1 + (tw.buffDmgPct ?? 0);
   if (extra.agePct) dmg *= 1 + Math.min(1.0, extra.agePct * tw.ageWaves);
+  // INFESTATION MODE (§15) relics: global run-long multipliers, applied last (after branch/buff/age
+  // math) per the design contract. ctx.runMods is always {} outside a run that sets
+  // SimOptions.runMods, so this is a no-op multiply-by-1 for every non-Infestation Sim.
+  if (ctx.runMods.dmgPct) dmg *= 1 + ctx.runMods.dmgPct;
+  if (ctx.runMods.ratePct) rate *= 1 + ctx.runMods.ratePct;
+  if (ctx.runMods.rangePct) range *= 1 + ctx.runMods.rangePct;
   return { dmg, rate, range, extra };
 }
 
@@ -135,7 +141,9 @@ export function trySellTower(ctx: SimCtx, id: number): boolean {
     if (piece) piece.mounted = piece.mounted.filter((m) => m !== id);
   }
   ctx.state.towers.delete(id);
-  const refund = Math.round(tw.invested * 0.9);
+  // INFESTATION MODE (§15) relics: sellRefundPct overrides the default 0.9 refund fraction.
+  const refundFrac = ctx.runMods.sellRefundPct ?? 0.9;
+  const refund = Math.round(tw.invested * refundFrac);
   ctx.state.crumbs += refund;
   ctx.emit({ t: 'towerSell', id });
   return true;

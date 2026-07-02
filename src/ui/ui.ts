@@ -1,11 +1,15 @@
 import type { ContentDB, LevelDef, PendingChoice, SimState, Tower } from '../sim/types';
 import type { SaveData } from '../meta/save';
 import { Hud, InspectPanel, type HudCallbacks, type InspectCallbacks } from './hud';
-import { buildJournal, buildJunkDrawer, buildLevelSelect, buildRecap, buildSettings, buildTitle, type RecapInfo } from './screens';
+import {
+  buildJournal, buildJunkDrawer, buildLevelSelect, buildRecap, buildSettings, buildTitle, type RecapInfo,
+  buildInfestationMap, buildInfestationDraft, buildGarageSale, buildRunOver, type RunOverInfo,
+} from './screens';
 import { MUTATION_ICONS } from './icons';
 import { isMobileViewport, isPortrait } from '../core/device';
 import { ChoicePanel, type ChoicePanelCallbacks } from './choicePanel';
 import { Fly } from './fly';
+import { DECK_MAX, type RunState } from '../meta/infestation';
 
 const el = (tag: string, cls = '', html = ''): HTMLElement => {
   const e = document.createElement(tag);
@@ -29,6 +33,18 @@ export interface UICallbacks extends HudCallbacks, InspectCallbacks {
   /** The Junk Drawer (§18): attempts a purchase, returns true on success (deducts BP,
    *  persists save) — screens.ts re-renders the drawer screen itself on success. */
   onJunkDrawerPurchase(id: string): boolean;
+  // ---------- INFESTATION MODE (§15) ----------
+  onInfestationStart(): void;
+  onDailyChoreStart(): void;
+  onInfestationPickNode(index: number): void;
+  onInfestationAbandon(): void;
+  onInfestationDraftPick(towerId: string): void;
+  onGarageSaleBuyTower(id: string): void;
+  onGarageSaleBuyRelic(id: string): void;
+  onGarageSaleRemoveCurse(id: string): void;
+  onGarageSaleBuySlices(): void;
+  onGarageSaleLeave(): void;
+  onRunOverReturn(): void;
 }
 
 export type JournalReturnTo = 'title' | 'levels';
@@ -49,6 +65,7 @@ export class UI {
   private eventBannerId: string | null = null;
   private rotateEl: HTMLElement;
   private inGameplay = false;
+  private runStripEl: HTMLElement | null = null;
 
   constructor(
     private content: ContentDB,
@@ -95,6 +112,7 @@ export class UI {
     this.closeModal();
     this.dismissSticky();
     this.hideChoice();
+    this.hideRunStrip();
     this.dismissEventBanner();
     this.inGameplay = false;
     this.refreshRotateOverlay();
@@ -108,6 +126,8 @@ export class UI {
       () => this.showSettings(),
       () => this.showJournal('title'),
       () => this.showJunkDrawer('title'),
+      () => this.cb.onInfestationStart(),
+      () => this.cb.onDailyChoreStart(),
     );
     this.root.append(this.screenEl);
   }
@@ -152,6 +172,63 @@ export class UI {
     this.root.append(this.screenEl);
   }
 
+  // ---------- INFESTATION MODE (§15) ----------
+
+  /** The run map screen — a branching house cross-section, reachable nodes clickable. */
+  showInfestationMap(run: RunState): void {
+    this.clearScreen();
+    this.screenEl = buildInfestationMap(
+      run,
+      this.content,
+      (i) => this.cb.onInfestationPickNode(i),
+      () => this.cb.onInfestationAbandon(),
+    );
+    this.root.append(this.screenEl);
+  }
+
+  /** Card draft modal after a fight win — modal-over-map, matching the mutation draft pattern. */
+  showInfestationDraft(options: string[]): void {
+    this.closeModal();
+    this.modalEl = buildInfestationDraft(this.content, options, (id) => {
+      this.closeModal();
+      this.cb.onInfestationDraftPick(id);
+    });
+    this.root.append(this.modalEl);
+  }
+
+  /** Garage Sale shop screen. */
+  showGarageSale(run: RunState, floor: number, nodeIndex: number): void {
+    this.clearScreen();
+    this.screenEl = buildGarageSale(
+      run,
+      this.content,
+      floor,
+      nodeIndex,
+      (id) => this.cb.onGarageSaleBuyTower(id),
+      (id) => this.cb.onGarageSaleBuyRelic(id),
+      (id) => this.cb.onGarageSaleRemoveCurse(id),
+      () => this.cb.onGarageSaleBuySlices(),
+      () => this.cb.onGarageSaleLeave(),
+    );
+    this.root.append(this.screenEl);
+  }
+
+  /** Re-renders the Garage Sale in place after a purchase, so wares/prices refresh without
+   *  losing the player's place — mirrors the Junk Drawer's rerender() pattern in screens.ts. */
+  refreshGarageSale(run: RunState, floor: number, nodeIndex: number): void {
+    this.showGarageSale(run, floor, nodeIndex);
+  }
+
+  /** Run-over recap (won floor-3 boss, or died) — modal like the campaign recap. */
+  showRunOver(info: RunOverInfo): void {
+    this.closeModal();
+    this.modalEl = buildRunOver(info, () => {
+      this.closeModal();
+      this.cb.onRunOverReturn();
+    });
+    this.root.append(this.modalEl);
+  }
+
   showHud(level: LevelDef): void {
     this.clearScreen();
     this.hud = new Hud(this.content, level, this.cb);
@@ -161,6 +238,30 @@ export class UI {
     this.refreshRotateOverlay();
     // The Fly (§20.14): rare per-level-start roll, no-op forever once shooed.
     this.fly.maybeSpawn();
+  }
+
+  /** Run HUD strip (§15): floor/node, slices carried, deck size, relic icons — a small pinned
+   *  banner over the campaign HUD while an Infestation fight is in progress. hud.ts is outside
+   *  this feature's file ownership, so this is a standalone overlay appended directly to root
+   *  rather than a Hud-internal element (mirrors game.ts's applyCorkboardSkin "reach in from
+   *  outside" pattern for the same reason). */
+  showRunStrip(run: RunState, nodeKindLabel: string): void {
+    this.hideRunStrip();
+    const strip = el('div', 'infest-run-strip');
+    const relics = run.relics.map((id) => `<span class="infest-strip-relic" title="${id}">🏺</span>`).join('');
+    strip.innerHTML = `
+      <span class="infest-strip-floor">🐜 Floor ${run.floor} · ${nodeKindLabel}</span>
+      <span class="infest-strip-slices">🎂 ${run.slices}</span>
+      <span class="infest-strip-deck">🃏 ${run.deck.length}/${DECK_MAX}</span>
+      <span class="infest-strip-relics">${relics}</span>
+    `;
+    this.runStripEl = strip;
+    this.root.append(strip);
+  }
+
+  hideRunStrip(): void {
+    this.runStripEl?.remove();
+    this.runStripEl = null;
   }
 
   updateHud(state: SimState, speedMult: number): void {

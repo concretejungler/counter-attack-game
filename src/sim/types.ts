@@ -493,6 +493,45 @@ export interface SimOptions {
     flickMax?: number;         // bonus flick charges (base 3)
     manaMax?: number;          // bonus max mana (base 100)
   };
+  /**
+   * INFESTATION MODE (§15) run-long relic effects. Default = none, byte-identical to omitting the
+   * field. dmgPct/ratePct/rangePct are global tower multipliers applied in towerStats() AFTER all
+   * branch/buff/age math. sellRefundPct overrides trySellTower's default 0.9 refund fraction.
+   * crumbPct scales the value of every crumb drop (bounties, worker drops, event crumbs, etc.) at
+   * the point they land, applied in Sim.dropCrumbs after the dog tax — a global bounty-only
+   * multiplier isn't achievable from sim.ts without reaching into critters.ts (owned by another
+   * agent), so relics that want "more bounty" scale all crumb value instead, which is an
+   * acceptable (slightly broader) reading of the relic for run-long modifiers. cakeSlices, if set,
+   * overrides level.cakeSlices AND cakeMax at construction (both, so the roguelike can carry a
+   * wounded cake between fights instead of it healing back to the level's authored max).
+   */
+  runMods?: {
+    dmgPct?: number;
+    ratePct?: number;
+    rangePct?: number;
+    sellRefundPct?: number;
+    crumbPct?: number;
+    cakeSlices?: number;
+  };
+  /**
+   * INFESTATION MODE (§15) curses/starting-debuffs drafted from elite fights. Applied to
+   * state.mutations at construction (tick 0) so their `mod` effects are live from the first tick.
+   * Unknown ids (not present in content.mutations) are silently ignored. Because the mutation
+   * draft offer filter already excludes any id already present in state.mutations, preMutations
+   * are automatically excluded from later in-run mutation draft offers — no extra bookkeeping
+   * needed. Default = none, byte-identical to omitting the field.
+   */
+  preMutations?: string[];
+  /**
+   * INFESTATION MODE (§15) deck-gated fights. Sim does NOT enforce allowedTowers at all —
+   * tryPlaceTower has no such check; the only consumer in the whole codebase is src/ui/hud.ts
+   * (build-bar rendering, i.e. UI-gating only). This field therefore exists purely so the roguelike
+   * shell can thread a run's current deck through SimOptions/state for the UI to read, without the
+   * UI needing to separately track it alongside a Sim instance. Stored verbatim on
+   * state.allowedTowersOverride; sim placement/economy logic never reads it. Default = undefined
+   * (no override; UI falls back to level.allowedTowers).
+   */
+  allowedTowersOverride?: string[];
 }
 
 export interface DifficultyMods {
@@ -557,6 +596,13 @@ export interface SimState {
    * "Wave X of Y" is never broken by this field's existence.
    */
   endlessDepth: number;
+  /**
+   * INFESTATION MODE (§15) deck-gated fights — echo of SimOptions.allowedTowersOverride, or
+   * undefined if not set. Sim itself never reads this (see SimOptions.allowedTowersOverride doc);
+   * it's stored on state purely so a UI layer holding only a Sim instance (not the original
+   * SimOptions) can still find the current run's allowed-towers deck.
+   */
+  allowedTowersOverride?: string[];
 }
 
 // ---------- pets (GAME-PROMPT §9) ----------

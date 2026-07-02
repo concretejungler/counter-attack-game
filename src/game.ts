@@ -12,6 +12,13 @@ import { loadSave, persistSave, type SaveData } from './meta/save';
 import { weeklySeed } from './sim/endless';
 import { evaluateAchievements, evaluateSingle, purchase, type AchievementDef } from './meta/achievements';
 import { metaModsFromSave } from './meta/progress';
+import {
+  newRun, reachableNodeIndices, currentFloorNodes, nodeAt, seedForNode, runModsForFight,
+  draftOptions, addToDeck, fightRewardScraps, isEliteNode, isBossNode, isFinalBoss,
+  shopPrice, rollShopWares, RELICS_BY_ID, CURSE_POOL, dailyChoreFor, dayNumber,
+  type RunState, type NodeDef,
+} from './meta/infestation';
+import { RNG } from './core/rng';
 
 type Mode =
   | { kind: 'idle' }
@@ -67,6 +74,12 @@ export class Game {
   private bossAlive = false;
   private toastsSeen = new Set<string>();
   private endlessMode = false;
+  // INFESTATION MODE (§15): non-null while a run node's fight is in progress. floor/nodeIndex
+  // identify which node in save.infestation.map this fight resolves; isDailyChore marks the
+  // separate one-off Daily Chores flow (§16) which reuses the fight-resolution path but never
+  // touches save.infestation.
+  private infestFight: { floor: 1 | 2 | 3; nodeIndex: number } | null = null;
+  private dailyChoreActive = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new GameRenderer(canvas);
@@ -157,6 +170,81 @@ export class Game {
         }
         return ok;
       },
+      // ---------- INFESTATION MODE (§15) ----------
+      onInfestationStart: () => this.startInfestation(),
+      onDailyChoreStart: () => this.startDailyChore(),
+      onInfestationPickNode: (index) => this.pickInfestationNode(index),
+      onInfestationAbandon: () => {
+        this.save.infestation = null;
+        persistSave(this.save);
+        this.sfx.play('place-bad');
+        this.showTitle();
+      },
+      onInfestationDraftPick: (towerId) => {
+        const run = this.save.infestation;
+        if (!run) return;
+        addToDeck(run, towerId);
+        persistSave(this.save);
+        this.sfx.play('ui-click');
+        this.ui.showInfestationMap(run);
+      },
+      onGarageSaleBuyTower: (id) => {
+        const run = this.save.infestation;
+        if (!run || !this.infestFight) return;
+        const price = shopPrice(run, 'towerCard');
+        if (run.scraps < price || run.deck.length >= 12) { this.sfx.play('place-bad'); return; }
+        run.scraps -= price;
+        addToDeck(run, id);
+        persistSave(this.save);
+        this.sfx.play('ui-click');
+        this.ui.refreshGarageSale(run, this.infestFight.floor, this.infestFight.nodeIndex);
+      },
+      onGarageSaleBuyRelic: (id) => {
+        const run = this.save.infestation;
+        if (!run || !this.infestFight) return;
+        const price = shopPrice(run, 'relic');
+        if (run.scraps < price || run.relics.includes(id)) { this.sfx.play('place-bad'); return; }
+        run.scraps -= price;
+        this.grantRelic(run, id);
+        persistSave(this.save);
+        this.sfx.play('shiny-chime');
+        this.ui.refreshGarageSale(run, this.infestFight.floor, this.infestFight.nodeIndex);
+      },
+      onGarageSaleRemoveCurse: (id) => {
+        const run = this.save.infestation;
+        if (!run || !this.infestFight) return;
+        const price = shopPrice(run, 'removeCurse');
+        if (run.scraps < price || !run.curses.includes(id)) { this.sfx.play('place-bad'); return; }
+        run.scraps -= price;
+        run.curses = run.curses.filter((c) => c !== id);
+        persistSave(this.save);
+        this.sfx.play('ui-click');
+        this.ui.refreshGarageSale(run, this.infestFight.floor, this.infestFight.nodeIndex);
+      },
+      onGarageSaleBuySlices: () => {
+        const run = this.save.infestation;
+        if (!run || !this.infestFight) return;
+        const price = shopPrice(run, 'slices');
+        if (run.scraps < price) { this.sfx.play('place-bad'); return; }
+        run.scraps -= price;
+        run.slices = Math.min(12, run.slices + 2);
+        persistSave(this.save);
+        this.sfx.play('ui-click');
+        this.ui.refreshGarageSale(run, this.infestFight.floor, this.infestFight.nodeIndex);
+      },
+      onGarageSaleLeave: () => {
+        const run = this.save.infestation;
+        if (!run || !this.infestFight) return;
+        this.clearInfestationNode(run, this.infestFight.floor, this.infestFight.nodeIndex);
+        this.infestFight = null;
+        persistSave(this.save);
+        this.ui.showInfestationMap(run);
+      },
+      onRunOverReturn: () => {
+        this.save.infestation = null;
+        persistSave(this.save);
+        this.showTitle();
+      },
     });
 
     this.bindInput();
@@ -175,6 +263,8 @@ export class Game {
   showTitle(): void {
     this.sim = null;
     this.level = null;
+    this.infestFight = null;
+    this.dailyChoreActive = false;
     this.music.intensity = 0;
     this.music.heartbeat = false;
     this.ui.showTitle();
@@ -187,6 +277,22 @@ export class Game {
     this.endlessMode = false;
     this.music.intensity = 0;
     this.music.heartbeat = false;
+    // Abandoning mid-fight (pause veil "Abandon level") during a run or a Daily Chore returns to
+    // the run map / title rather than campaign level-select — quitting a single fight does NOT
+    // forfeit run progress (map/deck/relics/curses/scraps are untouched); only the explicit
+    // "Abandon Run" button on the map screen does that. The fight's own outcome (win/loss scrap
+    // and slice bookkeeping) simply never happened since endLevel() was never reached.
+    if (this.infestFight) {
+      this.infestFight = null;
+      this.ui.hideRunStrip();
+      const run = this.save.infestation;
+      if (run) { this.ui.showInfestationMap(run); return; }
+    }
+    if (this.dailyChoreActive) {
+      this.dailyChoreActive = false;
+      this.showTitle();
+      return;
+    }
     this.ui.showLevelSelect();
   }
 
@@ -197,23 +303,144 @@ export class Game {
     this.ui.toast('🥫 PANTRY PANIC — the pantry is infinite. you are not. good luck!!');
   }
 
-  startLevel(id: string, seed?: number): void {
-    this.level = levelById(id);
+  // ---------- INFESTATION MODE (§15) ----------
+
+  /** Title entry point — resumes an in-progress run if one exists, otherwise starts a fresh
+   *  one. Gated by the title screen itself (only rendered clickable once kitchen-5 is beaten). */
+  startInfestation(): void {
+    this.sim = null;
+    this.level = null;
+    this.endlessMode = false;
+    this.infestFight = null;
+    this.music.intensity = 0;
+    this.music.heartbeat = false;
+    let run = this.save.infestation;
+    if (!run || run.over) {
+      run = newRun((Date.now() % 0x7fffffff) | 1);
+      this.save.infestation = run;
+      persistSave(this.save);
+      this.sfx.play('ui-click');
+    }
+    this.ui.showInfestationMap(run);
+  }
+
+  /** Daily Chores (§16): seeded-by-date pick of one mutator + one random campaign level, win
+   *  once per day for +25 BP. Entirely separate from an Infestation run (no deck/relics/curses
+   *  carry over — a single vanilla-roster fight against a curse-buffed swarm). */
+  startDailyChore(): void {
+    const chore = dailyChoreFor(Date.now());
+    if (this.save.lastDailyChoreDay === chore.day) {
+      this.ui.toast('📅 already done today — come back tomorrow!!');
+      return;
+    }
+    this.dailyChoreActive = true;
+    this.infestFight = null;
+    this.endlessMode = false;
+    this.level = levelById(chore.levelId);
     const difficulty = this.save.settings.difficulty;
     this.sim = new Sim(this.level, {
-      seed: seed ?? ((Date.now() % 100000) | 1),
+      seed: chore.day | 1,
       difficulty,
       content: CONTENT,
-      // Live play gets the full experience; the balance harness never sets these.
-      // Director joins on the two upper tiers (§13: "Director unchained" territory).
       events: true,
       director: difficulty === 'landlord' || difficulty === 'condemned' || !!this.level.director,
       pet: this.save.settings.pet ?? undefined,
-      endless: this.endlessMode,
-      // The Junk Drawer (§18): permanent BP-purchased unlocks, derived fresh from save each
-      // level start so a purchase mid-session takes effect on the very next level.
       metaMods: metaModsFromSave(this.save),
+      preMutations: [chore.mutationId],
     });
+    this.finishLevelBoot(chore.levelId);
+    this.ui.toast(`📅 DAILY CHORE: ${CONTENT.mutations[chore.mutationId]?.name ?? chore.mutationId} — win for +25 BP!`);
+  }
+
+  private pickInfestationNode(index: number): void {
+    const run = this.save.infestation;
+    if (!run) return;
+    const nodes = currentFloorNodes(run);
+    const reachable = reachableNodeIndices(run);
+    if (!reachable.includes(index)) return;
+    const node = nodes[index];
+    run.nodeIndex = index;
+    persistSave(this.save);
+
+    switch (node.kind) {
+      case 'fight':
+      case 'elite':
+        this.startInfestationFight(run, node, run.floor, index);
+        return;
+      case 'boss':
+        this.startInfestationFight(run, node, run.floor, index);
+        return;
+      case 'shop':
+        this.infestFight = { floor: run.floor, nodeIndex: index };
+        this.sfx.play('ui-click');
+        this.ui.showGarageSale(run, run.floor, index);
+        return;
+      case 'rest': {
+        // Couch Nap: +3 slices, capped 12 — resolves instantly, no fight.
+        run.slices = Math.min(12, run.slices + 3);
+        this.clearInfestationNode(run, run.floor, index);
+        persistSave(this.save);
+        this.sfx.play('win');
+        this.ui.toast('🛋️ Couch Nap — +3 cake slices (capped at 12).');
+        this.ui.showInfestationMap(run);
+        return;
+      }
+    }
+  }
+
+  private clearInfestationNode(run: RunState, floor: number, index: number): void {
+    run.map[floor - 1][index].cleared = true;
+  }
+
+  private grantRelic(run: RunState, relicId: string): void {
+    if (run.relics.includes(relicId)) return;
+    run.relics.push(relicId);
+    const r = RELICS_BY_ID[relicId];
+    if (r?.mod.cakeSlices) run.slices = Math.min(12, run.slices + r.mod.cakeSlices);
+  }
+
+  /** Launches a fight/elite/boss node's campaign level with the run's runMods/preMutations/deck
+   *  threaded through SimOptions per the §15 contract. Elite fights additionally offer a curse
+   *  (mutation id) as the price of a guaranteed relic drop on win — see resolveInfestationFight. */
+  private startInfestationFight(run: RunState, node: NodeDef, floor: 1 | 2 | 3, nodeIndex: number): void {
+    if (!node.levelId) return;
+    this.infestFight = { floor, nodeIndex };
+    this.dailyChoreActive = false;
+    this.endlessMode = false;
+    // hud.ts (outside this feature's file ownership) gates its build bar purely off
+    // `level.allowedTowers` — it never reads SimOptions/state at all — so the deck-gate has to
+    // be applied here, on the LevelDef object the Hud is actually constructed with, exactly like
+    // the campaign's tutorial-gating levels already do. Shallow copy: never mutates the shared
+    // ALL_LEVELS entry (other modes launching the same level must see its authored gate).
+    this.level = { ...levelById(node.levelId), allowedTowers: run.deck };
+    const difficulty = this.save.settings.difficulty;
+    this.sim = new Sim(this.level, {
+      seed: seedForNode(run, floor, nodeIndex),
+      difficulty,
+      content: CONTENT,
+      events: true,
+      // Elite/boss nodes always run with the Director engaged (§13 "Director unchained") on top
+      // of whatever the player's difficulty setting would already trigger — a run's elites need
+      // to bite even on houseguest, since the whole roguelike's tension comes from resource
+      // attrition (deck/relics/slices) rather than a difficulty slider.
+      director: isEliteNode(node) || isBossNode(node) || difficulty === 'landlord' || difficulty === 'condemned' || !!this.level.director,
+      pet: this.save.settings.pet ?? undefined,
+      metaMods: metaModsFromSave(this.save),
+      runMods: { ...runModsForFight(run), cakeSlices: run.slices },
+      preMutations: run.curses,
+      allowedTowersOverride: run.deck,
+    });
+    this.finishLevelBoot(node.levelId);
+    const nodeLabel = isBossNode(node) ? `FLOOR ${floor} BOSS` : isEliteNode(node) ? 'ELITE' : 'Fight';
+    this.ui.showRunStrip(run, nodeLabel);
+    if (isEliteNode(node)) this.ui.toast('👑 ELITE — win this and a relic is yours (a curse comes with it).');
+  }
+
+  /** Shared tail of startLevel/startInfestationFight/startDailyChore — HUD boot, star trackers
+   *  reset, forecast, intro sticky note, click sfx. Extracted so the three fight-launching call
+   *  sites (campaign, Infestation, Daily Chore) don't duplicate this bookkeeping. */
+  private finishLevelBoot(levelId: string): void {
+    if (!this.sim || !this.level) return;
     this.music.setTheme(this.level.theme);
     this.renderer.loadLevel(this.level, CONTENT);
     this.ui.showHud(this.level);
@@ -231,14 +458,148 @@ export class Game {
     this.toastsSeen.clear();
     this.updateForecast();
     const intro = this.level.tutorial?.find((n) => n.wave === 0);
-    if (intro) this.ui.stickyNote(intro.text, `${id}-w0`);
+    if (intro) this.ui.stickyNote(intro.text, `${levelId}-w0`);
     this.sfx.play('ui-click');
+  }
+
+  /** Resolves an Infestation fight's outcome (called from endLevel when this.infestFight is
+   *  set): win = slices carry forward + scraps + draft (elites also grant a relic + offer a
+   *  curse) + node cleared + advance; loss = run over, recap. Boss wins on floor 1/2 advance the
+   *  run to the next floor's node 0; the floor-3 boss win ends the run victorious. */
+  private resolveInfestationFight(won: boolean, state: import('./sim/types').SimState): void {
+    const run = this.save.infestation;
+    const { floor, nodeIndex } = this.infestFight!;
+    this.infestFight = null;
+    this.ui.hideRunStrip();
+    if (!run) return;
+    const node = run.map[floor - 1][nodeIndex];
+
+    this.save.stats.kills += state.recap.kills;
+    this.save.stats.sweeps += state.recap.sweeps;
+    this.save.stats.crumbsBanked += state.recap.crumbsBanked;
+    run.kills += state.recap.kills;
+
+    if (!won) {
+      run.over = true;
+      run.won = false;
+      persistSave(this.save);
+      this.sfx.play('lose');
+      this.music.intensity = 0;
+      this.music.heartbeat = false;
+      this.ui.showRunOver({ won: false, run });
+      return;
+    }
+
+    // Damage persists: the cake's remaining slices carry into the next fight.
+    run.slices = Math.max(1, state.cakeSlices);
+    run.scraps += fightRewardScraps(state);
+    this.clearInfestationNode(run, floor, nodeIndex);
+    this.save.stats.wins++;
+    persistSave(this.save);
+    this.sfx.play('win');
+
+    const wasFinalBoss = isFinalBoss(run, node);
+    if (wasFinalBoss) {
+      run.over = true;
+      run.won = true;
+      run.floorsCleared = 3;
+      persistSave(this.save);
+      this.ui.showRunOver({ won: true, run });
+      return;
+    }
+
+    if (isBossNode(node)) {
+      // Floor cleared — advance to the next floor's entry node.
+      run.floorsCleared = Math.max(run.floorsCleared, floor);
+      run.floor = (floor + 1) as 1 | 2 | 3;
+      run.nodeIndex = -1;
+      persistSave(this.save);
+      this.ui.toast(`🐜 Floor ${floor} clear! Descending to floor ${run.floor}...`);
+      this.ui.showInfestationMap(run);
+      return;
+    }
+
+    if (isEliteNode(node)) {
+      // Elites pay a curse for a guaranteed relic — offered/applied here, deterministically
+      // picked from the node's own seed so a replayed run seed sees the same curse+relic pair.
+      const rng = new RNG(seedForNode(run, floor, nodeIndex) ^ 0x454c4954); // 'ELIT'
+      const unownedCurses = CURSE_POOL.filter((c) => !run.curses.includes(c));
+      if (unownedCurses.length > 0) run.curses.push(rng.pick(unownedCurses));
+      const unownedRelics = Object.keys(RELICS_BY_ID).filter((id) => !run.relics.includes(id));
+      if (unownedRelics.length > 0) this.grantRelic(run, rng.pick(unownedRelics));
+      persistSave(this.save);
+      this.ui.toast('👑 Elite defeated! A relic is yours... at a price. (curse added)');
+    }
+
+    // Fight/elite wins draft a tower card into the deck.
+    const rng = new RNG(seedForNode(run, floor, nodeIndex) ^ 0x44524654); // 'DRFT'
+    const options = draftOptions(run, rng);
+    persistSave(this.save);
+    if (options.length > 0) this.ui.showInfestationDraft(options);
+    else this.ui.showInfestationMap(run);
+  }
+
+  startLevel(id: string, seed?: number): void {
+    this.infestFight = null;
+    this.dailyChoreActive = false;
+    this.level = levelById(id);
+    const difficulty = this.save.settings.difficulty;
+    this.sim = new Sim(this.level, {
+      seed: seed ?? ((Date.now() % 100000) | 1),
+      difficulty,
+      content: CONTENT,
+      // Live play gets the full experience; the balance harness never sets these.
+      // Director joins on the two upper tiers (§13: "Director unchained" territory).
+      events: true,
+      director: difficulty === 'landlord' || difficulty === 'condemned' || !!this.level.director,
+      pet: this.save.settings.pet ?? undefined,
+      endless: this.endlessMode,
+      // The Junk Drawer (§18): permanent BP-purchased unlocks, derived fresh from save each
+      // level start so a purchase mid-session takes effect on the very next level.
+      metaMods: metaModsFromSave(this.save),
+    });
+    this.finishLevelBoot(id);
   }
 
   private endLevel(won: boolean, reason?: string): void {
     if (!this.sim || !this.level) return;
     const state = this.sim.state;
     const bites = state.cakeMax - state.cakeSlices;
+
+    // Daily Chores (§16): a one-off mutator+level flow, resolved entirely outside the campaign
+    // star/BP bookkeeping below (kills still fold into lifetime stats — same event wiring as
+    // every other mode). Checked before the Infestation branch since the two are mutually
+    // exclusive (infestFight is never set while dailyChoreActive is true).
+    if (this.dailyChoreActive) {
+      this.dailyChoreActive = false;
+      this.save.stats[won ? 'wins' : 'losses']++;
+      this.save.stats.kills += state.recap.kills;
+      this.save.stats.sweeps += state.recap.sweeps;
+      this.save.stats.crumbsBanked += state.recap.crumbsBanked;
+      if (won) {
+        this.save.lastDailyChoreDay = dayNumber(Date.now());
+        this.save.browniePoints.earned += 25;
+        this.ui.toast('📅 Daily Chore complete — +25 Brownie Points!');
+      }
+      persistSave(this.save);
+      this.sfx.play(won ? 'win' : 'lose');
+      this.music.intensity = 0;
+      this.music.heartbeat = false;
+      this.ui.showRecap(
+        { won, lossReason: reason, level: this.level, state, recap: state.recap, stars: 0, starDetail: [false, false, false] },
+        () => { this.ui.closeModal(); this.showTitle(); },
+        () => { this.ui.closeModal(); this.showTitle(); },
+        null,
+      );
+      return;
+    }
+
+    // INFESTATION MODE (§15): a run fight resolves through the map/draft flow, not campaign
+    // stars — see resolveInfestationFight().
+    if (this.infestFight) {
+      this.resolveInfestationFight(won, state);
+      return;
+    }
 
     // Pantry Panic (§16): endless runs only ever END — no stars, no BP; the score is depth.
     if (this.endlessMode) {
@@ -1281,6 +1642,76 @@ export class Game {
         this.fastForward(2);
         this.renderer.rig.pose(0.05, 0.85, 9);
         this.renderer.rig.target.set(7, 0.4, 7);
+        return;
+      }
+      // ---------- INFESTATION MODE (§15) demo scenes ----------
+      case 'infest-map': {
+        // seed a believable in-progress run — floor 2, a couple cleared nodes, a relic + a
+        // curse, so the screenshot shows the branching path with real state, not an empty run.
+        this.save.stars['kitchen-5'] = 3;
+        let run = newRun(777);
+        run.floor = 2;
+        run.slices = 8;
+        run.scraps = 145;
+        run.relics = ['lazy-susan', 'grandma-cookbook', 'lucky-sponge'];
+        run.curses = ['thick-shells'];
+        run.deck = ['sgt-spritz', 'old-smacky', 'stick-rick', 'gnomeo', 'bandolero'];
+        run.map[0].forEach((n) => { n.cleared = true; });
+        run.nodeIndex = -1;
+        this.save.infestation = run;
+        this.ui.showInfestationMap(run);
+        return;
+      }
+      case 'infest-draft': {
+        this.save.stars['kitchen-5'] = 3;
+        const run = newRun(777);
+        run.deck = ['sgt-spritz', 'old-smacky', 'stick-rick'];
+        this.save.infestation = run;
+        this.ui.showInfestationMap(run);
+        this.ui.showInfestationDraft(['gnomeo', 'the-coldfather', 'bandolero']);
+        return;
+      }
+      case 'infest-fight': {
+        // Verifies the run HUD strip (floor/node/slices/deck/relics) renders correctly over an
+        // actual live fight, with no overlap against the campaign HUD's top chips.
+        this.save.stars['kitchen-5'] = 3;
+        const run = newRun(777);
+        run.floor = 1;
+        run.slices = 7;
+        run.relics = ['lazy-susan', 'grandma-cookbook'];
+        run.deck = ['sgt-spritz', 'old-smacky', 'stick-rick'];
+        this.save.infestation = run;
+        this.pickInfestationNode(0);
+        this.fastForward(2);
+        return;
+      }
+      case 'infest-shop': {
+        this.save.stars['kitchen-5'] = 3;
+        const run = newRun(777);
+        run.floor = 1;
+        run.slices = 6;
+        run.scraps = 95;
+        run.relics = ['expired-coupons'];
+        run.curses = ['hyper-legs'];
+        run.deck = ['sgt-spritz', 'old-smacky', 'stick-rick'];
+        this.save.infestation = run;
+        this.infestFight = { floor: 1, nodeIndex: 1 };
+        this.ui.showGarageSale(run, 1, 1);
+        return;
+      }
+      case 'infest-runover': {
+        this.save.stars['kitchen-5'] = 3;
+        const run = newRun(777);
+        run.floor = 3;
+        run.kills = 214;
+        run.floorsCleared = 3;
+        run.won = true;
+        run.over = true;
+        run.relics = ['lazy-susan', 'grandma-cookbook', 'good-scissors', 'lucky-sponge'];
+        run.deck = ['sgt-spritz', 'old-smacky', 'stick-rick', 'gnomeo', 'bandolero', 'vroomba'];
+        this.save.infestation = run;
+        this.ui.showInfestationMap(run);
+        this.ui.showRunOver({ won: true, run });
         return;
       }
     }

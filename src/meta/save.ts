@@ -1,3 +1,5 @@
+import type { RunState } from './infestation';
+
 /** Versioned localStorage save with export/import codes. */
 export interface SaveData {
   version: 1;
@@ -57,6 +59,14 @@ export interface SaveData {
   achievements: string[];
   /** Purchased Junk Drawer unlock ids (src/meta/achievements.ts JUNK_DRAWER_ITEMS). */
   junkDrawer: string[];
+  /** INFESTATION MODE (§15): the in-progress run, or null between runs. Optional-safe like
+   *  critterdex/flyShooed above — backfilled to null by loadSave() for saves written before this
+   *  existed. A run is abandoned by simply setting this back to null (no separate "abandoned"
+   *  bookkeeping needed — the map/deck/relics are all regenerated fresh by newRun() next time). */
+  infestation: RunState | null;
+  /** Daily Chores (§16): UTC day-number (src/meta/infestation.ts dayNumber()) of the last
+   *  completed chore, or null if none yet. Prevents repeat claims within the same day. */
+  lastDailyChoreDay: number | null;
 }
 
 const KEY = 'counterattack_save_v1';
@@ -79,6 +89,8 @@ export function defaultSave(): SaveData {
     browniePoints: { earned: 0, spent: 0 },
     achievements: [],
     junkDrawer: [],
+    infestation: null,
+    lastDailyChoreDay: null,
   };
 }
 
@@ -107,6 +119,8 @@ export function loadSave(): SaveData {
       browniePoints: { ...defaultSave().browniePoints, ...data.browniePoints },
       achievements: [...(data.achievements ?? [])],
       junkDrawer: [...(data.junkDrawer ?? [])],
+      infestation: data.infestation ?? null,
+      lastDailyChoreDay: data.lastDailyChoreDay ?? null,
     };
   } catch {
     return defaultSave();

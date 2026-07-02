@@ -59,6 +59,8 @@ export interface SimCtx {
   endlessRng: RNG;  // Pantry Panic procedural wave generation (GAME-PROMPT §16) — inert unless SimOptions.endless
   content: ContentDB;
   diff: DifficultyMods;
+  /** INFESTATION MODE (§15) run-long relic effects — see Sim.runMods doc. Always {} outside a run that sets SimOptions.runMods. */
+  runMods: NonNullable<SimOptions['runMods']>;
   emit(e: SimEvent): void;
   nextId(): number;
   /** Sum of a numeric modifier across all active mutations. */
@@ -102,6 +104,13 @@ export class Sim implements SimCtx {
   readonly petKind: 'cat' | 'dog' | 'goldfish' | undefined;
   /** Pantry Panic — Endless mode (§16) — inert (constructor default false) unless SimOptions.endless is true. */
   readonly endlessOn: boolean;
+  /**
+   * INFESTATION MODE (§15) run-long relic effects — inert (all fields undefined/no-op) unless
+   * SimOptions.runMods is set. Read by towerStats() (dmgPct/ratePct/rangePct), trySellTower()
+   * (sellRefundPct), and Sim.dropCrumbs() (crumbPct). cakeSlices is consumed once at construction
+   * (see state.cakeSlices/cakeMax init below) and not read again after that.
+   */
+  readonly runMods: NonNullable<SimOptions['runMods']>;
   /** recap.sweeps snapshot at the start of the wave in progress, used to detect zero-sweep waves for the Director. */
   private sweepsAtWaveStart = 0;
   /**
@@ -133,6 +142,7 @@ export class Sim implements SimCtx {
     this.eventsOn = !!opts.events;
     this.petKind = opts.pet;
     this.endlessOn = !!opts.endless;
+    this.runMods = opts.runMods ?? {};
     this.diff = DIFFICULTY[opts.difficulty];
     this.grid = new Grid(level);
     this.grid.recompute(level.cakeTile);
@@ -160,8 +170,8 @@ export class Sim implements SimCtx {
       manaMax: 100 + (opts.metaMods?.manaMax ?? 0),
       scent: 0,
       scentHoldT: 0,
-      cakeSlices: level.cakeSlices,
-      cakeMax: level.cakeSlices,
+      cakeSlices: opts.runMods?.cakeSlices ?? level.cakeSlices,
+      cakeMax: opts.runMods?.cakeSlices ?? level.cakeSlices,
       critters: new Map(),
       towers: new Map(),
       projectiles: [],
@@ -193,7 +203,18 @@ export class Sim implements SimCtx {
       ceasefireWaves: 0,
       pet: null,
       endlessDepth: 0,
+      allowedTowersOverride: opts.allowedTowersOverride,
     };
+    // INFESTATION MODE (§15) curses: applied at tick 0 so their `mod` effects (read via ctx.modSum)
+    // are live from the very first tick. Unknown ids (not in content.mutations) are ignored rather
+    // than throwing — a stale/renamed curse id shouldn't hard-crash a run. Validated against
+    // content.mutations, not de-duped against itself (a caller passing duplicate ids gets duplicate
+    // mod contributions, same as any other multi-mutation stacking in this game).
+    if (opts.preMutations) {
+      for (const id of opts.preMutations) {
+        if (this.content.mutations[id]) this.state.mutations.push(id);
+      }
+    }
     this.dealClutterHand();
     if (this.petKind) this.state.pet = initPet(this, this.petKind);
   }
@@ -250,16 +271,21 @@ export class Sim implements SimCtx {
     // Sir Barksalot (§9): eats 15% of each crumb drop's value before it lands.
     const taxed = dogCrumbTax(this, value);
     if (taxed <= 0) return;
+    // INFESTATION MODE (§15) relics: crumbPct scales every crumb drop's value (bounties, worker
+    // drops, event crumbs, etc.) after the dog tax. Rounded so crumb values stay integers like
+    // every other crumb-value computation in the sim.
+    const scaled = this.runMods.crumbPct ? Math.round(taxed * (1 + this.runMods.crumbPct)) : taxed;
+    if (scaled <= 0) return;
     const id = this.nextId();
     const ent = {
       id,
       pos: { x: at.x, y: at.y, z: at.z },
       surface,
-      value: taxed,
+      value: scaled,
       sweepT: 0,
     };
     this.state.crumbEnts.set(id, ent);
-    this.emit({ t: 'crumbDrop', id, at: { ...at }, value: taxed });
+    this.emit({ t: 'crumbDrop', id, at: { ...at }, value: scaled });
   }
 
   // ---------- public API ----------
