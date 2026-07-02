@@ -48,7 +48,7 @@ html, body {
 }
 #ui { position: absolute; inset: 0; pointer-events: none; overflow: hidden; touch-action: none; }
 #ui > * { pointer-events: auto; }
-#ui button, #ui .card, #ui .polaroid, #ui .fridge-note, #ui .spell-btn, #ui .speed-btn {
+#ui button, #ui .card, #ui .polaroid, #ui .fridge-note, #ui .spell-btn, #ui .speed-btn, #ui .choice-btn {
   touch-action: manipulation;
 }
 
@@ -907,6 +907,182 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   z-index: 4;
 }
 @keyframes alarm-pulse { 50% { opacity: 0.35; } }
+
+/* ---------- Oh-Crap choice panel (§12): torn-notebook "EMERGENCY!!" note. The sim keeps
+   ticking behind this — it does NOT pause, so the drain-bar is a real countdown, not decor. ---------- */
+.choice-panel {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 12;
+  pointer-events: none;
+}
+.choice-panel:not(.hidden) { pointer-events: auto; }
+.choice-note {
+  width: min(440px, 88vw);
+  background: var(--paper);
+  background-image: repeating-linear-gradient(0deg, rgba(232,80,79,0.08) 0 1px, transparent 1px 24px);
+  border: 3px solid var(--cherry);
+  border-radius: 4px;
+  padding: 18px 22px 20px;
+  box-shadow: 0 0 0 6px rgba(232,80,79,0.18), 0 20px 60px rgba(0,0,0,0.65);
+  transform: rotate(-1deg);
+  position: relative;
+  animation: choice-in 0.28s cubic-bezier(0.2, 1.4, 0.5, 1);
+}
+/* torn-paper edge, bottom */
+.choice-note::after {
+  content: '';
+  position: absolute; left: -3px; right: -3px; bottom: -9px; height: 14px;
+  background: var(--paper);
+  clip-path: polygon(0% 0%, 4% 100%, 9% 10%, 14% 100%, 19% 15%, 24% 100%, 29% 5%, 34% 100%,
+    39% 12%, 44% 100%, 49% 8%, 54% 100%, 59% 15%, 64% 100%, 69% 5%, 74% 100%,
+    79% 10%, 84% 100%, 89% 12%, 94% 100%, 100% 0%);
+}
+@keyframes choice-in {
+  0% { transform: rotate(-1deg) scale(0.7); opacity: 0; }
+  100% { transform: rotate(-1deg) scale(1); opacity: 1; }
+}
+.choice-header {
+  text-align: center;
+  font-size: 24px; font-weight: bold;
+  color: var(--cherry);
+  text-shadow: 1px 2px 0 rgba(0,0,0,0.15);
+  margin-bottom: 8px;
+  animation: choice-flash 0.5s infinite;
+}
+@keyframes choice-flash { 50% { opacity: 0.55; } }
+.choice-prompt {
+  font-size: 16.5px;
+  line-height: 1.35;
+  text-align: center;
+  margin-bottom: 12px;
+  color: var(--ink);
+}
+.choice-drain {
+  height: 12px;
+  background: #e8dcc0;
+  border: 2px solid var(--ink);
+  border-radius: 7px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.choice-drain-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #8fbf4d, #f7c948, var(--cherry));
+  transition: width 0.12s linear;
+}
+.choice-btns {
+  display: flex;
+  gap: 10px;
+}
+.choice-btn {
+  flex: 1;
+  min-height: 56px;
+  background: linear-gradient(180deg, #c98f5e, #b07b4f);
+  border: 3px solid #8a5a36;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-weight: bold;
+  color: #fff4e0;
+  text-shadow: 1px 2px 0 rgba(0,0,0,0.3);
+  box-shadow: 0 5px 0 #6e4426, 0 8px 12px var(--shadow);
+  transition: transform 0.08s, box-shadow 0.08s;
+  font-family: var(--font-hand);
+}
+.choice-btn:first-child { background: linear-gradient(180deg, #e8504f, #c83c3c); border-color: #8a2828; box-shadow: 0 5px 0 #8a2828, 0 8px 12px var(--shadow); }
+.choice-btn:hover { transform: translateY(-2px); }
+.choice-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #6e4426, 0 4px 8px var(--shadow); }
+
+/* ---------- random-event banner (§11): TV-static "breaking news" band, distinct from the
+   generic wave-banner and positioned clear of the choice panel (which owns dead-center). ---------- */
+.event-banner {
+  position: absolute;
+  top: 8%; left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  width: min(460px, 90vw);
+  background: #111;
+  border: 3px solid #fff4e0;
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  overflow: hidden;
+  animation: event-banner-in 0.35s ease-out;
+}
+@keyframes event-banner-in {
+  0% { transform: translateX(-50%) translateY(-16px); opacity: 0; }
+  100% { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
+.event-banner-static {
+  position: absolute; inset: 0;
+  opacity: 0.14;
+  background-image: repeating-linear-gradient(0deg, #fff 0 1px, #000 1px 2px);
+  background-size: 100% 3px;
+  animation: event-static-roll 0.15s steps(4) infinite;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+@keyframes event-static-roll { 0% { background-position-y: 0; } 100% { background-position-y: 12px; } }
+.event-banner-body {
+  position: relative;
+  padding: 8px 18px 10px;
+  text-align: center;
+}
+.event-banner-name {
+  font-size: 19px; font-weight: bold;
+  color: #ffd97a;
+  text-shadow: 0 0 8px rgba(255, 217, 122, 0.6);
+  margin-bottom: 3px;
+}
+.event-banner-text {
+  font-size: 13.5px;
+  color: #f4f0e8;
+}
+
+/* ---------- The Fly (§20.14): a stray immortal fly that lands on HUD buttons. ---------- */
+.ui-fly {
+  position: fixed;
+  z-index: 20;
+  font-size: 22px;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  transition: left 0.4s ease-out, top 0.4s ease-out;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));
+  animation: fly-buzz 0.15s infinite alternate;
+  touch-action: manipulation;
+}
+@keyframes fly-buzz {
+  0% { transform: translate(-50%, -50%) rotate(-4deg); }
+  100% { transform: translate(-50%, -50%) rotate(4deg); }
+}
+
+/* ---------- tower rename input (inspect panel name field, §20.14 lite) ---------- */
+.inspect-name { cursor: text; }
+.rename-input {
+  font-family: var(--font-hand);
+  font-size: 17px;
+  font-weight: bold;
+  border: 2px dashed var(--denim);
+  border-radius: 5px;
+  background: #fff;
+  padding: 1px 5px;
+  width: 150px;
+  color: var(--ink);
+}
+
+@media (max-width: 820px), (max-height: 500px) {
+  .choice-note { padding: 12px 14px 14px; }
+  .choice-header { font-size: 18px; }
+  .choice-prompt { font-size: 13.5px; margin-bottom: 8px; }
+  .choice-btn { min-height: 48px; font-size: 12.5px; padding: 8px 8px; }
+  .choice-drain { height: 9px; margin-bottom: 10px; }
+  .event-banner { top: 6%; width: min(340px, 92vw); }
+  .event-banner-name { font-size: 14px; }
+  .event-banner-text { font-size: 11px; }
+  .ui-fly { font-size: 18px; }
+}
 
 /* ==================================================================
    MOBILE / small-viewport — landscape is the play orientation, so this

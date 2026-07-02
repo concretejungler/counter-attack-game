@@ -17,6 +17,7 @@ import {
   applyActiveEventEffectsPost, applyActiveEventEffectsPre, applyChoose,
   maybeStartEvent, updateActiveEvents, updatePendingChoice,
 } from './events';
+import { dogCrumbTax, initPet, petOnBuildPhase, petOnWaveStart, updatePet } from './pets';
 import type {
   Critter, ContentDB, DamageType, DifficultyId, DifficultyMods, LevelDef, LossReason,
   SimCommand, SimEvent, SimOptions, SimState, TileRef, Vec3, WaveDef,
@@ -53,6 +54,7 @@ export interface SimCtx {
   grudgeRng: RNG;   // grudge name picks + crowned-elite spawn-door picks (GAME-PROMPT §2.6)
   eventRng: RNG;    // random event rolls + effect randomness (GAME-PROMPT §11/§12) — inert unless SimOptions.events
   directorRng: RNG; // Director AI augmentation picks (GAME-PROMPT §13) — inert unless SimOptions.director
+  petRng: RNG;      // pet chaos-agent rolls (GAME-PROMPT §9) — inert unless SimOptions.pet
   content: ContentDB;
   diff: DifficultyMods;
   emit(e: SimEvent): void;
@@ -74,6 +76,7 @@ export class Sim implements SimCtx {
   grudgeRng: RNG;
   eventRng: RNG;
   directorRng: RNG;
+  petRng: RNG;
   content: ContentDB;
   diff: DifficultyMods;
 
@@ -92,6 +95,8 @@ export class Sim implements SimCtx {
   private directorMem = new DirectorMemory();
   /** Random events (§11) + Oh-Crap scenarios (§12) — inert unless SimOptions.events is true. */
   readonly eventsOn: boolean;
+  /** Pet chaos agent (§9) — undefined unless SimOptions.pet is set. */
+  readonly petKind: 'cat' | 'dog' | 'goldfish' | undefined;
   /** recap.sweeps snapshot at the start of the wave in progress, used to detect zero-sweep waves for the Director. */
   private sweepsAtWaveStart = 0;
   /**
@@ -109,8 +114,10 @@ export class Sim implements SimCtx {
     this.grudgeRng = new RNG((opts.seed ^ 0x4752_4447) >>> 0);   // 'GRDG' XOR-mixed, independent stream
     this.eventRng = new RNG((opts.seed ^ 0x4556_4e54) >>> 0);    // 'EVNT' XOR-mixed, independent stream
     this.directorRng = new RNG((opts.seed ^ 0x4449_5245) >>> 0); // 'DIRE' XOR-mixed, independent stream
+    this.petRng = new RNG((opts.seed ^ 0x5045_5453) >>> 0);      // 'PETS' XOR-mixed, independent stream
     this.directorOn = !!opts.director || !!level.director;
     this.eventsOn = !!opts.events;
+    this.petKind = opts.pet;
     this.diff = DIFFICULTY[opts.difficulty];
     this.grid = new Grid(level);
     this.grid.recompute(level.cakeTile);
@@ -169,8 +176,10 @@ export class Sim implements SimCtx {
       eventsThisLevel: 0,
       pendingChoice: null,
       ceasefireWaves: 0,
+      pet: null,
     };
     this.dealClutterHand();
+    if (this.petKind) this.state.pet = initPet(this, this.petKind);
   }
 
   // ---------- SimCtx ----------
@@ -222,16 +231,19 @@ export class Sim implements SimCtx {
   }
 
   dropCrumbs(at: Vec3, surface: number, value: number): void {
+    // Sir Barksalot (§9): eats 15% of each crumb drop's value before it lands.
+    const taxed = dogCrumbTax(this, value);
+    if (taxed <= 0) return;
     const id = this.nextId();
     const ent = {
       id,
       pos: { x: at.x, y: at.y, z: at.z },
       surface,
-      value,
+      value: taxed,
       sweepT: 0,
     };
     this.state.crumbEnts.set(id, ent);
-    this.emit({ t: 'crumbDrop', id, at: { ...at }, value });
+    this.emit({ t: 'crumbDrop', id, at: { ...at }, value: taxed });
   }
 
   // ---------- public API ----------
@@ -295,6 +307,7 @@ export class Sim implements SimCtx {
     updateSpells(this, dt);
     this.updateScent(dt);
     if (this.eventsOn) updateActiveEvents(this, dt);
+    if (this.state.pet) updatePet(this, dt);
 
     // 6. centralized loss: the cake is gone AND nobody is carrying a recoverable slice
     if (st.cakeSlices <= 0) {
@@ -443,6 +456,7 @@ export class Sim implements SimCtx {
     this.waveRt = new WaveRuntime(wave, countScale);
     spawnGrudges(this);
     if (this.eventsOn) maybeStartEvent(this);
+    if (this.state.pet) petOnWaveStart(this);
     this.emit({ t: 'waveStart', index: st.waveIndex, total: st.wavesTotal });
   }
 
@@ -470,6 +484,7 @@ export class Sim implements SimCtx {
     this.scoutTimer = 0;
     this.dealClutterHand();
     this.emit({ t: 'buildPhase', index: st.waveIndex + 1, clutterHand: [...st.clutterHand] });
+    if (this.state.pet) petOnBuildPhase(this, st.waveIndex + 1);
 
     // Director forecast (§13): a deliberately-partial weather-report preview of the next wave,
     // including whether the Director would currently augment it (telemetry can still shift

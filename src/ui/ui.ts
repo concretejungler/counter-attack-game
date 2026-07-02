@@ -1,9 +1,11 @@
-import type { ContentDB, LevelDef, SimState, Tower } from '../sim/types';
+import type { ContentDB, LevelDef, PendingChoice, SimState, Tower } from '../sim/types';
 import type { SaveData } from '../meta/save';
 import { Hud, InspectPanel, type HudCallbacks, type InspectCallbacks } from './hud';
 import { buildJournal, buildLevelSelect, buildRecap, buildSettings, buildTitle, type RecapInfo } from './screens';
 import { MUTATION_ICONS } from './icons';
 import { isMobileViewport, isPortrait } from '../core/device';
+import { ChoicePanel, type ChoicePanelCallbacks } from './choicePanel';
+import { Fly } from './fly';
 
 const el = (tag: string, cls = '', html = ''): HTMLElement => {
   const e = document.createElement(tag);
@@ -19,6 +21,9 @@ export interface UICallbacks extends HudCallbacks, InspectCallbacks {
   onPickMutation(id: string): void;
   onSettingsChanged(s: SaveData['settings']): void;
   onResume(): void;
+  onChoose(option: 0 | 1): void;
+  onChoiceTick(): void;
+  onFlyShooed(): void;
 }
 
 export type JournalReturnTo = 'title' | 'levels';
@@ -28,10 +33,15 @@ export class UI {
   private root: HTMLElement;
   hud: Hud | null = null;
   inspect: InspectPanel | null = null;
+  choicePanel: ChoicePanel;
+  fly: Fly;
   private screenEl: HTMLElement | null = null;
   private modalEl: HTMLElement | null = null;
   private stickyEl: HTMLElement | null = null;
   private swarmAlarmEl: HTMLElement | null = null;
+  private eventBannerEl: HTMLElement | null = null;
+  private eventBannerTimer: ReturnType<typeof setTimeout> | null = null;
+  private eventBannerId: string | null = null;
   private rotateEl: HTMLElement;
   private inGameplay = false;
 
@@ -53,6 +63,16 @@ export class UI {
     addEventListener('orientationchange', () => this.refreshRotateOverlay());
     if (window.visualViewport) window.visualViewport.addEventListener('resize', () => this.refreshRotateOverlay());
     this.refreshRotateOverlay();
+
+    const choiceCb: ChoicePanelCallbacks = {
+      onChoose: (option) => this.cb.onChoose(option),
+      onTick: () => this.cb.onChoiceTick(),
+    };
+    this.choicePanel = new ChoicePanel(choiceCb);
+    this.root.append(this.choicePanel.root);
+
+    this.fly = new Fly(document.body, { onShooed: () => this.cb.onFlyShooed() });
+    if (this.save.flyShooed) this.fly.markShooed();
   }
 
   private refreshRotateOverlay(): void {
@@ -69,6 +89,8 @@ export class UI {
     this.inspect = null;
     this.closeModal();
     this.dismissSticky();
+    this.hideChoice();
+    this.dismissEventBanner();
     this.inGameplay = false;
     this.refreshRotateOverlay();
   }
@@ -109,10 +131,12 @@ export class UI {
   showHud(level: LevelDef): void {
     this.clearScreen();
     this.hud = new Hud(this.content, level, this.cb);
-    this.inspect = new InspectPanel(this.content, this.cb);
+    this.inspect = new InspectPanel(this.content, this.cb, this.save.towerNames);
     this.root.append(this.hud.root, this.inspect.root);
     this.inGameplay = true;
     this.refreshRotateOverlay();
+    // The Fly (§20.14): rare per-level-start roll, no-op forever once shooed.
+    this.fly.maybeSpawn();
   }
 
   updateHud(state: SimState, speedMult: number): void {
@@ -203,6 +227,63 @@ export class UI {
     const b = el('div', `wave-banner${boss ? ' boss' : ''}`, text);
     this.root.append(b);
     setTimeout(() => b.remove(), boss ? 3300 : 2500);
+  }
+
+  // ---------- Oh-Crap choice panel (§12) ----------
+  showChoice(pc: PendingChoice): void {
+    this.choicePanel.show(pc);
+  }
+
+  updateChoice(simTime: number): void {
+    this.choicePanel.update(simTime);
+  }
+
+  hideChoice(): void {
+    this.choicePanel.hide();
+  }
+
+  get choiceOpen(): boolean {
+    return this.choicePanel.visible;
+  }
+
+  /** Keyboard 1/2 while a choice is pending; returns true if it consumed the key. */
+  handleChoiceKey(key: string): boolean {
+    return this.choicePanel.handleKey(key);
+  }
+
+  // ---------- distinct random-event banner (§11) — a TV-static "breaking news" fridge note,
+  // separate from the generic wave banner so it doesn't compete with the choice panel and can
+  // be explicitly dismissed on eventEnd for timed events instead of just timing out. ----------
+  eventBanner(id: string, name: string, text: string, timed: boolean): void {
+    this.eventBannerEl?.remove();
+    if (this.eventBannerTimer !== null) {
+      clearTimeout(this.eventBannerTimer);
+      this.eventBannerTimer = null;
+    }
+    this.eventBannerId = id;
+    const b = el('div', 'event-banner', `
+      <div class="event-banner-static"></div>
+      <div class="event-banner-body">
+        <div class="event-banner-name">📺 ${name}</div>
+        <div class="event-banner-text">${text}</div>
+      </div>
+    `);
+    this.eventBannerEl = b;
+    this.root.append(b);
+    // instant events (and a safety net for timed ones, in case eventEnd never arrives) still
+    // self-clear after a while so the banner never gets stuck on screen.
+    this.eventBannerTimer = setTimeout(() => this.dismissEventBanner(id), timed ? 12000 : 3600);
+  }
+
+  dismissEventBanner(id?: string): void {
+    if (id !== undefined && this.eventBannerId !== id) return;
+    this.eventBannerEl?.remove();
+    this.eventBannerEl = null;
+    this.eventBannerId = null;
+    if (this.eventBannerTimer !== null) {
+      clearTimeout(this.eventBannerTimer);
+      this.eventBannerTimer = null;
+    }
   }
 
   toast(text: string): void {

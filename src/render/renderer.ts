@@ -7,6 +7,7 @@ import { buildRoom } from './room';
 import { CritterInstances, type CritterRenderState } from './models/critterModels';
 import { buildCrumbKing, buildTowerView, type TowerView } from './models/towerModels';
 import { buildBossView } from './models/critterModels';
+import { buildPetView, type PetView } from './models/petModels';
 import { CakeView, buildClutterCell, buildSliceProp, projectileTemplate, PROJECTILE_LOOKS } from './models/props';
 import { Vfx } from './vfx';
 import { HandView, type HandPose } from './handView';
@@ -39,6 +40,12 @@ interface TowerViewData {
   carried: boolean;
 }
 
+interface PetViewData {
+  id: 'cat' | 'dog' | 'goldfish';
+  view: PetView;
+  basePos: THREE.Vector3;
+}
+
 const CRUMB_CAP = 160;
 const SHADOW_BLOB_CAP = 340; // critters (300 max, per GAME-PROMPT §22 perf target) + towers + clutter
 
@@ -55,6 +62,7 @@ export class GameRenderer {
   private critters = new CritterInstances();
   private critterViews = new Map<number, CritterViewData>();
   private towerViews = new Map<number, TowerViewData>();
+  private petView: PetViewData | null = null;
   private clutterViews = new Map<number, THREE.Group>();
   private clutterShake = new Map<number, number>();
   private projMeshes = new Map<string, THREE.InstancedMesh>();
@@ -191,6 +199,8 @@ export class GameRenderer {
       if (v.bossView) this.scene.remove(v.bossView.group);
       if (v.sliceProp) this.scene.remove(v.sliceProp);
     }
+    if (this.petView) this.scene.remove(this.petView.view.group);
+    this.petView = null;
     this.towerViews.clear();
     this.clutterViews.clear();
     this.critterViews.clear();
@@ -308,6 +318,22 @@ export class GameRenderer {
         this.scene.remove(v.view.group);
         this.towerViews.delete(id);
       }
+    }
+
+    // pet (§9) — at most one on the board; purely positional flavor synced like a tower
+    if (state.pet) {
+      if (!this.petView || this.petView.id !== state.pet.id) {
+        if (this.petView) this.scene.remove(this.petView.view.group);
+        const view = buildPetView(state.pet.id);
+        view.group.position.set(state.pet.pos.x, state.pet.pos.y, state.pet.pos.z);
+        this.scene.add(view.group);
+        this.petView = { id: state.pet.id, view, basePos: new THREE.Vector3(state.pet.pos.x, state.pet.pos.y, state.pet.pos.z) };
+      }
+      this.petView.basePos.set(state.pet.pos.x, state.pet.pos.y, state.pet.pos.z);
+      this.petView.view.setMood(state.pet.mood);
+    } else if (this.petView) {
+      this.scene.remove(this.petView.view.group);
+      this.petView = null;
     }
 
     // clutter
@@ -464,6 +490,29 @@ export class GameRenderer {
       case 'towerDropped':
         this.vfx.poof(ev.at);
         break;
+      case 'petSwat': {
+        this.petView?.view.punch();
+        const v = this.towerViews.get(ev.towerId);
+        if (v) this.vfx.poof(v.basePos);
+        this.rig.shake(0.1, 0.2);
+        break;
+      }
+      case 'petBark': {
+        this.petView?.view.punch();
+        if (this.petView) this.vfx.sonicPulse(this.petView.basePos);
+        this.rig.shake(0.08, 0.15);
+        break;
+      }
+      case 'petPounce': {
+        this.petView?.view.punch();
+        if (this.petView) this.vfx.confetti(this.petView.basePos);
+        this.rig.shake(0.3, 0.35);
+        break;
+      }
+      case 'petMove': {
+        if (this.petView) this.vfx.poof(ev.at);
+        break;
+      }
       case 'clutterChew': {
         for (const [id] of state.clutter) {
           // shake the chewed piece
@@ -650,6 +699,12 @@ export class GameRenderer {
       v.view.animate(dt, this.time);
     }
 
+    // pet
+    if (this.petView) {
+      this.petView.view.group.position.lerp(this.petView.basePos, Math.min(1, dt * 6));
+      this.petView.view.animate(dt, this.time);
+    }
+
     // clutter shake
     for (const [id, t] of this.clutterShake) {
       const g = this.clutterViews.get(id);
@@ -730,6 +785,13 @@ export class GameRenderer {
         this.shadowBlobMesh.setMatrixAt(i++, M);
       }
       if (i >= SHADOW_BLOB_CAP) break;
+    }
+    if (this.petView && i < SHADOW_BLOB_CAP) {
+      const b = this.petView.basePos;
+      P.set(b.x, b.y + 0.015, b.z);
+      S.set(0.4, 0.4, 1);
+      M.compose(P, Q, S);
+      this.shadowBlobMesh.setMatrixAt(i++, M);
     }
 
     this.shadowBlobMesh.count = i;

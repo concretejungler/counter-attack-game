@@ -27,6 +27,13 @@ export interface SaveData {
     jarred: Record<string, number>;      // capture count per species
     shinySeen: Record<string, number>;   // shiny sightings (chime heard) per species
   };
+  /** The Fly (§20.14 UI gag): true once shooed for good (clicked 3 times in one encounter).
+   *  Optional-safe like critterdex above — backfilled by loadSave() for older saves. */
+  flyShooed: boolean;
+  /** Per-save tower renames (§20.14 lite). Keyed by towerDef id — a rename applies to that
+   *  tower species everywhere it's placed, matching the "rename unlocks a voice pack" framing
+   *  in GAME-PROMPT (the toaster has opinions once renamed "Talkie"). */
+  towerNames: Record<string, string>;
 }
 
 const KEY = 'counterattack_save_v1';
@@ -39,6 +46,8 @@ export function defaultSave(): SaveData {
     stats: { wins: 0, losses: 0, kills: 0, sweeps: 0, crumbsBanked: 0 },
     seenNotes: [],
     critterdex: { kills: {}, jarred: {}, shinySeen: {} },
+    flyShooed: false,
+    towerNames: {},
   };
 }
 
@@ -58,6 +67,8 @@ export function loadSave(): SaveData {
         jarred: { ...(data.critterdex?.jarred ?? {}) },
         shinySeen: { ...(data.critterdex?.shinySeen ?? {}) },
       },
+      flyShooed: data.flyShooed ?? false,
+      towerNames: { ...(data.towerNames ?? {}) },
     };
   } catch {
     return defaultSave();

@@ -447,7 +447,13 @@ export type SimEvent =
   | { t: 'eventEnd'; id: string }
   // ---- Oh-Crap scenarios (§12) ----
   | { t: 'choiceOffered'; id: string; prompt: string; options: [string, string]; deadline: number }
-  | { t: 'choiceMade'; id: string; option: number; auto: boolean };
+  | { t: 'choiceMade'; id: string; option: number; auto: boolean }
+  // ---- Pets (§9) ----
+  | { t: 'petSwat'; towerId: number }                          // cat: disabled + knocked to an adjacent tile (or just disabled if none free)
+  | { t: 'petPounce'; kills: number }                          // cat: once-per-level, kills a seeded % of live critters then swats the top-kill tower
+  | { t: 'petMove'; at: Vec3 }                                 // cat: relocates to a new seeded sunbeam each build phase
+  | { t: 'petBark'; stunned: number }                          // dog: stuns `stunned` live critters for 2s
+  | { t: 'petProphecy'; wave: number; composition: { critter: string; count: number }[] }; // goldfish: full next-wave composition
 
 // ---------- recap / telemetry ----------
 export interface RecapData {
@@ -471,6 +477,8 @@ export interface SimOptions {
   director?: boolean;
   /** Random events (§11) + Oh-Crap scenarios (§12). Default false. */
   events?: boolean;
+  /** Pet chaos agent (§9). Default undefined = no pet — fully inert, byte-identical to omitting it. */
+  pet?: 'cat' | 'dog' | 'goldfish';
 }
 
 export interface DifficultyMods {
@@ -526,6 +534,22 @@ export interface SimState {
   pendingChoice: PendingChoice | null;
   /** Ant Diplomacy ceasefire: waves remaining where spawns are skipped (0 = inactive). */
   ceasefireWaves: number;
+  /** Pet chaos agent (§9). null unless SimOptions.pet is set — purely positional flavor plus the pet's own behaviors. */
+  pet: PetState | null;
+}
+
+// ---------- pets (GAME-PROMPT §9) ----------
+export type PetId = 'cat' | 'dog' | 'goldfish';
+
+export interface PetState {
+  id: PetId;
+  pos: Vec3;
+  surface: number;
+  mood: 'idle' | 'active';
+  /** Seconds remaining before the next behavior can fire again (species-specific meaning). */
+  cooldown: number;
+  /** Cat only: has POUNCE fired yet this level (once-per-level, GAME-PROMPT §9). */
+  pounced: boolean;
 }
 
 export interface ActiveEvent {

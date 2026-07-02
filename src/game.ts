@@ -118,6 +118,23 @@ export class Game {
       onResume: () => {
         this.paused = false;
       },
+      onChoose: (option) => {
+        this.sim?.command({ type: 'choose', option });
+      },
+      onChoiceTick: () => this.sfx.play('choice-tick'),
+      onFlyShooed: () => {
+        this.save.flyShooed = true;
+        persistSave(this.save);
+        this.ui.toast('achievement: Wax On. the fly respects you now.');
+      },
+      onRename: (def, name) => {
+        this.save.towerNames[def] = name;
+        persistSave(this.save);
+        if (name.trim().toLowerCase() === 'talkie' && def === 'sir-toastsalot') {
+          this.ui.toast('🍞 the toaster has OPINIONS now.');
+        }
+        this.refreshInspectSoon();
+      },
     });
 
     this.bindInput();
@@ -261,6 +278,9 @@ export class Game {
       this.ui.setSwarmAlarm(this.sim.state.scent >= 99);
       this.updateMusicMood();
       this.ui.updateHud(this.sim.state, this.speedMult);
+      // Oh-Crap countdown: the sim does NOT pause for this, by design (§12 — 5 seconds of
+      // real panic against a still-running assault), so the drain-bar tracks sim time live.
+      this.ui.updateChoice(this.sim.state.time);
       this.updateGhost();
     }
     this.audio.setVolumes(this.save.settings.musicVol, this.save.settings.sfxVol);
@@ -354,26 +374,36 @@ export class Game {
         case 'grudgeBorn':
           this.sfx.play('grudge-return');
           this.ui.toast(`😤 ${ev.name} escaped... and will REMEMBER this.`);
+          this.updateForecast();
           break;
         case 'grudgeReturn':
           this.sfx.play('grudge-return');
           this.ui.banner(`👑 ${ev.name} IS BACK`, true);
+          this.updateForecast();
           break;
         case 'grudgeSettled':
           this.sfx.play('grudge-settled');
           this.ui.toast(`⚖️ ${ev.name}: settled. Bounty collected!`);
           break;
-        case 'eventStart':
+        case 'eventStart': {
           this.sfx.play('event-doorbell');
-          this.ui.banner(`📺 ${ev.name}`, true);
-          this.ui.toast(ev.text);
+          const def = CONTENT.events?.[ev.id];
+          this.ui.eventBanner(ev.id, ev.name, ev.text, def?.kind === 'timed');
+          break;
+        }
+        case 'eventEnd':
+          this.ui.dismissEventBanner(ev.id);
           break;
         case 'choiceOffered':
           this.sfx.play('choice-tick');
-          this.ui.toast(`⚡ ${ev.prompt}`);
+          this.ui.showChoice(this.sim.state.pendingChoice!);
+          break;
+        case 'choiceMade':
+          this.ui.hideChoice();
+          if (ev.auto) this.ui.toast('⏱️ too slow — the default happened.');
           break;
         case 'forecast':
-          this.ui.toast(`🌦️ ${ev.text}`);
+          this.ui.hud?.showForecast(this.forecastWithGrudges(ev.text));
           break;
         case 'shinySpawn':
           this.save.critterdex.shinySeen[ev.def] = (this.save.critterdex.shinySeen[ev.def] ?? 0) + 1;
@@ -451,6 +481,21 @@ export class Game {
           this.endLevel(false, ev.reason);
           break;
         default:
+          // Defensive string-keyed case: a parallel agent may add a goldfish-oracle
+          // 'petProphecy' SimEvent (full next-wave composition) to types.ts after this was
+          // written. Route it into the same forecast panel with a fish prefix the moment
+          // it exists, with zero further game.ts changes needed — mirrors the 'jarDone'
+          // pattern already used above for the same reason. Typed loosely (not a case in the
+          // SimEvent union at write time) so this keeps compiling either way.
+          if ((ev as { t: string }).t === 'petProphecy') {
+            const p = ev as unknown as { wave: number; composition: { critter: string; count: number }[] };
+            const parts = p.composition.map(({ critter, count }) => {
+              const def = CONTENT.critters[critter];
+              const name = def?.boss ? `👑 ${def.name}` : def?.name ?? critter;
+              return `${count}× <b>${name}</b>`;
+            });
+            this.ui.hud?.showForecast(this.forecastWithGrudges(`🐟 the goldfish foresees wave ${p.wave + 1}: ${parts.join(', ')}`));
+          }
           break;
       }
     }
@@ -460,6 +505,18 @@ export class Game {
     if (this.toastsSeen.has(key)) return;
     this.toastsSeen.add(key);
     this.ui.toast(text);
+  }
+
+  /** Appends any live grudges as a taunt line onto forecast/wave-preview text (§2.6). */
+  private forecastWithGrudges(text: string): string {
+    if (!this.sim) return text;
+    const grudges = this.sim.state.grudges;
+    if (!grudges || grudges.length === 0) return text;
+    const taunts = grudges
+      .filter((g) => g.aliveAs === null)
+      .map((g) => `😤 ${g.name} is coming back for YOU`);
+    if (taunts.length === 0) return text;
+    return `${text}<br>${taunts.join('<br>')}`;
   }
 
   private updateForecast(): void {
@@ -477,7 +534,7 @@ export class Game {
     }
     const parts = [...counts.entries()].map(([n, c]) => `${c}× <b>${n}</b>`);
     const scentNote = this.sim.state.scent >= 25 ? ' <b>+10% (they smell it)</b>' : '';
-    this.ui.hud?.showForecast(`📋 Critter Forecast: ${parts.join(', ')}${scentNote}`);
+    this.ui.hud?.showForecast(this.forecastWithGrudges(`📋 Critter Forecast: ${parts.join(', ')}${scentNote}`));
   }
 
   // ---------- selection ----------
@@ -884,6 +941,12 @@ export class Game {
     canvas.addEventListener('gesturestart', (e) => e.preventDefault());
 
     addEventListener('keydown', (e) => {
+      // Oh-Crap choice panel eats 1/2 first — it's a forced 5-second decision that shouldn't
+      // also flip game speed while it's open.
+      if (this.ui.choiceOpen && this.ui.handleChoiceKey(e.key)) {
+        e.preventDefault();
+        return;
+      }
       if (e.key === 'r' || e.key === 'R') {
         if (this.mode.kind === 'placeClutter') {
           this.mode.rot = ((this.mode.rot + 1) % 4) as 0 | 1 | 2 | 3;
@@ -984,6 +1047,27 @@ export class Game {
       case 'mutation': {
         this.startLevel('kitchen-2', 1337);
         this.ui.showMutationDraft(['thick-shells', 'hyper-legs', 'double-dead']);
+        return;
+      }
+      case 'choice': {
+        // Forces an Oh-Crap pendingChoice for screenshot verification of the panel — the
+        // sim only ever creates these through the (RNG-gated) events system, so this pokes
+        // sim.state directly, mirroring the existing 'recap'/'mutation' demo scenes above.
+        this.startLevel('kitchen-3', 1337);
+        const sim = this.sim!;
+        sim.state.crumbs = 500;
+        this.fastForward(2);
+        sim.command({ type: 'callWave' });
+        this.fastForward(Math.round(3 / SIM_DT));
+        for (let i = 0; i < 10; i++) sim.debugSpawn('ant-worker', { s: 0, c: 2 + (i % 6), r: 8 });
+        const deadline = sim.state.time + 5;
+        sim.state.pendingChoice = {
+          id: 'crumb-avalanche',
+          prompt: 'A shelf tips — 500 crumbs spill at once! Sweep the jackpot, or take the instant scent hit?',
+          options: ['🧹 Sweep jackpot!', '💨 Refund (scent spike)'],
+          deadline,
+        };
+        this.ui.showChoice(sim.state.pendingChoice);
         return;
       }
       case 'recap': {

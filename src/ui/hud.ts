@@ -230,21 +230,26 @@ export interface InspectCallbacks {
   onHighFive(id: number): void;
   onRearm(id: number): void;
   onClose(): void;
+  /** §20.14 lite: right-click/long-press the name to rename this tower's species (per-save). */
+  onRename(def: string, name: string): void;
 }
 
 export class InspectPanel {
   root = el('div', 'inspect hidden');
+  private renaming = false;
 
-  constructor(private content: ContentDB, private cb: InspectCallbacks) {}
+  constructor(private content: ContentDB, private cb: InspectCallbacks, private names: Record<string, string> = {}) {}
 
   show(tower: Tower, state: SimState, screenX: number, screenY: number): void {
+    this.renaming = false;
     const def = this.content.towers[tower.def];
     const tier = def.tiers[tower.tier - 1];
     const nextCost = tower.tier === 1 || tower.tier === 2 ? def.tiers[tower.tier].cost : null;
     const branch = tower.branch ? def.branches.find((b) => b.id === tower.branch) : null;
+    const displayName = this.names[tower.def] ?? def.name;
 
     let html = `
-      <h3>${TOWER_ICONS[tower.def] ?? ''} ${def.name}${'★'.repeat(tower.tier - 1)}</h3>
+      <h3 class="inspect-name" title="right-click (or long-press) to rename">${TOWER_ICONS[tower.def] ?? ''} <span class="nm-text">${displayName}</span>${'★'.repeat(tower.tier - 1)}</h3>
       <div class="role">${def.role}${branch ? ` — <b>${branch.name}</b>` : ''}</div>
       <div class="statline">
         <span>💥 ${tier.dmg}</span><span>⏱ ${tier.rate}/s</span><span>📏 ${tier.range}</span><span>☠️ ${tower.kills}</span>
@@ -288,6 +293,55 @@ export class InspectPanel {
     this.root.querySelectorAll('[data-branch]').forEach((btn) => {
       (btn as HTMLElement).onclick = () => this.cb.onBranch(tower.id, (btn as HTMLElement).dataset.branch!);
     });
+
+    // ---- rename: right-click (desktop) or long-press (touch/pen) on the name ----
+    const nameEl = this.root.querySelector('.inspect-name') as HTMLElement;
+    nameEl.oncontextmenu = (e) => {
+      e.preventDefault();
+      this.beginRename(tower.def, displayName);
+    };
+    let pressTimer: ReturnType<typeof setTimeout> | null = null;
+    nameEl.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse') return;
+      pressTimer = setTimeout(() => this.beginRename(tower.def, displayName), 500);
+    });
+    const clearPress = () => {
+      if (pressTimer !== null) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+    };
+    nameEl.addEventListener('pointerup', clearPress);
+    nameEl.addEventListener('pointerleave', clearPress);
+  }
+
+  private beginRename(defId: string, currentName: string): void {
+    if (this.renaming) return;
+    this.renaming = true;
+    const nameEl = this.root.querySelector('.inspect-name') as HTMLElement;
+    if (!nameEl) return;
+    const icon = TOWER_ICONS[defId] ?? '';
+    nameEl.innerHTML = `${icon} <input class="rename-input" type="text" maxlength="18" value="${currentName.replace(/"/g, '&quot;')}" />`;
+    const input = nameEl.querySelector('.rename-input') as HTMLInputElement;
+    input.focus();
+    input.select();
+    const commit = () => {
+      const v = input.value.trim();
+      this.renaming = false;
+      if (v && v !== this.content.towers[defId].name) this.cb.onRename(defId, v);
+      else if (v === this.content.towers[defId].name) this.cb.onRename(defId, v); // explicit reset to default is fine too
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') input.blur();
+      if (e.key === 'Escape') {
+        this.renaming = false;
+        input.value = currentName;
+        input.blur();
+      }
+    });
+    input.addEventListener('blur', commit, { once: true });
+    input.addEventListener('pointerdown', (e) => e.stopPropagation());
   }
 
   hide(): void {
