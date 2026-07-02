@@ -21,19 +21,63 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {
+  position: fixed;
+  inset: 0;
   width: 100%; height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
   background: #1a1410;
   font-family: var(--font-hand);
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
   color: var(--ink);
 }
 
-#app { position: fixed; inset: 0; }
-#game-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-#ui { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+#app {
+  position: fixed;
+  inset: 0;
+  overscroll-behavior: none;
+  /* iOS safe-area padding for notches/home-indicator */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+#game-canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  touch-action: none;
+  -webkit-user-select: none;
+}
+#ui { position: absolute; inset: 0; pointer-events: none; overflow: hidden; touch-action: none; }
 #ui > * { pointer-events: auto; }
+#ui button, #ui .card, #ui .polaroid, #ui .fridge-note, #ui .spell-btn, #ui .speed-btn {
+  touch-action: manipulation;
+}
+
+/* ---------- portrait rotate overlay ---------- */
+.rotate-overlay {
+  position: fixed; inset: 0;
+  z-index: 999;
+  display: none;
+  align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at 50% 30%, #4a3826 0%, #1a1410 75%);
+}
+.rotate-overlay.show { display: flex; }
+.rotate-overlay .sticky-note {
+  position: static;
+  transform: rotate(-2deg);
+  width: min(280px, 78vw);
+  text-align: center;
+  font-size: clamp(16px, 5vw, 20px);
+}
+.rotate-overlay .rotate-ico {
+  display: block;
+  font-size: 46px;
+  margin-bottom: 10px;
+  animation: rotate-hint 1.6s ease-in-out infinite;
+}
+@keyframes rotate-hint {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-90deg); }
+}
 
 button { font-family: var(--font-hand); cursor: pointer; border: none; background: none; color: inherit; }
 
@@ -43,6 +87,8 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   display: flex; align-items: center; justify-content: center;
   flex-direction: column;
   background: radial-gradient(ellipse at 50% 30%, #4a3826 0%, #2a1f14 70%);
+  overflow-y: auto;
+  padding: 12px 0;
 }
 
 .wood-btn {
@@ -319,6 +365,7 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   padding: 9px 14px 6px;
   display: flex; gap: 9px; align-items: flex-end;
 }
+.build-bar-scroll { display: flex; gap: 9px; align-items: flex-end; }
 .bar-section { display: flex; gap: 7px; align-items: flex-end; }
 .bar-divider { width: 3px; align-self: stretch; background: rgba(110, 68, 38, 0.55); border-radius: 2px; margin: 0 4px; }
 
@@ -582,3 +629,207 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   z-index: 4;
 }
 @keyframes alarm-pulse { 50% { opacity: 0.35; } }
+
+/* ==================================================================
+   MOBILE / small-viewport — landscape is the play orientation, so this
+   must trigger both for narrow portrait phones (max-width) AND short
+   landscape phones (max-height; e.g. 844x390 is wide but short).
+   HUD scales down but touch targets stay >= 44px; build bar scrolls
+   horizontally instead of shrinking cards below usability.
+   ================================================================== */
+@media (max-width: 820px), (max-height: 500px) {
+  .hud-top {
+    top: max(6px, env(safe-area-inset-top));
+    left: 6px; right: 6px;
+    gap: 5px;
+    align-items: flex-start;
+  }
+  .hud-cluster { gap: 5px; flex-wrap: nowrap; }
+  .hud-cluster.hud-cluster-left { min-width: 0; flex: 1 1 auto; overflow: hidden; }
+
+  .chip {
+    padding: 4px 8px;
+    font-size: clamp(11px, 3.2vw, 15px);
+    border-radius: 10px;
+    gap: 3px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .chip .ico { font-size: clamp(13px, 3.6vw, 17px); }
+
+  .nose-meter { width: 32px; height: 60px; border-radius: 8px 8px 13px 13px; flex-shrink: 0; }
+  .nose-meter .nose-ico { font-size: 13px; top: 1px; }
+  .nose-meter .pct { font-size: 8.5px; bottom: 2px; }
+
+  .mana-jar { width: 30px; height: 42px; flex-shrink: 0; }
+  .mana-jar .num { font-size: 9.5px; }
+
+  .forecast {
+    font-size: clamp(9px, 2.4vw, 12px);
+    padding: 4px 8px;
+    max-width: 34vw;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  /* egg timer + call wave — keep tap target >= 44px; sits below the top-right
+     chip cluster (crumb chip / mana jar / nose meter), clear of build bar. */
+  .call-cluster {
+    right: 6px; top: 70px; bottom: auto;
+    flex-direction: row;
+    gap: 5px;
+  }
+  .egg-timer { width: 40px; height: 44px; font-size: 12px; }
+  .call-cluster .wood-btn.small {
+    min-height: 40px;
+    padding: 6px 11px;
+    font-size: clamp(11px, 3vw, 14px);
+    white-space: nowrap;
+  }
+
+  /* build bar: horizontal momentum scroll instead of shrinking cards.
+     Right edge is padded to reserve room for the docked speed/pause cluster
+     (positioned absolutely, see below) so nothing floats and overlaps at
+     short landscape-phone heights. */
+  .build-bar {
+    left: 0; right: 0; transform: none;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 0;
+    border-left: none; border-right: none;
+    padding: 5px 0 calc(5px + env(safe-area-inset-bottom)) 8px;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0;
+  }
+  .build-bar-scroll {
+    display: flex;
+    gap: 9px;
+    align-items: flex-end;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    scroll-padding-left: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 2px 96px 2px 0;
+  }
+  .bar-section { flex-shrink: 0; display: flex; gap: 7px; align-items: flex-end; }
+  .bar-divider { flex-shrink: 0; }
+
+  .card {
+    width: 58px;
+    min-height: 44px;
+    scroll-snap-align: start;
+    flex-shrink: 0;
+  }
+  .card .face { font-size: 22px; height: 30px; }
+  .card .nm { font-size: 7.5px; height: 16px; }
+  .card .cost { font-size: 10px; }
+  .card .qty { width: 17px; height: 17px; font-size: 9.5px; top: -6px; right: -6px; }
+
+  .spell-btn {
+    width: 46px; height: 46px;
+    font-size: 19px;
+    flex-shrink: 0;
+    scroll-snap-align: start;
+  }
+
+  /* speed/pause cluster — docked bottom-right as a 2x2 grid, clear of the
+     scroll strip and never overlapping it (the strip has matching right
+     padding above). Grid (not flex-wrap) guarantees an exact 2-per-row fit. */
+  .speed-cluster {
+    right: 4px;
+    bottom: calc(4px + env(safe-area-inset-bottom));
+    left: auto;
+    display: grid;
+    grid-template-columns: repeat(2, 38px);
+    gap: 3px;
+    background: var(--cork-dark);
+    box-shadow: 0 -4px 10px rgba(0,0,0,0.3), inset 0 0 0 2px rgba(0,0,0,0.15);
+    border-radius: 10px;
+    padding: 3px;
+  }
+  .speed-btn {
+    width: 38px; height: 32px;
+    font-size: 11.5px;
+  }
+
+  .sticky-note {
+    top: auto;
+    bottom: 60px;
+    left: 6px;
+    width: min(170px, 40vw);
+    font-size: clamp(10.5px, 2.6vw, 13px);
+    padding: 8px 10px 10px;
+    line-height: 1.25;
+    z-index: 3;
+  }
+
+  .wave-banner {
+    font-size: clamp(18px, 6vw, 26px);
+    padding: 8px 22px;
+    top: 12%;
+  }
+
+  .inspect {
+    width: min(240px, 80vw);
+    font-size: 14px;
+  }
+  .inspect .actions .wood-btn.small,
+  .inspect .branch-opt {
+    min-height: 44px;
+  }
+
+  .paper-modal {
+    padding: 18px 16px;
+    max-width: 94vw;
+  }
+  .paper-modal h2 { font-size: clamp(20px, 6vw, 26px); }
+  .recap-cols { flex-wrap: wrap; gap: 12px; }
+
+  .fridge { width: min(420px, 90vw); padding: 24px 18px 20px; }
+  .magnet-title span { font-size: clamp(22px, 7vw, 32px); }
+  .fridge-note { font-size: clamp(15px, 4.5vw, 19px); padding: 10px 14px; min-height: 44px; }
+
+  .corkboard { padding: 18px 16px; }
+  .polaroid { width: 120px; }
+  .polaroid .photo { height: 74px; font-size: 34px; }
+
+  .toast-msg { bottom: 108px; font-size: 13px; max-width: 80vw; white-space: normal; text-align: center; }
+}
+
+/* short landscape phones (e.g. 844x390) — menus/modals need to fit without
+   scrolling; shrink vertical rhythm further. */
+@media (max-height: 500px) {
+  .fridge { padding: 14px 18px 12px; }
+  .magnet-title { gap: 3px 8px; margin-bottom: 2px; }
+  .magnet-title span { font-size: clamp(18px, 6vw, 24px); padding: 1px 6px; }
+  .subtitle { font-size: 11px; margin-bottom: 10px; }
+  .fridge-menu { gap: 7px; }
+  .fridge-note { padding: 7px 14px; font-size: clamp(13px, 3.6vw, 16px); }
+  .fridge-foot { margin-top: 10px; font-size: 10px; }
+
+  .corkboard { padding: 12px 16px; }
+  .cork-title { font-size: clamp(18px, 4.5vw, 22px); margin-bottom: 10px; }
+  .polaroid { width: 96px; padding: 6px 6px 4px; }
+  .polaroid .photo { height: 56px; font-size: 26px; }
+  .polaroid .label { font-size: 11px; }
+
+  .paper-modal { padding: 12px 16px; max-height: 92vh; }
+  .paper-modal h2 { font-size: clamp(16px, 4.5vw, 20px); margin-bottom: 2px; }
+  .paper-modal .sub { font-size: 11px; margin-bottom: 8px; }
+  .recap-graph { margin: 6px 0; }
+  .recap-stars { font-size: 24px; margin: 4px 0; }
+  .mutation-card { width: 130px; padding: 10px 9px; }
+  .mutation-card .mut-ico { font-size: 26px; margin-bottom: 3px; }
+}
+
+/* portrait phones: nudge sticky note under the top chips, which wrap */
+@media (max-width: 820px) and (orientation: portrait) {
+  .hud-top { flex-wrap: wrap; }
+}

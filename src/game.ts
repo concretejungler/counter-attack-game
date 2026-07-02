@@ -24,6 +24,8 @@ interface Gesture {
   startY: number;
   startT: number;
   lastSweep: number;
+  /** true while this gesture is a touch/pen press-and-hold on a tower, waiting to decide long-press (carry) vs tap (inspect). */
+  towerHoldId?: number;
 }
 
 const FIRE_SFX: Record<string, string> = {
@@ -236,7 +238,7 @@ export class Game {
 
   // ---------- main loop ----------
   private update(dt: number): void {
-    if (this.sim && this.level && !this.paused && !this.ui.modalOpen) {
+    if (this.sim && this.level && !this.paused && !this.ui.modalOpen && !this.ui.rotateBlocking) {
       this.acc += dt * this.speedMult;
       let guard = 0;
       while (this.acc >= SIM_DT && guard++ < 10) {
@@ -547,7 +549,59 @@ export class Game {
     let lastX = 0;
     let lastY = 0;
 
+    // ---- multi-touch (two-finger orbit + pinch zoom) ----
+    const activeTouches = new Map<number, { x: number; y: number }>();
+    let twoFinger = false;
+    let pinchBaseDist = 16;
+    let pinchBaseSpan = 1;
+    let twoFingerMidX = 0;
+    let twoFingerMidY = 0;
+
+    // ---- long-press (touch/pen) to pick up a tower ----
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+    let longPressFired = false;
+    const clearLongPress = () => {
+      if (longPressTimer !== null) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    };
+
+    const touchSpan = (): number => {
+      const pts = [...activeTouches.values()];
+      if (pts.length < 2) return pinchBaseSpan;
+      return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    };
+    const touchMid = (): { x: number; y: number } => {
+      const pts = [...activeTouches.values()];
+      if (pts.length < 2) return { x: lastX, y: lastY };
+      return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    };
+
+    const beginTwoFinger = () => {
+      // cancel any single-finger gesture in progress — two-finger always means camera control
+      clearLongPress();
+      this.gesture = null;
+      this.renderer.setHandPose('point');
+      twoFinger = true;
+      pinchBaseSpan = Math.max(1, touchSpan());
+      pinchBaseDist = this.renderer.rig.getTargetDist();
+      const mid = touchMid();
+      twoFingerMidX = mid.x;
+      twoFingerMidY = mid.y;
+    };
+
     canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') {
+        activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (activeTouches.size === 2) {
+          beginTwoFinger();
+          return;
+        }
+        if (activeTouches.size > 2) return; // ignore 3rd+ finger
+      }
+      if (twoFinger) return;
+
       if (e.button === 1 || e.button === 2) {
         orbiting = true;
         lastX = e.clientX;
@@ -590,7 +644,7 @@ export class Game {
         return;
       }
 
-      // idle: critter gesture > tower inspect > sweep
+      // idle: critter gesture > tower inspect (or long-press carry on touch/pen) > sweep
       const critterId = this.renderer.pickCritter(this.pointer.ndcX, this.pointer.ndcY, this.sim.state);
       if (critterId !== null) {
         this.gesture = { type: 'critter', critterId, startX: e.clientX, startY: e.clientY, startT: performance.now(), lastSweep: 0 };
@@ -599,6 +653,26 @@ export class Game {
       }
       const towerId = this.renderer.pickTower(this.pointer.ndcX, this.pointer.ndcY, this.sim.state);
       if (towerId !== null) {
+        if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+          // long-press = carry pickup; short tap (handled on pointerup) = inspect
+          longPressFired = false;
+          const px = e.clientX;
+          const py = e.clientY;
+          longPressTimer = setTimeout(() => {
+            longPressTimer = null;
+            if (!this.sim || this.mode.kind !== 'idle') return;
+            const tw = this.sim.state.towers.get(towerId);
+            if (!tw || tw.carried) return;
+            longPressFired = true;
+            this.sim.command({ type: 'carryStart', towerId });
+            this.mode = { kind: 'carry', towerId };
+            this.renderer.setHandPose('open');
+            this.closeInspect();
+            this.sfx.play('ui-click');
+          }, 450);
+          this.gesture = { type: 'sweep', startX: px, startY: py, startT: performance.now(), lastSweep: 0, towerHoldId: towerId };
+          return;
+        }
         const tw = this.sim.state.towers.get(towerId)!;
         this.inspectedTower = towerId;
         this.ui.showInspect(tw, this.sim.state, e.clientX, e.clientY);
@@ -613,11 +687,31 @@ export class Game {
     });
 
     addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch' && activeTouches.has(e.pointerId)) {
+        activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+      if (twoFinger) {
+        if (activeTouches.size >= 2) {
+          const mid = touchMid();
+          this.renderer.rig.orbit(mid.x - twoFingerMidX, mid.y - twoFingerMidY);
+          twoFingerMidX = mid.x;
+          twoFingerMidY = mid.y;
+          const span = touchSpan();
+          this.renderer.rig.pinchZoom(pinchBaseDist, span / pinchBaseSpan);
+        }
+        return;
+      }
       this.updatePointer(e);
       if (orbiting) {
         this.renderer.rig.orbit(e.clientX - lastX, e.clientY - lastY);
         lastX = e.clientX;
         lastY = e.clientY;
+      }
+      // long-press cancels if the finger wanders too far before the timer fires
+      if (longPressTimer !== null && this.gesture) {
+        const dx = e.clientX - this.gesture.startX;
+        const dy = e.clientY - this.gesture.startY;
+        if (Math.hypot(dx, dy) > 14) clearLongPress();
       }
       // hand follows pointer
       const hit = this.renderer.pickSurfacePoint(this.pointer.ndcX, this.pointer.ndcY);
@@ -626,7 +720,7 @@ export class Game {
         this.renderer.hand.setTarget(new Vector3(hit.x, y, hit.z), y);
       }
       // sweep while dragging
-      if (this.gesture?.type === 'sweep' && this.sim) {
+      if (this.gesture?.type === 'sweep' && this.gesture.towerHoldId === undefined && this.sim) {
         const now = performance.now();
         if (now - this.gesture.lastSweep > 90 && hit) {
           this.gesture.lastSweep = now;
@@ -636,11 +730,28 @@ export class Game {
       }
     });
 
+    const endTouch = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      activeTouches.delete(e.pointerId);
+      if (twoFinger && activeTouches.size < 2) {
+        twoFinger = false;
+        if (activeTouches.size === 1) {
+          // one finger remains — hand off to single-finger tracking cleanly
+          const [[, p]] = [...activeTouches.entries()];
+          lastX = p.x;
+          lastY = p.y;
+        }
+      }
+    };
+
     addEventListener('pointerup', (e) => {
+      endTouch(e);
       if (e.button === 1 || e.button === 2) {
         orbiting = false;
         return;
       }
+      if (twoFinger) return;
+      clearLongPress();
       if (!this.gesture || !this.sim) {
         this.gesture = null;
         return;
@@ -677,7 +788,29 @@ export class Game {
             }
           }
         }
+        return;
       }
+
+      // g.towerHoldId marks the "touch tower" placeholder gesture from pointerdown above:
+      // if long-press didn't fire (still idle mode) and it was a short tap, treat as inspect.
+      if (g.towerHoldId !== undefined && !longPressFired && this.mode.kind === 'idle') {
+        const dist = Math.hypot(e.clientX - g.startX, e.clientY - g.startY);
+        const tw = dist < 16 ? this.sim.state.towers.get(g.towerHoldId) : undefined;
+        if (tw) {
+          this.inspectedTower = g.towerHoldId!;
+          this.ui.showInspect(tw, this.sim.state, e.clientX, e.clientY);
+          const def = CONTENT.towers[tw.def];
+          this.renderer.showRange(tw.pos.x, tw.pos.y, tw.pos.z, def.tiers[tw.tier - 1].range);
+          this.sfx.play('ui-hover');
+        }
+      }
+    });
+
+    canvas.addEventListener('pointercancel', (e) => {
+      endTouch(e);
+      clearLongPress();
+      this.gesture = null;
+      orbiting = false;
     });
 
     canvas.addEventListener('dblclick', (e) => {
@@ -692,6 +825,10 @@ export class Game {
       e.preventDefault();
     }, { passive: false });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // suppress double-tap-to-zoom / iOS Safari gesture zoom on the canvas
+    canvas.addEventListener('touchstart', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+    canvas.addEventListener('gesturestart', (e) => e.preventDefault());
 
     addEventListener('keydown', (e) => {
       if (e.key === 'r' || e.key === 'R') {

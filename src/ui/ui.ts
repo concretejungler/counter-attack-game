@@ -3,6 +3,7 @@ import type { SaveData } from '../meta/save';
 import { Hud, InspectPanel, type HudCallbacks, type InspectCallbacks } from './hud';
 import { buildLevelSelect, buildRecap, buildSettings, buildTitle, type RecapInfo } from './screens';
 import { MUTATION_ICONS } from './icons';
+import { isMobileViewport, isPortrait } from '../core/device';
 
 const el = (tag: string, cls = '', html = ''): HTMLElement => {
   const e = document.createElement(tag);
@@ -29,6 +30,8 @@ export class UI {
   private modalEl: HTMLElement | null = null;
   private stickyEl: HTMLElement | null = null;
   private swarmAlarmEl: HTMLElement | null = null;
+  private rotateEl: HTMLElement;
+  private inGameplay = false;
 
   constructor(
     private content: ContentDB,
@@ -36,6 +39,23 @@ export class UI {
     private cb: UICallbacks,
   ) {
     this.root = document.getElementById('ui')!;
+    this.rotateEl = el('div', 'rotate-overlay', `
+      <div class="sticky-note">
+        <span class="rotate-ico">📱</span>
+        <b>turn me sideways!!</b><br>
+        the cake needs the whole counter to defend it — rotate your phone to landscape.
+      </div>
+    `);
+    document.body.append(this.rotateEl);
+    addEventListener('resize', () => this.refreshRotateOverlay());
+    addEventListener('orientationchange', () => this.refreshRotateOverlay());
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => this.refreshRotateOverlay());
+    this.refreshRotateOverlay();
+  }
+
+  private refreshRotateOverlay(): void {
+    const show = this.inGameplay && isMobileViewport() && isPortrait();
+    this.rotateEl.classList.toggle('show', show);
   }
 
   private clearScreen(): void {
@@ -47,6 +67,8 @@ export class UI {
     this.inspect = null;
     this.closeModal();
     this.dismissSticky();
+    this.inGameplay = false;
+    this.refreshRotateOverlay();
   }
 
   showTitle(): void {
@@ -73,6 +95,8 @@ export class UI {
     this.hud = new Hud(this.content, level, this.cb);
     this.inspect = new InspectPanel(this.content, this.cb);
     this.root.append(this.hud.root, this.inspect.root);
+    this.inGameplay = true;
+    this.refreshRotateOverlay();
   }
 
   updateHud(state: SimState, speedMult: number): void {
@@ -152,6 +176,11 @@ export class UI {
 
   get modalOpen(): boolean {
     return this.modalEl !== null;
+  }
+
+  /** True while the "turn me sideways" portrait overlay is covering the game. */
+  get rotateBlocking(): boolean {
+    return this.rotateEl.classList.contains('show');
   }
 
   banner(text: string, boss = false): void {

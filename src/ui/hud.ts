@@ -50,7 +50,7 @@ export class Hud {
   private build(): void {
     // top chips
     const top = el('div', 'hud-top');
-    const left = el('div', 'hud-cluster');
+    const left = el('div', 'hud-cluster hud-cluster-left');
     this.cakeChip = el('div', 'chip', '<span class="ico">🎂</span><span class="v"></span>');
     this.waveChip = el('div', 'chip wave-chip', '<span class="v"></span>');
     this.forecast = el('div', 'forecast hidden');
@@ -76,8 +76,11 @@ export class Hud {
     this.callBtn.onclick = () => this.cb.onCallWave();
     this.callCluster.append(this.eggTimer, this.callBtn);
 
-    // build bar
+    // build bar — tower/clutter/spell cards live in a horizontally-scrollable
+    // inner strip so they never have to shrink below a usable touch size;
+    // the speed/pause cluster is a separate non-scrolling section pinned after it.
     const bar = el('div', 'build-bar');
+    const scroll = el('div', 'build-bar-scroll');
     const towerSec = el('div', 'bar-section');
     const allowed = this.level.allowedTowers ?? Object.keys(this.content.towers).filter((t) => !t.startsWith('test-'));
     for (const def of allowed) {
@@ -107,7 +110,7 @@ export class Hud {
       spellSec.append(btn);
     }
 
-    bar.append(towerSec, el('div', 'bar-divider'), this.clutterRow, el('div', 'bar-divider'), spellSec);
+    scroll.append(towerSec, el('div', 'bar-divider'), this.clutterRow, el('div', 'bar-divider'), spellSec);
 
     // speed cluster
     const speed = el('div', 'speed-cluster');
@@ -120,6 +123,8 @@ export class Hud {
     const pauseB = el('button', 'speed-btn', '⏸') as HTMLButtonElement;
     pauseB.onclick = () => this.cb.onPause();
     speed.append(pauseB);
+
+    bar.append(scroll);
 
     this.root.append(top, this.callCluster, bar, speed);
   }

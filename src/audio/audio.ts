@@ -13,9 +13,13 @@ export class AudioMan {
       this.ensure();
       removeEventListener('pointerdown', unlock);
       removeEventListener('keydown', unlock);
+      removeEventListener('touchend', unlock);
     };
     addEventListener('pointerdown', unlock);
     addEventListener('keydown', unlock);
+    // Safety net: some mobile Safari/Chrome builds only reliably grant AudioContext
+    // resume from a 'touchend'/'click' gesture, not always 'pointerdown'.
+    addEventListener('touchend', unlock, { passive: true });
   }
 
   ensure(): AudioContext | null {

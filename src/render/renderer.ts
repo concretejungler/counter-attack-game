@@ -11,6 +11,7 @@ import { Vfx } from './vfx';
 import { HandView, type HandPose } from './handView';
 import { PAL } from './palette';
 import { toonMat } from './build';
+import { dprCap } from '../core/device';
 
 interface CritterViewData {
   def: string;
@@ -64,7 +65,7 @@ export class GameRenderer {
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, dprCap()));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -112,13 +113,30 @@ export class GameRenderer {
     this.scene.add(this.crumbMesh);
 
     addEventListener('resize', () => this.resize());
+    addEventListener('orientationchange', () => {
+      // orientation change can lag actual viewport dims by a frame on mobile browsers
+      this.resize();
+      setTimeout(() => this.resize(), 120);
+    });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', () => this.resize());
+    }
     this.resize();
   }
 
+  /** Current viewport size — prefers visualViewport (accounts for mobile browser chrome). */
+  private viewportSize(): { w: number; h: number } {
+    const vv = window.visualViewport;
+    if (vv) return { w: Math.round(vv.width), h: Math.round(vv.height) };
+    return { w: innerWidth, h: innerHeight };
+  }
+
   resize(): void {
-    this.renderer.setSize(innerWidth, innerHeight, false);
-    this.rig.resize(innerWidth / innerHeight);
-    this.post.resize(innerWidth, innerHeight);
+    const { w, h } = this.viewportSize();
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, dprCap()));
+    this.renderer.setSize(w, h, false);
+    this.rig.resize(w / h);
+    this.post.resize(w, h);
   }
 
   loadLevel(level: LevelDef, content: ContentDB): void {

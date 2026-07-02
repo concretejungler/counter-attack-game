@@ -44,6 +44,16 @@ export class CameraRig {
     this.targetDist = THREE.MathUtils.clamp(this.targetDist * (delta > 0 ? 1.1 : 0.9), 7, 34);
   }
 
+  /** Current target distance — pinch gestures snapshot this at gesture start. */
+  getTargetDist(): number {
+    return this.targetDist;
+  }
+
+  /** Pinch-to-zoom: baseDist is targetDist snapshotted at gesture start, spanRatio is current/start finger span (>1 = fingers apart = zoom in). */
+  pinchZoom(baseDist: number, spanRatio: number): void {
+    this.targetDist = THREE.MathUtils.clamp(baseDist / Math.max(0.1, spanRatio), 7, 34);
+  }
+
   shake(amp = 0.3, dur = 0.4): void {
     this.shakeAmp = Math.max(this.shakeAmp, amp);
     this.shakeT = Math.max(this.shakeT, dur);
