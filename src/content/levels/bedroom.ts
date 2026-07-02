@@ -1,4 +1,4 @@
-import type { LevelDef, WaveEntry } from '../../sim/types';
+﻿import type { LevelDef, WaveEntry } from '../../sim/types';
 
 const e = (critter: string, count: number, interval: number, spawn: string, delay = 0): WaveEntry =>
   ({ critter, count, interval, spawn, delay });
@@ -132,7 +132,7 @@ export const BEDROOM_3: LevelDef = {
     { entries: [e('bedbug', 6, 2.1, 'underbed'), e('dust-bunny', 10, 1.3, 'underbed', 10), e('moth', 11, 1.1, 'window', 20), e('mosquito', 4, 1.9, 'window', 26)] },
     { entries: [e('cricket-bard', 5, 2.2, 'window'), e('bedbug', 8, 1.7, 'underbed', 4), e('mosquito', 11, 1.0, 'window', 9), e('dust-bunny', 13, 0.95, 'underbed', 12)] },
   ],
-  mutationWaves: [4, 7],
+  mutationWaves: [4, 6],
   tutorial: [
     { wave: 0, text: 'LIGHTS OUT means LUX IS MANDATORY. no lamp = bedbugs do crimes unseen. write that down!!' },
   ],

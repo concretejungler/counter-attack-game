@@ -40,8 +40,8 @@ describe('Content lint — every reference resolves', () => {
       }
       expect(lvl.surfaces[0].kind, `${lvl.id}: surfaces[0] must be the floor (landing convention)`).toBe('floor');
       for (const mw of lvl.mutationWaves ?? []) {
-        expect(mw).toBeLessThan(lvl.waves.length);
-        expect(mw).toBeGreaterThan(0);
+        expect(mw, `${lvl.id}: mutation wave ${mw} never triggers (level has ${lvl.waves.length} waves)`).toBeLessThan(lvl.waves.length);
+        expect(mw, `${lvl.id}: mutation wave ${mw} out of range`).toBeGreaterThan(0);
       }
     }
   });

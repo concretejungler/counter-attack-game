@@ -213,8 +213,12 @@ function findNearestTower(
   return best;
 }
 
-/** latcher brain: walk toward and attach to the nearest tower, disabling it while alive. */
-function latcherBrain(ctx: SimCtx, cr: Critter, def: CritterDef, speed: number, dt: number): void {
+/**
+ * latcher brain: walk toward and attach to the nearest tower, disabling it while alive.
+ * Returns false when nothing is latchable from here — the caller (walkBrain) then walks
+ * the critter toward the cake like anyone else, which brings towers into reach via climbs.
+ */
+function latcherBrain(ctx: SimCtx, cr: Critter, def: CritterDef, speed: number, dt: number): boolean {
   // already latched?
   if (cr.latchTarget !== undefined) {
     const tw = ctx.state.towers.get(cr.latchTarget);
@@ -222,17 +226,18 @@ function latcherBrain(ctx: SimCtx, cr: Critter, def: CritterDef, speed: number, 
       cr.latchTarget = undefined;
     } else {
       tw.disabled = Math.max(tw.disabled, 0.2);
-      return; // does not move while latched
+      return true; // does not move while latched
     }
   }
   const found = findNearestTower(ctx, cr, Infinity, 'any15');
-  if (!found) return; // no towers anywhere; idle
+  if (!found) return false;
   if (found.dist <= 0.5) {
     cr.latchTarget = found.tw.id;
     found.tw.disabled = Math.max(found.tw.disabled, 0.2);
-    return;
+    return true;
   }
   steerToward(cr, found.tw.pos, speed, dt);
+  return true;
 }
 
 /** clutterEater brain: ignore the cake, seek + chew the nearest clutter piece; flee if none left. */
@@ -268,10 +273,7 @@ function clutterEaterBrain(ctx: SimCtx, cr: Critter, def: CritterDef, speed: num
 function walkBrain(ctx: SimCtx, cr: Critter, def: CritterDef, speed: number, dt: number): void {
   const grid = ctx.grid;
 
-  if (def.traits?.includes('latcher')) {
-    latcherBrain(ctx, cr, def, speed, dt);
-    return;
-  }
+  if (def.traits?.includes('latcher') && latcherBrain(ctx, cr, def, speed, dt)) return;
   if (def.traits?.includes('clutterEater')) {
     clutterEaterBrain(ctx, cr, def, speed, dt);
     return;

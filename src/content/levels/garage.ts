@@ -1,4 +1,4 @@
-import type { LevelDef, WaveEntry } from '../../sim/types';
+﻿import type { LevelDef, WaveEntry } from '../../sim/types';
 
 const e = (critter: string, count: number, interval: number, spawn: string, delay = 0): WaveEntry =>
   ({ critter, count, interval, spawn, delay });
@@ -86,7 +86,7 @@ export const GARAGE_2: LevelDef = {
     { entries: [e('beetle', 2, 3.2, 'garage-door'), e('pillbug', 3, 2.4, 'floor-crack', 3), e('mouse-thief', 1, 1, 'garage-door', 8), e('centipede-bit', 17, 1.0, 'vent', 10), e('ant-bullet', 9, 1.3, 'floor-crack', 16)] },
     { entries: [e('beetle', 3, 2.8, 'garage-door'), e('pillbug', 4, 2.0, 'floor-crack', 3), e('mouse-thief', 1, 1, 'garage-door', 8), e('centipede-bit', 26, 1.0, 'vent', 10), e('ant-bullet', 15, 1.3, 'floor-crack', 18)] },
   ],
-  mutationWaves: [3, 6],
+  mutationWaves: [3, 5],
   challenge: { text: 'Win before any mouse escapes with a slice', id: 'no-slick-heist' },
 };
 
@@ -128,7 +128,7 @@ export const GARAGE_3: LevelDef = {
     { entries: [e('pillbug', 1, 3.4, 'garage-door'), e('mouse-thief', 1, 1, 'engine', 4), e('centipede-bit', 15, 1.2, 'engine', 8), e('ant-bullet', 9, 1.7, 'crack', 12), e('rat-knight', 1, 1, 'garage-door', 22)] },
     { entries: [e('beetle', 3, 2.8, 'garage-door'), e('rat-knight', 1, 1, 'engine'), e('pillbug', 1, 3.2, 'crack', 3), e('centipede-bit', 20, 1.2, 'engine', 12), e('ant-bullet', 12, 1.7, 'garage-door', 18)] },
   ],
-  mutationWaves: [4, 7],
+  mutationWaves: [4, 6],
   challenge: { text: 'Win with a DJ Decibel near the cake route', id: 'alarm-remix' },
 };
 
@@ -173,7 +173,7 @@ export const GARAGE_4: LevelDef = {
     { entries: [e('pillbug', 1, 3.4, 'garage-door'), e('mouse-thief', 1, 1, 'rafters', 4), e('centipede-bit', 16, 1.1, 'rafters', 8), e('ant-bullet', 9, 1.6, 'wall-crack', 12), e('rat-knight', 1, 1, 'garage-door', 22)] },
     { entries: [e('beetle', 3, 2.8, 'garage-door'), e('rat-knight', 1, 1, 'rafters'), e('pillbug', 1, 3.2, 'wall-crack', 3), e('centipede-bit', 22, 1.0, 'rafters', 12), e('ant-bullet', 13, 1.5, 'garage-door', 18)] },
   ],
-  mutationWaves: [4, 8],
+  mutationWaves: [4, 6],
   challenge: { text: 'Win after building defenses on all shelf tiers', id: 'vertical-tooling' },
 };
 

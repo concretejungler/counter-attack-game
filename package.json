@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "smoke": "node tools/smoke.mjs",
     "shot": "node tools/shot.mjs",
+    "shot:mobile": "node tools/shot-mobile.mjs",
     "balance": "vitest run tests/balance.test.ts"
   },
   "dependencies": {

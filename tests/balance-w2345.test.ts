@@ -84,12 +84,18 @@ const PAR: Record<string, Step[]> = {
     { wave: 8, clutter: [[7, 2, 1]], towers: [['saltimus-prime', 7, 2, 1], ['sgt-spritz', 7, 2, 1]] },
   ],
 
+  // bedroom-1 post tick-AI change: ticks (wave 3+, from the door) steer to the nearest
+  // latchable tower from any range and stall the wave if nothing can kill the latched pile.
+  // A floorMount stick-rick magnet at (9,1) goes down FIRST at build 3 (before the delayed
+  // wave-3 tick entry spawns); the bed garrison and the wave-4 bandolero (range 7.5 covers
+  // the whole floor, 'strong' targeting snipes the pile once real threats are gone) keep the
+  // magnet pile from ever soft-locking a wave.
   'bedroom-1': [
     { wave: 0, clutter: [[5, 1, 1]], towers: [['lux-interior', 5, 1, 1], ['sgt-spritz', 5, 1, 1]] },
     { wave: 1, clutter: [[7, 2, 1]], towers: [['dj-decibel', 7, 2, 1], ['the-coldfather', 7, 2, 1]] },
     { wave: 2, towers: [['stick-rick', 3, 8], ['stick-rick', 11, 8], ['snappy-and-sons', 10, 8]] },
-    { wave: 3, clutter: [[1, 0, 1]], towers: [['static', 1, 0, 1]] },
-    { wave: 4, clutter: [[1, 2, 1]], towers: [['old-smacky', 1, 2, 1]] },
+    { wave: 3, clutter: [[1, 0, 1]], towers: [['stick-rick', 9, 1], ['static', 1, 0, 1]] },
+    { wave: 4, clutter: [[1, 2, 1]], towers: [['bandolero', 1, 2, 1]] },
   ],
   'bedroom-2': [
     { wave: 0, clutter: [[3, 2, 2]], towers: [['lux-interior', 3, 2, 2], ['sgt-spritz', 3, 2, 2]] },
@@ -174,7 +180,10 @@ const OPENING: Record<string, Step> = {
   'bathroom-3': { wave: 0, clutter: [[2, 5], [13, 5], [2, 1, 2]], towers: [['professor-scorch', 2, 5], ['professor-scorch', 13, 5], ['professor-scorch', 2, 1, 2]] },
   'bathroom-4': { wave: 0, clutter: [[3, 7], [12, 7], [3, 1, 2]], towers: [['professor-scorch', 3, 7], ['professor-scorch', 12, 7], ['professor-scorch', 3, 1, 2]] },
 
-  'bedroom-1': { wave: 0, clutter: [[4, 1, 1], [0, 3, 1], [3, 0, 1]], towers: [['lux-interior', 4, 1, 1], ['bandolero', 0, 3, 1], ['sgt-spritz', 3, 0, 1]] },
+  // 310 of 350 crumbs — all three must actually place at wave 0 (the old bandolero opener
+  // cost 370 and left sgt-spritz permanently pending behind the greedy upgrader, leaking
+  // stealthed bedbugs). Bandolero moves to the wave-4 PAR step instead.
+  'bedroom-1': { wave: 0, clutter: [[4, 1, 1], [3, 0, 1], [5, 1, 1]], towers: [['lux-interior', 4, 1, 1], ['sir-toastsalot', 3, 0, 1], ['sgt-spritz', 5, 1, 1]] },
   'bedroom-2': { wave: 0, clutter: [[3, 1, 2], [0, 0, 2], [4, 0, 2]], towers: [['lux-interior', 3, 1, 2], ['bandolero', 0, 0, 2], ['sgt-spritz', 4, 0, 2]] },
   'bedroom-3': { wave: 0, clutter: [[2, 1, 2], [0, 0, 2], [3, 0, 2]], towers: [['lux-interior', 2, 1, 2], ['bandolero', 0, 0, 2], ['sgt-spritz', 3, 0, 2]] },
   'bedroom-4': { wave: 0, clutter: [[1, 1, 2], [0, 0, 2], [1, 2, 2]], towers: [['lux-interior', 1, 1, 2], ['bandolero', 0, 0, 2], ['sgt-spritz', 1, 2, 2]] },

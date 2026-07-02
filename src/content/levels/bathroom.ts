@@ -1,4 +1,4 @@
-import type { LevelDef, WaveEntry } from '../../sim/types';
+﻿import type { LevelDef, WaveEntry } from '../../sim/types';
 
 const e = (critter: string, count: number, interval: number, spawn: string, delay = 0): WaveEntry =>
   ({ critter, count, interval, spawn, delay });
@@ -133,7 +133,7 @@ export const BATHROOM_3: LevelDef = {
     { entries: [e('slug', 10, 1.3, 'floor-drain'), e('roach', 7, 1.5, 'tub-drain', 4)] },
     { entries: [e('snail', 8, 1.6, 'floor-drain'), e('slug', 10, 1.1, 'tub-drain', 4)] },
   ],
-  mutationWaves: [4, 7],
+  mutationWaves: [4, 6],
   tutorial: [
     { wave: 0, text: 'this one is ALL DRAINS. if it gurgles, assume it wants frosting.' },
   ],

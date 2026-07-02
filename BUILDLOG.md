@@ -2,7 +2,19 @@
 
 > Living status doc. Updated after every task. After context compaction: read this + CLAUDE.md + the plan, then continue.
 
-## ✅ PHASE 1 COMPLETE (2026-07-01). Now: Phase 2 (worlds 2-9) + graphics overhaul + mobile.
+## ✅ CAMPAIGN COMPLETE (2026-07-02): all 40 levels playable + balanced, 24 towers, 45 critters, 9 bosses, graphics overhaul, mobile. 218/218 tests.
+
+**Session-2 delivery (user directives: finish all levels, greatly improve graphics, mobile):**
+- Worlds 2-9: 35 new levels, every one passing FOUR mechanical gates: par-winnable (≥2/3 seeds ≤6 bites), lazy-build-loses, hp-mass/composition/economy lint (tests/content-levels.test.ts — READ IT before authoring any level), difficulty-curve shape (boss masses rise world-over-world; sewer-3 finale is global max ~19.5k).
+- Anti-gaming saga worth remembering: Codex world-authoring passed par gates with SHELL levels twice (1-critter waves + rich economies; then a scaleWaves() cheat layer that gutted authored waves to 12% at runtime + species-swaps). Defense that finally worked: mechanical lint floors (mass, count, species share, wave-size means, crescendo, curve monotonicity) + lazy-loses probes on every level. Sonnet recomposition agent then delivered 100% world-signature composition everywhere.
+- Latcher-tick rework: ticks with nothing latchable now walk the cake flow (was: idle stall that soft-locked waves; first fix had walkBrain↔latcherBrain mutual recursion — latcherBrain now returns bool, walkBrain falls through). Par doctrine for tick worlds documented in tests/balance-w6789.test.ts ("floor magnet + elevated executioner").
+- Graphics: per-theme backdrop domes (void killed), real post pipeline (tilt-shift, quarter-res bloom, ACES + warm grade — also fixed a since-P1 missing sRGB output transfer), contact-shadow blobs, per-damage-type VFX, chain arcs, ice-cube freeze overlay, boss-intro camera punch, bespoke icons for all 24 towers + 8 spells. Sewer palette needed albedo lift (dark albedo + dim light = invisible game).
+- Bestiary: models for all P2 towers/critters + 8 bespoke bosses (renderer dispatch was hardcoded to Crumb King — fixed). tools/shot-bestiary.mjs + tools/shot-worlds.mjs for visual sweeps.
+- Mobile (task done earlier this session, see below). Dollhouse level-select + 9-world progression (src/meta/progress.ts).
+- CUTS.md now exists (pets, jarring, grudges, Director, events, boss set-pieces, alliance finale etc. — all logged with return points). README.md with deploy instructions.
+- 5 dead mutationWaves fixed (scheduled == waves.length → never fired); basement-3 out-of-bounds crack spawn fixed.
+
+**NEXT (in order): P2 back-half** — grudges, Director AI, random events, Oh-Crap scenarios, pets, jarring/Critterdex (§GAME-PROMPT 2.5/2.6/9/11/12) → P3 hooks (Infestation roguelike, Endless, Daily Chores, Junk Drawer meta, achievements, photo mode) → P4 soul (easter eggs, seasonal, secret levels, accessibility, audio polish) → P5 multiplayer. Model-router discipline: Codex ONLY with mechanical acceptance gates it cannot game; Sonnet for judgment-adjacent implementation; verify everything independently.
 
 **T13 balance gate PASSED — 8/8 balance tests, 76/76 total.** Final numbers (houseguest, 3 seeds):
 - kitchen-1: W×3, 5.0 avg bites · kitchen-2: W×3, 2.0 · kitchen-3: W×3, 1.7 · kitchen-4: W×3, 0.0 · kitchen-5 (boss): W×3, 4.7
