@@ -81,10 +81,11 @@ export class HandView {
     const slam = Math.sin(Math.min(1, this.pressT) * Math.PI);
     this.group.position.y = this.target.y + Math.sin(time * 2.2) * 0.05 - slam * 0.72;
 
-    // finger poses
+    // finger poses. Negative curl tucks the fingers DOWNWARD toward the palm/board (palm-down
+    // hand); a positive curl would fold them up and away from the surface, reading upside-down.
     const curl = { point: [0.15, 1.5, 1.6, 1.7], open: [0.1, 0.12, 0.1, 0.14], fist: [1.7, 1.7, 1.7, 1.7], flick: [0.1, 1.7, 1.7, 1.7], sweep: [0.5, 0.5, 0.5, 0.5] }[this.pose];
     this.fingers.forEach((f, i) => {
-      f.rotation.x = THREE.MathUtils.lerp(f.rotation.x, curl[i], this.poseT);
+      f.rotation.x = THREE.MathUtils.lerp(f.rotation.x, -curl[i], this.poseT);
     });
     this.thumb.rotation.y = THREE.MathUtils.lerp(this.thumb.rotation.y, this.pose === 'fist' ? 0.9 : 0.2, this.poseT);
 

@@ -11,6 +11,7 @@ import { buildPetView, type PetView } from './models/petModels';
 import { CakeView, buildClutterCell, buildSliceProp, projectileTemplate, PROJECTILE_LOOKS } from './models/props';
 import { Vfx } from './vfx';
 import { HandView, type HandPose } from './handView';
+import { PathView } from './pathView';
 import { PAL, themePalette } from './palette';
 import { toonMat, canvasTexture } from './build';
 import { dprCap } from '../core/device';
@@ -70,6 +71,7 @@ export class GameRenderer {
   private crumbMesh: THREE.InstancedMesh;
   private shadowBlobMesh: THREE.InstancedMesh;
   private vfx = new Vfx();
+  private pathView = new PathView();
   readonly hand = new HandView();
   readonly eggs: EggsController;
   private pickPlanes: THREE.Mesh[] = [];
@@ -158,7 +160,7 @@ export class GameRenderer {
     fill.position.set(-6, 5, -4);
     this.scene.add(fill);
 
-    this.scene.add(this.critters.root, this.vfx.root, this.hand.group);
+    this.scene.add(this.critters.root, this.vfx.root, this.hand.group, this.pathView.group);
     this.eggs = new EggsController(this.scene);
 
     // crumb instancing — little golden tetrahedra
@@ -242,6 +244,7 @@ export class GameRenderer {
     this.clutterShake.clear();
     this.oneShots.forEach((o) => this.scene.remove(o.obj));
     this.oneShots = [];
+    this.pathView.clear(); // game.ts re-pushes the routes once the sim is built
 
     this.eggs.reset(level);
     this.roomGroup = buildRoom(level, (sunflower) => this.eggs.registerSunflower(sunflower));
@@ -779,6 +782,7 @@ export class GameRenderer {
 
     this.cake?.animate(this.time);
     this.vfx.update(dt);
+    this.pathView.update(dt, this.time);
     this.hand.update(dt, this.time);
     this.rig.update(dt);
     this.eggs.update(dt, this.time);
@@ -1027,6 +1031,16 @@ export class GameRenderer {
 
   setHandPose(pose: HandPose): void {
     this.hand.setPose(pose);
+  }
+
+  /** Replace the on-board enemy-path preview with fresh world-space routes (one per spawn). */
+  setEnemyPaths(paths: THREE.Vector3[][]): void {
+    this.pathView.rebuild(paths);
+  }
+
+  /** Toggle the enemy-path preview (settings hook). */
+  setEnemyPathVisible(on: boolean): void {
+    this.pathView.setVisible(on);
   }
 
   drawCallCount(): number {

@@ -63,6 +63,10 @@ const unkey = (k: number): TileRef => ({ s: k >> 16, r: (k >> 8) & 0xff, c: k & 
 
 export class Grid {
   readonly surfaces: SurfaceData[];
+  /** Bumped every time the cake cost-field is recomputed (i.e. whenever the route can change).
+   *  The render layer watches this to know when to re-trace the on-board enemy-path preview,
+   *  instead of retracing every frame. */
+  pathVersion = 0;
   private climbLinks = new Map<number, number[]>();  // tileKey -> linked tileKeys
   private clutterCells = new Map<number, TileRef[]>(); // clutterId -> cells
 
@@ -199,6 +203,27 @@ export class Grid {
   /** Dijkstra cost field from the cake outward. Call after any clutter change. */
   recompute(cake: TileRef): void {
     this.dijkstra([cake], 'dist');
+    this.pathVersion++;
+  }
+
+  /** Trace the steepest-descent route a critter would walk from `start` to the cake, following the
+   *  same flow field the sim uses. Returns the tile sequence (start .. cake, chew-through tiles
+   *  included); empty if the cake is unreachable from `start`. For the on-board path preview. */
+  pathTo(start: TileRef, maxSteps = 500): TileRef[] {
+    if (!Number.isFinite(this.distOf(start))) return [];
+    const out: TileRef[] = [start];
+    const seen = new Set<number>([key(start)]);
+    let cur = start;
+    for (let i = 0; i < maxSteps; i++) {
+      const next = this.flowOf(cur);
+      if (!next) break;            // at the cake (dist 0) or no downhill neighbor
+      const k = key(next);
+      if (seen.has(k)) break;      // safety: never loop
+      seen.add(k);
+      out.push(next);
+      cur = next;
+    }
+    return out;
   }
 
   /** Flee field toward the nearest exit (multi-source). Call after any clutter change. */

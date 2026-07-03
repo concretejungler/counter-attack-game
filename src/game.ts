@@ -4,6 +4,7 @@ import type { LevelDef, SimEvent, TileRef } from './sim/types';
 import { rotateCells } from './sim/clutter';
 import { CONTENT, ALL_LEVELS, CAMPAIGN_LEVELS, levelById } from './content';
 import { GameRenderer } from './render/renderer';
+import type { HandPose } from './render/handView';
 import { UI } from './ui/ui';
 import { AudioMan } from './audio/audio';
 import { Sfx } from './audio/sfx';
@@ -99,6 +100,9 @@ export class Game {
   /** §20.6 Wave-42 towel: true for the one endless wave where endlessDepth === 42, so the
    *  drape+toast only fires once (on the waveStart transition into it) rather than every tick. */
   private towelWaveActive = false;
+  /** Last Grid.pathVersion pushed to the renderer's enemy-path preview — retrace only when the
+   *  flow field actually changes (clutter placed/removed), not every frame. */
+  private lastPathVersion = -1;
   // ---------- PHOTO MODE (GAME-PROMPT §18) ----------
   photoMode = false;
   private photoWasPaused = false;
@@ -558,6 +562,28 @@ export class Game {
     // §20.6 Wave-42 towel: cleared on every level (re-evaluated per endless wave in handleEvents).
     this.towelWaveActive = false;
     this.renderer.clearTowels();
+    // Enemy-path preview: draw the initial routes now that the sim (and its flow field) exists.
+    this.lastPathVersion = -1;
+    this.refreshEnemyPath();
+  }
+
+  /** Trace the route the critters will walk from each spawn to the cake (the sim's own flow field)
+   *  and hand the world-space polylines to the renderer's on-board path preview. Cheap; only called
+   *  on level load and whenever the flow field changes (see the pathVersion check in update()). */
+  private refreshEnemyPath(): void {
+    if (!this.sim || !this.level) return;
+    const grid = this.sim.grid;
+    const paths: Vector3[][] = [];
+    for (const sp of this.level.spawns) {
+      const tiles = grid.pathTo(sp.tile);
+      if (tiles.length < 2) continue;
+      paths.push(tiles.map((t) => {
+        const w = grid.worldOf(t);
+        return new Vector3(w.x, w.y, w.z);
+      }));
+    }
+    this.renderer.setEnemyPaths(paths);
+    this.lastPathVersion = grid.pathVersion;
   }
 
   /** Resolves an Infestation fight's outcome (called from endLevel when this.infestFight is
@@ -907,6 +933,8 @@ export class Game {
         this.acc -= SIM_DT;
       }
       this.renderer.syncProjectiles(this.sim.state);
+      // Re-trace the enemy-path preview only when placing/removing clutter reshaped the route.
+      if (this.sim.grid.pathVersion !== this.lastPathVersion) this.refreshEnemyPath();
       this.maxScent = Math.max(this.maxScent, this.sim.state.scent);
       this.ui.setSwarmAlarm(this.sim.state.scent >= 99);
       this.updateMusicMood();
@@ -2020,6 +2048,19 @@ export class Game {
         this.fastForward(2);
         this.renderer.rig.pose(0.05, 0.85, 9);
         this.renderer.rig.target.set(7, 0.4, 7);
+        return;
+      }
+      // QA: frames the Hand cursor up close so its orientation/pose can be visually verified.
+      case 'hand': {
+        this.startLevel('kitchen-1', 1337);
+        this.fastForward(2);
+        const pose = (globalThis as { __handPose?: HandPose }).__handPose ?? 'point';
+        this.renderer.hand.setTarget(new Vector3(7, 1.4, 7), 0.4);
+        this.renderer.hand.setPose(pose);
+        // match the real play camera angle (yaw/pitch from CameraRig defaults) so the hand
+        // reads exactly as the player sees it, just zoomed in on the cursor.
+        this.renderer.rig.pose(-Math.PI * 0.22, 0.92, 4.0);
+        this.renderer.rig.target.set(7, 1.4, 7);
         return;
       }
       // ---------- P4 easter egg / photo mode demo scenes ----------
