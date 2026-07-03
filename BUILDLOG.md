@@ -23,6 +23,8 @@ User directive: "hard to play on the phone, screen is crowded — rethink how ev
 
 **Verified:** tsc clean · 351/351 (`npx vitest run`, incl. balance) · build · smoke OK · desktop shots unregressed (no dock, recap/title/hud/battle checked) · 14 mobile scenes screenshot-reviewed across 3 critique rounds. Multi-agent build per router: Sonnet implementation + research + deploy-script agents, Opus screen audit, main-model spec/critique/integration.
 
+**Deployed** (user-requested): gh-pages `893de0b` + master `9b53ec3` pushed; live site verified serving the new bundle (`index-Bah5qpM_.js`). The Pages pipeline fought back — full post-mortem + the un-wedging recipe now lives in RESUME.md §6 (short version: never rerun a failed pages run, dispatch fresh; re-save Pages config to clear a wedged deployment queue; legacy branch mode wedges permanently for this repo).
+
 ## ✅ P4 SECRET LEVELS (2026-07-02, 351/351 tests): GAME-PROMPT §14 secret list + §20.16 playable credits.
 
 Four secret levels, `src/content/levels/secret.ts` (new), theme `'secret'` (renders via the kitchen room builder), world **0** — deliberate, so they're structurally excluded from every world-indexed system (dollhouse grid, `worldFullyWon`/`world-3-star` achievements, Infestation's `FLOOR_WORLDS` remix pool) without needing an exclusion list anywhere:

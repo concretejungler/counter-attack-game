@@ -151,11 +151,20 @@ placement fix, overhead button, tutorial, path preview, swarm-alarm fix) is chro
 
 ## 6. Deployment
 
-- GitHub Pages via Actions workflow `.github/workflows/pages.yml` (the legacy Jekyll builder was
-  wedged; switched to `build_type=workflow`). The workflow checks out the `gh-pages` branch and
-  uploads it. Live URL: **https://concretejungler.github.io/counter-attack-game/**.
-- **To ship current work you must build + publish** (the live site is currently behind `master`).
-  Confirm with the user before pushing/deploying — outward-facing action.
+- GitHub Pages via Actions workflow `.github/workflows/pages.yml` (`build_type=workflow`). The
+  workflow checks out the `gh-pages` branch and uploads it — it does NOT build. Live URL:
+  **https://concretejungler.github.io/counter-attack-game/**.
+- **To ship:** `node tools/deploy-pages.mjs` (builds + publishes dist/ to gh-pages via a scratch
+  worktree; `--dry-run` supported), then `git push origin master` (triggers the workflow). Confirm
+  with the user before pushing/deploying — outward-facing action.
+- **Deploy gotchas (cost 30 min on 2026-07-03):** (1) If deploy-pages fails with the generic
+  "Deployment failed, try again later", do NOT `gh run rerun` — a rerun keeps the old artifact and
+  dies on "Multiple artifacts named github-pages" — dispatch a FRESH run (`gh workflow run pages.yml`).
+  (2) If deployments hang/insta-fail repeatedly, the Pages backend queue is wedged: re-save the
+  config (`gh api -X PUT repos/<r>/pages -f build_type=workflow`) and dispatch fresh — that cleared
+  it. (3) Legacy branch-mode builds for this repo wedge at "building" forever; stay on workflow mode.
+  (4) `gh api -X DELETE .../pages` is rejected (422) for this repo — deleting/recreating is not an
+  available fix.
 
 ---
 
