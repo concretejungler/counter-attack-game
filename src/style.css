@@ -1095,7 +1095,12 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
   100% { opacity: 0; }
 }
 
-.swarm-alarm {
+/* #ui > .swarm-alarm (not just .swarm-alarm) so pointer-events:none beats the
+   #ui > * { pointer-events: auto } rule on specificity (ID+class > ID+universal).
+   As a plain .swarm-alarm it LOSES that cascade, and this full-screen red vignette
+   (inset:0) then silently eats every click/tap the whole time scent is maxed — the
+   same trap already fixed for .flash-pulse below. */
+#ui > .swarm-alarm {
   position: absolute; inset: 0;
   pointer-events: none;
   box-shadow: inset 0 0 120px 30px rgba(232, 60, 50, 0.55);
