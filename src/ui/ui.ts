@@ -272,7 +272,7 @@ export class UI {
 
   showHud(level: LevelDef): void {
     this.clearScreen();
-    this.hud = new Hud(this.content, level, this.cb);
+    this.hud = new Hud(this.content, level, this.cb, this.save);
     this.inspect = new InspectPanel(this.content, this.cb, this.save.towerNames);
     this.root.append(this.hud.root, this.inspect.root);
     this.inGameplay = true;

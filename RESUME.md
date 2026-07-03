@@ -2,7 +2,7 @@
 
 > Purpose: everything a fresh LLM (or a future session) needs to pick up this project cold.
 > Read this first, then `BUILDLOG.md`, then `GAME-PROMPT.md` (the design law). Last updated after
-> commit `794aad7` (2026-07-03).
+> the mobile-UX-overhaul commit (2026-07-03, follows `794aad7`).
 
 ---
 
@@ -19,8 +19,9 @@
 - **Branch:** work happens directly on **`master`**. Working tree is clean.
 - **Health:** `npm test` → **351 tests green**. `npm run smoke` → OK. `npx tsc --noEmit` → clean.
 - **Deployed (public):** https://concretejungler.github.io/counter-attack-game/ via GitHub Pages
-  (Actions workflow). **The live site is BEHIND local `master`** — recent work is committed locally
-  but NOT pushed/deployed yet (user said "keep refining before pushing").
+  (Actions workflow). Redeployed 2026-07-03 with the mobile UX overhaul (user-requested). To ship
+  again: `node tools/deploy-pages.mjs` (publishes dist/ to gh-pages), then push `master` (triggers
+  the Pages workflow — that push order matters).
 - **Local dev:** `npm run dev` (Vite, port 5173). A server was running on 5173 during the last
   session; a fresh browser load serves current source via Vite's FS watch.
 
@@ -99,54 +100,27 @@ docs/superpowers/plans/2026-06-12-counter-attack.md   implementation plan
 
 ---
 
-## 4. What changed in the most recent session (2026-07-03)
+## 4. What changed in the most recent session (2026-07-03, second session — MOBILE UX OVERHAUL)
 
-All committed to `master`, newest first. All verified (351 tests + smoke + screenshots, desktop+mobile).
+One big commit (see the top BUILDLOG entry for full detail). The phone HUD was rethought end-to-end:
+- **Mobile dock + build sheet** (`src/ui/hud.ts`): on the mobile breakpoint the always-visible build
+  strip and 2×2 speed cluster are replaced by a bottom dock — build-toggle (selection icon + clutter
+  badge), **3 quick-spell slots** (pinned via ★ toggles in the sheet, FIFO at 3, persisted in
+  `save.settings.quickSpells`), `⋯`, single cycling speed button, pause, ⛶/3D. The build bar becomes
+  a slide-up sheet with scrim, lowercase section labels, auto-close on select; photo mode lives in
+  the sheet footer. Desktop DOM identical (new elements `display:none/contents` outside the media query).
+- **Top-down default on phones**: `finishLevelBoot` auto-enters overhead framing on mobile viewports
+  (enter-only; `renderer.isTopDownActive()` getter); `loadLevel` resets the flag; ⛶ reads "3D" while active.
+- **Walls always ghosted everywhere** (0.14; 0 + invisible in top-down) — replaced the camera-angle fade.
+- **Menu-screen fixes from an Opus audit**: mobile `.screen { justify-content: flex-start }` (the
+  title screen's play button was clipped off the top of the viewport!), house-scroller 56vh,
+  sticky-note level-card readability, sticky CTA rows (`.recap-actions`/`.modal-done-row` in
+  screens.ts) so Next Level / Done are never below the fold, recap graph 60px on mobile.
+- **QA/deploy tooling**: `demo('mobilesheet')`; shot-mobile scenes += mobilesheet/topdown/tutorial;
+  `tools/deploy-pages.mjs` (worktree-based gh-pages publisher, `--dry-run` supported).
 
-- **`794aad7` — unify font, see-through walls, menu casing**
-  - **Typography:** UI mixed two font families and led with "Segoe Print" (Windows-only), so text
-    rendered differently per element and per device. Now ONE family everywhere: `--font-hand` leads
-    with `Comic Sans MS` (+ friendly fallbacks), and `--font-label` is aliased to it (`src/style.css`
-    `:root`). Title menu casing aligned to Title Case ("My Journal", "The Junk Drawer").
-  - **See-through walls:** the 2 diorama walls (north/west) blocked the board when the camera orbited
-    to their outside. Each now fades to a faint ghost based on camera position (solid at normal
-    angles). `room.ts` clones the wall material + tags `userData.fadeWall = {axis, coord}`;
-    `renderer.ts` collects them (`fadeWalls`) and updates `.opacity` per frame in `frame()`.
-- **`f7354e4` — parallax-correct tower placement + glowing crumbs**
-  - **Placement bug ("sometimes can't place towers"):** clutter blocks are ~0.85 tall but the pointer
-    raycast hit a flat ground plane, so aiming at a block's top landed a tile *behind* it (parallax) →
-    silent fail + selection dropped. Fix: `renderer.pickClutterTile()` raycasts the actual raised
-    clutter meshes (tagged `userData.tile`); `game.ts` `towerTargetTile()` prefers it for
-    tower/carry placement. Added `towerCellValid()` (mirrors `sim/towers.ts tryPlaceTower`) driving
-    both ghost colour and the click gate — an invalid tap now plays `place-bad` and KEEPS the tower
-    selected instead of no-op + cancel.
-  - **Glowing crumbs:** brighter/bigger tetrahedra + a soft additive golden "puddle" glow mesh under
-    each crumb (`crumbGlowMesh` in `renderer.ts`, synced in the crumb loop).
-- **`b99739b` — overhead-view button, 20%-smaller dock, How-to-Play tutorial**
-  - **Overhead "see everything" camera:** ⛶ HUD button (speed cluster) + `V` key toggles a
-    near-top-down framing that fits every surface on screen, then restores the prior view.
-    `CameraRig.overview/snapshot/restore` + `renderer.frameOverview()` + `renderer.toggleTopDown()`.
-    Manual orbit/zoom drops the active highlight (`noteCameraMovedManually`).
-  - **Dock shrunk 20% (desktop only):** `.build-bar` + `.speed-cluster` get `transform: scale(0.8)`;
-    mobile keeps its own touch-sized layout (`transform: none`).
-  - **How-to-Play tutorial:** `buildTutorial()` in `screens.ts` — 8-page flip-book (goal, build/battle
-    loop, path preview, clutter/towers, the Hand, crumbs/mana/spells, scent/THE SWARM, buttons/camera).
-    Reachable from a title "🎓 How to Play" fridge button; auto-shown once before the first level
-    (gated via `save.seenNotes` including `'how-to-play'` — replayable, never nags).
-- **`b088026` — swarm-alarm click-blocking bug**
-  - The full-screen red "THE SWARM" vignette (scent ≥ 99) is a direct child of `#ui`, where
-    `#ui > * { pointer-events: auto }` (specificity 1,0,0) beat its plain `.swarm-alarm
-    { pointer-events: none }` (0,1,0) — so it silently ate every click while glowing. Fixed to
-    `#ui > .swarm-alarm` (mirrors the earlier `.flash-pulse` fix). **General lesson: any full-screen
-    overlay appended directly under `#ui` that needs `pointer-events:none` MUST use an
-    ID-qualified selector (`#ui > .foo`) or it loses the cascade.**
-- **`5ba3e16` — on-board enemy-path preview + upside-down Hand fix**
-  - **Path preview:** a glowing chevron ribbon flows from each spawn to the cake, showing the actual
-    route (the sim's own Dijkstra flow field). `Grid.pathVersion` bumps on every cake-field recompute;
-    `Grid.pathTo()` traces it; `game.ts` re-pushes world polylines to `render/pathView.ts` whenever
-    the version changes (clutter placed/removed). Determinism untouched (pathVersion is not RNG).
-  - **Hand fix:** the cursor's fingers curled up/away from the board (palm-up = upside-down); flipped
-    the finger-curl sign in `handView.ts` so they tuck down (palm-down).
+The previous session's work (`794aad7` and earlier — font unification, see-through-walls v1, parallax
+placement fix, overhead button, tutorial, path preview, swarm-alarm fix) is chronicled in BUILDLOG.md.
 
 ---
 

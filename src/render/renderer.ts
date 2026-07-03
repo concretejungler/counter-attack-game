@@ -311,6 +311,10 @@ export class GameRenderer {
     const floor = level.surfaces[0];
     const center = new THREE.Vector3(floor.origin.x + floor.cols / 2 + 0.5, 1.3, floor.origin.z + floor.rows / 2);
     this.rig.setBounds(center, Math.max(floor.cols, floor.rows) * 0.66);
+
+    // Framing is re-established fresh per level — any prior top-down state/snapshot is stale.
+    this.topDownActive = false;
+    this.camSnapshot = null;
   }
 
   private tileWorld(s: number, c: number, r: number): THREE.Vector3 {
@@ -818,18 +822,16 @@ export class GameRenderer {
       b.scale.setScalar(1 + Math.sin(this.time * 3 + i) * 0.05);
     });
 
-    // see-through walls: fade each diorama wall as the camera orbits to its outside so it never
-    // blocks the board. dot > 0 = camera on the interior (+axis) side = solid; dot < 0 = outside.
+    // see-through walls: always a faint ghost (mobile + desktop) so they never block the board,
+    // and fully invisible while top-down (nothing should occlude the overhead "see everything"
+    // view). Eased toward the target rather than snapped so entering/exiting top-down doesn't pop.
     if (this.fadeWalls.length > 0) {
-      const cam = this.rig.camera.position;
+      const target = this.topDownActive ? 0 : 0.14;
+      const k = Math.min(1, dt * 6);
       for (const w of this.fadeWalls) {
-        const f = w.userData.fadeWall as { axis: 'x' | 'z'; coord: number };
-        const dot = (f.axis === 'x' ? cam.x : cam.z) - f.coord;
-        // solid until the camera is ~1 unit past the wall, then ease to a faint ghost over 3 units.
-        let t = (dot + 4) / 3; // maps dot -4 -> 0, dot -1 -> 1
-        t = Math.max(0, Math.min(1, t));
-        t = t * t * (3 - 2 * t);
-        (w.material as THREE.MeshToonMaterial).opacity = 0.16 + 0.84 * t;
+        const mat = w.material as THREE.MeshToonMaterial;
+        mat.opacity += (target - mat.opacity) * k;
+        w.visible = mat.opacity > 0.02;
       }
     }
 
@@ -1137,6 +1139,12 @@ export class GameRenderer {
    *  flag so the next button press re-frames instead of "restoring" to a now-wrong pose. */
   noteCameraMovedManually(): void {
     this.topDownActive = false;
+  }
+
+  /** Whether the overhead "see everything" framing is currently active — used by game.ts to
+   *  guard the mobile default-topdown entry so it only ever ENTERS, never toggles back out. */
+  isTopDownActive(): boolean {
+    return this.topDownActive;
   }
 
   /** Compute a near-overhead framing that fits every surface (floor + shelves) into view for the

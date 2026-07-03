@@ -702,7 +702,7 @@ export function buildRecap(
     </ul></div>
   </div>`;
 
-  html += `<div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
+  html += `<div class="recap-actions" style="display:flex;gap:10px;justify-content:center;margin-top:16px">
     <button class="wood-btn" data-act="retry">↻ ${info.won ? 'Replay' : 'One More Try'}</button>
     ${onNext ? '<button class="wood-btn" data-act="next">Next Level →</button>' : ''}
     <button class="wood-btn small" data-act="levels">Corkboard</button>
@@ -790,7 +790,7 @@ export function buildSettings(
       </select>
     </div>
 
-    <div style="text-align:center;margin-top:16px"><button class="wood-btn" data-act="close">Done</button></div>
+    <div class="modal-done-row" style="text-align:center;margin-top:16px"><button class="wood-btn" data-act="close">Done</button></div>
   `;
   wrap.append(modal);
 

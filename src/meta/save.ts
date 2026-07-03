@@ -36,6 +36,10 @@ export interface SaveData {
      *  model-build time — takes effect next level load (the toggle's label says so). Optional-safe,
      *  backfilled to false. */
     arachnophobia: boolean;
+    /** MOBILE UX: the top-3 pinned spells shown as always-visible quick-slots in the mobile
+     *  dock (src/ui/hud.ts). Ordered oldest-pinned-first — pinning a 4th evicts index 0 (FIFO).
+     *  Optional-safe like the fields above, backfilled to the default trio for older saves. */
+    quickSpells: string[];
   };
   stats: {
     wins: number;
@@ -122,6 +126,7 @@ export function defaultSave(): SaveData {
     settings: {
       musicVol: 0.7, sfxVol: 0.9, shake: true, difficulty: 'houseguest', pet: null,
       shakeIntensity: 1, flashIntensity: 1, uiScale: 1, colorblind: false, arachnophobia: false,
+      quickSpells: ['lemon-smite', 'forbidden-slipper', 'moooom'],
     },
     stats: {
       wins: 0, losses: 0, kills: 0, sweeps: 0, crumbsBanked: 0,

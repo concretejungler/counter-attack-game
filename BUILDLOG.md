@@ -2,6 +2,27 @@
 
 > Living status doc. Updated after every task. After context compaction: read this + CLAUDE.md + the plan, then continue.
 
+## ✅ MOBILE UX OVERHAUL (2026-07-03, 351/351 tests incl. balance): phone-first HUD rethink + menu-screen fixes + deploy tooling.
+
+User directive: "hard to play on the phone, screen is crowded — rethink how everything is shown." Design informed by a mobile-TD research pass (BTD6 / Kingdom Rush / Arknights patterns: ephemeral build menus, single cycling speed button, 2-4 quick-ability slots, whole-field default framing, no HUD over placeable tiles).
+
+**Gameplay HUD (mobile breakpoint only; desktop pixel-identical — hidden via base `display:none/contents` rules):**
+- **Bottom dock** (`hud.ts .dock`) replaces the always-visible scroll strip + 2×2 speed cluster: build-toggle (🔨, shows current selection's icon + clutter-hand count badge), **3 quick-spell slots**, `⋯` (opens sheet at sorcery), single **speed-cycle button** (1×→2×→3×), pause, ⛶/3D view toggle. Photo mode moved to the sheet footer; `.photo-btn`/`.speed-cluster` hidden on mobile.
+- **Build sheet**: the `.build-bar` becomes a slide-up sheet (translateY + `.open`, scrim sibling, auto-close on any card/spell select) with vertical lowercase-labeled sections ("the defense force", "junk to place", "sorcery"). Max-height = everything above the dock — 60vh clipped the clutter card and hid spells on a 390px viewport (found via screenshot critique, 2 rounds of chrome-shaving to fit a starter level scroll-free).
+- **Quick spells persisted**: `save.settings.quickSpells` (default lemon-smite/forbidden-slipper/moooom, optional-safe backfill, no version bump). ★/☆ pin toggles on sheet spell buttons (sibling `.spell-slot-wrap` — the circle's `overflow:hidden` clips corner children), FIFO eviction at 3. Quick slots get the same cd-wipe/affordability treatment as shelf buttons in `Hud.update()`. Mobile `.cost-tag` moved bottom-center (circle clip cut the corner-anchored tag in half at 46px).
+- **Top-down by default on phones**: `finishLevelBoot` enters overhead framing when `isMobileViewport()` (enter-only guard via new `renderer.isTopDownActive()`); `loadLevel()` resets `topDownActive`; `demo('topdown')` made idempotent. ⛶ buttons read "3D" while active.
+- **Walls always ghosted** (all platforms, per user ask): camera-position fade replaced with constant 0.14 opacity, 0 (+`visible=false`) in top-down. `wallfade` scene retained.
+
+**Menu screens (from an Opus phone-landscape audit of shots/ + CSS):**
+- **`.screen { justify-content: flex-start }` on mobile** — the flex-centering pushed tall screens' tops above the scroll origin: the title screen's "Defend the Cake" button was literally clipped off-screen. Highest-impact one-liner in the whole pass.
+- Level select: `.house-scroller` 72vh→56vh so title row + pet bed + dollhouse + back button fit 390px (kills scroll-in-scroll); sticky-lvl cards 60px/10px fonts for readability.
+- Recap + settings modals buried their CTAs below the fold: new `.recap-actions`/`.modal-done-row` classes (screens.ts) get `position:sticky` bottom pinning on mobile; `.recap-graph` 60px on mobile.
+- QA coverage: `demo('mobilesheet')` scene; shot-mobile default scenes += `mobilesheet`, `topdown`, `tutorial`.
+
+**Deploy tooling:** `tools/deploy-pages.mjs` — builds and publishes `dist/` to `gh-pages` via a scratch `git worktree` (never touches the main tree), `--dry-run` supported, preserves `.nojekyll`. Pages workflow publishes gh-pages content but only *triggers* on master pushes — push order is gh-pages first, then master.
+
+**Verified:** tsc clean · 351/351 (`npx vitest run`, incl. balance) · build · smoke OK · desktop shots unregressed (no dock, recap/title/hud/battle checked) · 14 mobile scenes screenshot-reviewed across 3 critique rounds. Multi-agent build per router: Sonnet implementation + research + deploy-script agents, Opus screen audit, main-model spec/critique/integration.
+
 ## ✅ P4 SECRET LEVELS (2026-07-02, 351/351 tests): GAME-PROMPT §14 secret list + §20.16 playable credits.
 
 Four secret levels, `src/content/levels/secret.ts` (new), theme `'secret'` (renders via the kitchen room builder), world **0** — deliberate, so they're structurally excluded from every world-indexed system (dollhouse grid, `worldFullyWon`/`world-3-star` achievements, Infestation's `FLOOR_WORLDS` remix pool) without needing an exclusion list anywhere:

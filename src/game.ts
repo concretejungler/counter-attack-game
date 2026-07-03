@@ -21,6 +21,7 @@ import {
 } from './meta/infestation';
 import { RNG } from './core/rng';
 import { setArachnophobiaMode } from './render/models/critterModels';
+import { isMobileViewport } from './core/device';
 
 type Mode =
   | { kind: 'idle' }
@@ -576,6 +577,11 @@ export class Game {
     // Enemy-path preview: draw the initial routes now that the sim (and its flow field) exists.
     this.lastPathVersion = -1;
     this.refreshEnemyPath();
+
+    // MOBILE UX: default to the overhead "see everything" framing on phone-sized viewports —
+    // the diorama's normal orbit camera is cramped on a small landscape screen. loadLevel() just
+    // reset topDownActive to false above, so this only ever ENTERS (never toggles back out).
+    if (isMobileViewport() && !this.renderer.isTopDownActive()) this.toggleTopDown();
   }
 
   /** Trace the route the critters will walk from each spawn to the cake (the sim's own flow field)
@@ -2140,18 +2146,27 @@ export class Game {
         this.ui.showTutorial(() => {});
         return;
       }
-      // QA: the overhead "see everything" framing over a staged battle.
+      // QA: the overhead "see everything" framing over a staged battle. Idempotent — on a
+      // mobile-sized viewport, finishLevelBoot() (via startLevel() inside demo('battle')) already
+      // enters top-down by default, so only toggle if it isn't already active.
       case 'topdown': {
         this.demo('battle');
-        this.toggleTopDown();
+        if (!this.renderer.isTopDownActive()) this.toggleTopDown();
         return;
       }
-      // QA: orbit behind the north/west walls to verify they fade to see-through.
+      // QA: verify the walls render as a constant super-transparent ghost (not fully invisible,
+      // not blocking the board) regardless of camera angle — see renderer.ts's per-frame fade.
       case 'wallfade': {
         this.startLevel('kitchen-1', 1337);
         this.fastForward(2);
         this.renderer.rig.pose(Math.PI * 0.92, 0.82, 17);
         this.renderer.rig.target.set(7, 1, 5);
+        return;
+      }
+      // QA: the mobile bottom-sheet build bar, sprung open (sections + spell pins visible).
+      case 'mobilesheet': {
+        this.demo('battle');
+        this.ui.hud?.openSheet();
         return;
       }
       // QA: a field of ground crumbs to eyeball the glow.
