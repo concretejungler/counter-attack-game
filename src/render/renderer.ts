@@ -69,6 +69,7 @@ export class GameRenderer {
   private clutterShake = new Map<number, number>();
   private projMeshes = new Map<string, THREE.InstancedMesh>();
   private crumbMesh: THREE.InstancedMesh;
+  private crumbGlowMesh: THREE.InstancedMesh;
   private shadowBlobMesh: THREE.InstancedMesh;
   private vfx = new Vfx();
   private pathView = new PathView();
@@ -163,11 +164,12 @@ export class GameRenderer {
     this.scene.add(this.critters.root, this.vfx.root, this.hand.group, this.pathView.group);
     this.eggs = new EggsController(this.scene);
 
-    // crumb instancing — little golden tetrahedra
-    const crumbGeo = new THREE.TetrahedronGeometry(0.09);
+    // crumb instancing — little golden tetrahedra, brighter + a touch bigger so they read at
+    // gameplay zoom (they used to blend into the warm floor).
+    const crumbGeo = new THREE.TetrahedronGeometry(0.11);
     this.crumbMesh = new THREE.InstancedMesh(
       crumbGeo,
-      new THREE.MeshToonMaterial({ color: PAL.crumbGold }),
+      new THREE.MeshToonMaterial({ color: 0xffcf5a, emissive: 0x6a4a12, emissiveIntensity: 1 }),
       CRUMB_CAP,
     );
     this.crumbMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -175,6 +177,27 @@ export class GameRenderer {
     this.crumbMesh.frustumCulled = false;
     this.crumbMesh.count = 0;
     this.scene.add(this.crumbMesh);
+
+    // crumb glow — a soft additive golden puddle under each crumb so they clearly read as
+    // "grab me!" collectibles even against the warm kitchen floor. Flat quad, billboard not
+    // needed (it lies on the surface like the contact-shadow blobs).
+    const glowTex = canvasTexture(64, 64, (ctx) => {
+      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      grad.addColorStop(0, 'rgba(255, 232, 150, 0.95)');
+      grad.addColorStop(0.45, 'rgba(255, 202, 92, 0.45)');
+      grad.addColorStop(1, 'rgba(255, 190, 70, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 64, 64);
+    });
+    this.crumbGlowMesh = new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+      CRUMB_CAP,
+    );
+    this.crumbGlowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.crumbGlowMesh.frustumCulled = false;
+    this.crumbGlowMesh.count = 0;
+    this.scene.add(this.crumbGlowMesh);
 
     // contact/AO shadow blobs — one pooled InstancedMesh, a radial-gradient quad per critter/
     // tower/clutter piece. Cheap grounding: nothing casts a real shadow-map shadow at this scale
@@ -384,6 +407,7 @@ export class GameRenderer {
           const block = buildClutterCell(shape?.look ?? 'cereal');
           const p = this.tileWorld(cell.s, cell.c, cell.r);
           block.position.copy(p);
+          block.userData.tile = { s: cell.s, c: cell.c, r: cell.r }; // for parallax-correct placement picking
           g.add(block);
         }
         g.userData.popT = 1;
@@ -398,9 +422,13 @@ export class GameRenderer {
       }
     }
 
-    // crumbs (instanced rebuild)
+    // crumbs (instanced rebuild) + their glow puddles
     let ci = 0;
     const m = new THREE.Matrix4();
+    const glowM = new THREE.Matrix4();
+    const glowQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+    const glowP = new THREE.Vector3();
+    const glowS = new THREE.Vector3();
     for (const ent of state.crumbEnts.values()) {
       if (ci >= CRUMB_CAP) break;
       const pulse = 1 + Math.sin(this.time * 4 + ent.id) * 0.18;
@@ -409,10 +437,19 @@ export class GameRenderer {
         new THREE.Quaternion().setFromEuler(new THREE.Euler(ent.id, ent.id * 2.3, 0)),
         new THREE.Vector3(pulse * Math.min(2.2, 0.7 + ent.value * 0.06), pulse, pulse),
       );
-      this.crumbMesh.setMatrixAt(ci++, m);
+      this.crumbMesh.setMatrixAt(ci, m);
+      // glow puddle: scales gently with crumb value, breathes with the same pulse
+      const gs = (0.5 + Math.min(0.55, ent.value * 0.035)) * pulse;
+      glowP.set(ent.pos.x, ent.pos.y + 0.03, ent.pos.z);
+      glowS.set(gs, gs, 1);
+      glowM.compose(glowP, glowQ, glowS);
+      this.crumbGlowMesh.setMatrixAt(ci, glowM);
+      ci++;
     }
     this.crumbMesh.count = ci;
+    this.crumbGlowMesh.count = ci;
     this.crumbMesh.instanceMatrix.needsUpdate = true;
+    this.crumbGlowMesh.instanceMatrix.needsUpdate = true;
 
     // cake
     this.cake?.setSlices(state.cakeSlices);
@@ -907,6 +944,24 @@ export class GameRenderer {
       }
     }
     return best ? { surface: best.surface, x: best.x, z: best.z } : null;
+  }
+
+  /** Tile of the clutter block under the cursor, if any. Raycasts the actual (raised) clutter
+   *  meshes so aiming at a block's top targets THAT block — the flat ground pick-plane would land
+   *  a tile or two behind it (parallax), which is why placing a tower on clutter felt unreliable. */
+  pickClutterTile(ndcX: number, ndcY: number): { s: number; c: number; r: number } | null {
+    const groups = [...this.clutterViews.values()];
+    if (groups.length === 0) return null;
+    this.raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.rig.camera);
+    const hits = this.raycaster.intersectObjects(groups, true); // sorted nearest-first
+    for (const h of hits) {
+      let o: THREE.Object3D | null = h.object;
+      while (o) {
+        if (o.userData.tile) return o.userData.tile as { s: number; c: number; r: number };
+        o = o.parent;
+      }
+    }
+    return null;
   }
 
   pickCritter(ndcX: number, ndcY: number, state: SimState): number | null {

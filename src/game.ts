@@ -1509,6 +1509,40 @@ export class Game {
     return this.sim.grid.tileOfWorld(hit.surface, hit.x, hit.z);
   }
 
+  /** Tile a tower should target. For tower-on-clutter placement, prefer the clutter block actually
+   *  under the cursor (raycast against the raised mesh) so parallax doesn't land it a tile behind;
+   *  floor-mounted towers/traps still use the flat ground pick. */
+  private towerTargetTile(floorPlace: boolean): TileRef | null {
+    if (!floorPlace) {
+      const cl = this.renderer.pickClutterTile(this.pointer.ndcX, this.pointer.ndcY);
+      if (cl) return cl;
+    }
+    return this.tileAtPointer();
+  }
+
+  /** Whether a tower of `def` can be placed on `tile` right now — mirrors sim/towers.ts tryPlaceTower
+   *  (crumbs already gated at selection). Drives both the ghost colour and the click gate so a red
+   *  ghost never silently fails + cancels the placement. */
+  private towerCellValid(def: (typeof CONTENT.towers)[string], tile: TileRef): boolean {
+    if (!this.sim || !this.level) return false;
+    const g = this.sim.grid;
+    if (!g.inBounds(tile)) return false;
+    const same = (a: TileRef, b: TileRef): boolean => a.s === b.s && a.c === b.c && a.r === b.r;
+    const cid = g.clutterIdAt(tile);
+    if (def.attack === 'trap' || def.floorMount) {
+      if (g.isStaticBlocked(tile) || cid !== null) return false;
+      if (same(tile, this.level.cakeTile)) return false;
+      if (this.level.spawns.some((sp) => same(sp.tile, tile))) return false;
+      for (const tw of this.sim.state.towers.values()) if (same(tw.tile, tile)) return false;
+      return true;
+    }
+    if (cid === null) return false;
+    const piece = this.sim.state.clutter.get(cid);
+    if (!piece) return false;
+    const shape = CONTENT.shapes[piece.shape];
+    return piece.mounted.length < (shape?.mountSlots ?? 1);
+  }
+
   private updateGhost(): void {
     if (!this.sim || !this.level) return;
     if (this.mode.kind === 'placeClutter') {
@@ -1526,19 +1560,17 @@ export class Game {
       );
       this.renderer.showGhost(cells.map((t) => this.sim!.grid.worldOf(t)), valid);
     } else if (this.mode.kind === 'placeTower' || this.mode.kind === 'carry') {
-      const tile = this.tileAtPointer();
+      const defId = this.mode.kind === 'placeTower' ? this.mode.def : this.sim.state.towers.get(this.mode.towerId)?.def;
+      const def = defId ? CONTENT.towers[defId] : null;
+      if (!def) return;
+      const floorPlace = def.attack === 'trap' || !!def.floorMount;
+      const tile = this.towerTargetTile(floorPlace);
       if (!tile) {
         this.renderer.hideGhost();
         return;
       }
-      const defId = this.mode.kind === 'placeTower' ? this.mode.def : this.sim.state.towers.get(this.mode.towerId)?.def;
-      const def = defId ? CONTENT.towers[defId] : null;
-      if (!def) return;
-      const floorPlace = def.attack === 'trap' || def.floorMount;
       const cid = this.sim.grid.clutterIdAt(tile);
-      const valid = floorPlace
-        ? !this.sim.grid.isStaticBlocked(tile) && cid === null
-        : cid !== null;
+      const valid = this.towerCellValid(def, tile);
       const w = this.sim.grid.worldOf(tile);
       this.renderer.showGhost([{ x: w.x, y: w.y + (cid !== null ? 0.85 : 0), z: w.z }], valid);
       this.renderer.showRange(w.x, w.y + (cid !== null ? 0.85 : 0), w.z, def.tiers[0].range);
@@ -1625,10 +1657,15 @@ export class Game {
         return;
       }
       if (this.mode.kind === 'placeTower') {
-        const tile = this.tileAtPointer();
-        if (tile) {
+        const def = CONTENT.towers[this.mode.def];
+        const tile = this.towerTargetTile(def.attack === 'trap' || !!def.floorMount);
+        if (tile && this.towerCellValid(def, tile)) {
           this.sim.command({ type: 'placeTower', def: this.mode.def, at: tile });
           if (!e.shiftKey) this.cancelMode();
+        } else {
+          // invalid spot — give feedback but KEEP the tower selected so a near-miss can retry,
+          // instead of silently doing nothing and dropping the selection.
+          this.sfx.play('place-bad');
         }
         return;
       }
@@ -1641,7 +1678,9 @@ export class Game {
         return;
       }
       if (this.mode.kind === 'carry') {
-        const tile = this.tileAtPointer();
+        const carried = this.sim.state.towers.get(this.mode.towerId);
+        const cdef = carried ? CONTENT.towers[carried.def] : null;
+        const tile = this.towerTargetTile(!!cdef && (cdef.attack === 'trap' || !!cdef.floorMount));
         if (tile) {
           this.sim.command({ type: 'carryDrop', at: tile });
           this.cancelMode();
@@ -2105,6 +2144,23 @@ export class Game {
       case 'topdown': {
         this.demo('battle');
         this.toggleTopDown();
+        return;
+      }
+      // QA: a field of ground crumbs to eyeball the glow.
+      case 'crumbs': {
+        this.startLevel('kitchen-1', 1337);
+        const sim = this.sim!;
+        for (let c = 2; c <= 11; c++) {
+          for (let r = 2; r <= 9; r++) {
+            if ((c + r) % 2 === 0) {
+              const w = sim.grid.worldOf({ s: 0, c, r });
+              sim.dropCrumbs({ x: w.x, y: w.y, z: w.z }, 0, 10);
+            }
+          }
+        }
+        this.fastForward(1);
+        this.renderer.rig.pose(0.05, 0.8, 11);
+        this.renderer.rig.target.set(7, 0.3, 6);
         return;
       }
       // ---------- P4 easter egg / photo mode demo scenes ----------
