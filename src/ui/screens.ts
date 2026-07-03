@@ -35,6 +35,7 @@ export function buildTitle(
   onInfestation: () => void,
   onDailyChore: () => void,
   onMagnetsSolved: () => void,
+  onHowToPlay: () => void,
 ): HTMLElement {
   const screen = el('div', 'screen');
   const fridge = el('div', 'fridge');
@@ -86,11 +87,15 @@ export function buildTitle(
   chore.style.setProperty('--tilt', '-1.6deg');
   if (!choreDone) chore.onclick = onDailyChore;
   else chore.classList.add('locked');
+  const howto = el('button', 'fridge-note magnet-sticker', '🎓 How to Play');
+  howto.style.setProperty('--pin', '#5aa0c8');
+  howto.style.setProperty('--tilt', '0.5deg');
+  howto.onclick = onHowToPlay;
   const settings = el('button', 'fridge-note', '🌡️ Settings');
   settings.style.setProperty('--pin', '#3f5d7d');
   settings.style.setProperty('--tilt', '-1deg');
   settings.onclick = onSettings;
-  menu.append(play, journal, drawer, infest, chore, settings);
+  menu.append(play, journal, drawer, infest, chore, howto, settings);
 
   fridge.append(
     title,
@@ -117,6 +122,138 @@ export function buildTitle(
 
   screen.append(fridge);
   return screen;
+}
+
+/** The "How to Play" tutorial (title fridge button + auto-shown once before the very first level).
+ *  A paged flip-book of the house rules in the game's kid-voice — every core mechanic and every HUD
+ *  button, so a first-timer knows what they're looking at before a single critter shows up.
+ *  `finishLabel` differs by entry point ("Let's Play! →" pre-level vs "Got it!" from the menu). */
+const TUTORIAL_PAGES: { icon: string; title: string; lines: string[] }[] = [
+  {
+    icon: '🎂',
+    title: 'defend the cake!!',
+    lines: [
+      'the birthday wish came true — now bugs want the cake.',
+      'critters pour in from the edges and march for the frosting.',
+      "you're the <b>Hand of the house</b>: build, squish, and sweep to stop them. lose every cake slice and it's game over.",
+    ],
+  },
+  {
+    icon: '🧱',
+    title: 'build, then battle',
+    lines: [
+      'every level swaps between a calm <b>BUILD</b> phase and a <b>WAVE</b> of critters.',
+      'in build: drag <b>CLUTTER</b> from the corkboard to make walls, then drop <b>TOWERS</b> on top of it.',
+      'tap <b>🔔 Call Wave</b> to start early for bonus 🍪 — or let the egg-timer do it.',
+    ],
+  },
+  {
+    icon: '➡️',
+    title: 'read the path',
+    lines: [
+      'the glowing arrow-trail shows <b>exactly where the critters will walk</b> to reach the cake.',
+      'box them in with clutter to force a longer, twistier detour — right past your towers.',
+      'it re-draws live as you build. watch the route bend!',
+    ],
+  },
+  {
+    icon: '📦',
+    title: 'clutter & towers',
+    lines: [
+      'clutter is a <b>wall AND a tower platform</b>. press <b>R</b> to rotate a piece before placing.',
+      'critters can <b>chew through</b> clutter — walls buy time, not safety.',
+      'towers cost 🍪. tap a placed tower to <b>Upgrade, pick a Path, Move, or Sell</b> it.',
+    ],
+  },
+  {
+    icon: '✋',
+    title: 'the Hand (that\'s you)',
+    lines: [
+      '<b>sweep</b> spilled crumbs to bank them — crumbs are your money.',
+      '<b>flick</b> or <b>squash</b> critters directly with a tap or a drag.',
+      '<b>high-five</b> a tower for a burst, or pick towers up to move them.',
+    ],
+  },
+  {
+    icon: '🫙',
+    title: 'crumbs, mana & spells',
+    lines: [
+      '🍪 <b>crumbs</b> come from squished critters and sweeping — spend them on towers.',
+      'the 🫙 <b>mana jar</b> fills over time and powers <b>SPELLS</b> on the bottom shelf.',
+      'each spell has a cost + cooldown (the dark sweep across it = recharging).',
+    ],
+  },
+  {
+    icon: '👃',
+    title: 'watch the nose!',
+    lines: [
+      'the nose meter is the <b>SCENT</b> — it climbs as crumbs pile up and critters die near the cake.',
+      'higher scent = <b>bigger waves</b>. sweep fast to keep it down.',
+      'let it hit <b>100% and stay there</b> and <b>THE SWARM</b> arrives — an instant loss. don\'t.',
+    ],
+  },
+  {
+    icon: '⛶',
+    title: 'buttons & camera',
+    lines: [
+      '<b>⏸</b> pause &nbsp; <b>1× 2× 3×</b> speed &nbsp; <b>📸</b> photo mode',
+      '<b>⛶ overhead view</b> fits the whole board on screen in one tap (or press <b>V</b>).',
+      'drag to orbit, scroll or pinch to zoom. survive every wave to win — fewer bites + the level challenge earn more ⭐!',
+    ],
+  },
+];
+
+export function buildTutorial(onClose: () => void, finishLabel = 'Got it!'): HTMLElement {
+  const wrap = el('div', 'modal-wrap');
+  const modal = el('div', 'paper-modal tutorial-modal');
+
+  modal.append(el('div', 'tutorial-head', '🎓 How to Play'));
+
+  const stage = el('div', 'tutorial-stage');
+  TUTORIAL_PAGES.forEach((p, i) => {
+    const page = el('div', `tutorial-page${i === 0 ? ' active' : ''}`);
+    page.append(el('div', 'tutorial-ico', p.icon));
+    page.append(el('div', 'tutorial-title', p.title));
+    const body = el('div', 'tutorial-lines');
+    p.lines.forEach((line) => body.append(el('p', '', line)));
+    page.append(body);
+    stage.append(page);
+  });
+  modal.append(stage);
+
+  const dots = el('div', 'tutorial-dots');
+  TUTORIAL_PAGES.forEach((_p, i) => {
+    const dot = el('span', `tutorial-dot${i === 0 ? ' on' : ''}`);
+    dots.append(dot);
+  });
+  modal.append(dots);
+
+  const nav = el('div', 'tutorial-nav');
+  const back = el('button', 'wood-btn small', '← Back') as HTMLButtonElement;
+  const skip = el('button', 'tutorial-skip', 'skip');
+  const next = el('button', 'wood-btn', 'Next →') as HTMLButtonElement;
+  nav.append(back, skip, next);
+  modal.append(nav);
+
+  let idx = 0;
+  const pages = Array.from(stage.querySelectorAll('.tutorial-page'));
+  const dotEls = Array.from(dots.querySelectorAll('.tutorial-dot'));
+  const render = (): void => {
+    pages.forEach((p, i) => p.classList.toggle('active', i === idx));
+    dotEls.forEach((d, i) => d.classList.toggle('on', i === idx));
+    back.style.visibility = idx === 0 ? 'hidden' : 'visible';
+    next.textContent = idx === TUTORIAL_PAGES.length - 1 ? finishLabel : 'Next →';
+  };
+  back.onclick = () => { if (idx > 0) { idx--; render(); } };
+  next.onclick = () => {
+    if (idx < TUTORIAL_PAGES.length - 1) { idx++; render(); }
+    else onClose();
+  };
+  skip.onclick = onClose;
+  render();
+
+  wrap.append(modal);
+  return wrap;
 }
 
 /** Fallback room icon when a level has no bespoke LEVEL_ICONS entry. */

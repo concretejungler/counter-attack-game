@@ -2,7 +2,7 @@ import type { ContentDB, LevelDef, PendingChoice, SimState, Tower } from '../sim
 import type { SaveData } from '../meta/save';
 import { Hud, InspectPanel, type HudCallbacks, type InspectCallbacks } from './hud';
 import {
-  buildJournal, buildJunkDrawer, buildLevelSelect, buildRecap, buildSettings, buildTitle, type RecapInfo,
+  buildJournal, buildJunkDrawer, buildLevelSelect, buildRecap, buildSettings, buildTitle, buildTutorial, type RecapInfo,
   buildInfestationMap, buildInfestationDraft, buildGarageSale, buildRunOver, type RunOverInfo,
 } from './screens';
 import { MUTATION_ICONS } from './icons';
@@ -155,8 +155,21 @@ export class UI {
       () => this.cb.onInfestationStart(),
       () => this.cb.onDailyChoreStart(),
       () => this.cb.onMagnetsSolved(),
+      () => this.showTutorial(() => {}),
     );
     this.root.append(this.screenEl);
+  }
+
+  /** The "How to Play" flip-book. Shown as a modal over the current screen; `onDone` runs after
+   *  it closes (a no-op from the title button — the title is already behind it; the level start
+   *  from the first-level gate). `finishLabel` sets the last page's button ("Got it!" vs "Let's Play!"). */
+  showTutorial(onDone: () => void, finishLabel?: string): void {
+    this.closeModal();
+    this.modalEl = buildTutorial(() => {
+      this.closeModal();
+      onDone();
+    }, finishLabel);
+    this.root.append(this.modalEl);
   }
 
   showLevelSelect(): void {

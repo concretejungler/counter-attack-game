@@ -1043,6 +1043,52 @@ export class GameRenderer {
     this.pathView.setVisible(on);
   }
 
+  private topDownActive = false;
+  private camSnapshot: import('./camera').CamSnapshot | null = null;
+
+  /** "See everything" button: first press frames the whole board from near-overhead so nothing is
+   *  off-screen; second press restores the previous framing. Returns the new active state. */
+  toggleTopDown(): boolean {
+    if (this.topDownActive) {
+      if (this.camSnapshot) this.rig.restore(this.camSnapshot);
+      this.topDownActive = false;
+      return false;
+    }
+    this.camSnapshot = this.rig.snapshot();
+    this.frameOverview();
+    this.topDownActive = true;
+    return true;
+  }
+
+  /** Any manual camera move (orbit/zoom) leaves the top-down snapshot stale — clear the active
+   *  flag so the next button press re-frames instead of "restoring" to a now-wrong pose. */
+  noteCameraMovedManually(): void {
+    this.topDownActive = false;
+  }
+
+  /** Compute a near-overhead framing that fits every surface (floor + shelves) into view for the
+   *  current aspect, then point the rig at the board centre. */
+  private frameOverview(): void {
+    if (!this.level) return;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, maxY = 0;
+    for (const s of this.level.surfaces) {
+      minX = Math.min(minX, s.origin.x);
+      maxX = Math.max(maxX, s.origin.x + s.cols);
+      minZ = Math.min(minZ, s.origin.z);
+      maxZ = Math.max(maxZ, s.origin.z + s.rows);
+      maxY = Math.max(maxY, s.origin.y);
+    }
+    const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+    const wx = maxX - minX, wz = maxZ - minZ;
+    const cam = this.rig.camera;
+    const tanHalfV = Math.tan((cam.fov * Math.PI) / 180 / 2);
+    const distV = wz / 2 / tanHalfV;
+    const distH = wx / 2 / (tanHalfV * cam.aspect);
+    const dist = Math.max(distV, distH) * 1.28; // margin for the slight tilt + shelf height + perspective
+    const center = new THREE.Vector3(cx, maxY * 0.5, cz);
+    this.rig.overview(center, 0.16, dist, 0);
+  }
+
   drawCallCount(): number {
     return this.renderer.info.render.calls;
   }

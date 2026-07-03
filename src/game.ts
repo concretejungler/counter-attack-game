@@ -125,6 +125,7 @@ export class Game {
       },
       onPause: () => this.togglePause(),
       onPhotoMode: () => this.togglePhotoMode(),
+      onTopDown: () => this.toggleTopDown(),
       onUpgrade: (id) => {
         this.sim?.command({ type: 'upgradeTower', id });
         this.refreshInspectSoon();
@@ -149,7 +150,17 @@ export class Game {
         this.refreshInspectSoon();
       },
       onClose: () => this.closeInspect(),
-      onStartLevel: (id) => this.startLevel(id),
+      onStartLevel: (id) => {
+        // First time a player launches any level, run the How-to-Play flip-book first (once —
+        // tracked in seenNotes, replayable anytime from the title's "How to Play" button).
+        if (!this.save.seenNotes.includes('how-to-play')) {
+          this.save.seenNotes.push('how-to-play');
+          persistSave(this.save);
+          this.ui.showTutorial(() => this.startLevel(id), "Let's Play! →");
+        } else {
+          this.startLevel(id);
+        }
+      },
       onBackToTitle: () => this.showTitle(),
       onToLevels: () => this.showLevels(),
       onPickMutation: (id) => {
@@ -1395,6 +1406,22 @@ export class Game {
     else this.ui.closeModal();
   }
 
+  /** Overhead "see everything" camera toggle — HUD button + V key. First press frames the whole
+   *  board from near-overhead so nothing sits off-screen; second press restores the prior framing. */
+  private toggleTopDown(): void {
+    if (!this.sim) return;
+    const active = this.renderer.toggleTopDown();
+    this.ui.hud?.setTopDownActive(active);
+    this.sfx.play('ui-click');
+  }
+
+  /** Called from the orbit/zoom input handlers: a manual camera move invalidates the top-down
+   *  snapshot, so drop the active highlight (the next button press re-frames from scratch). */
+  private noteCameraMovedManually(): void {
+    this.renderer.noteCameraMovedManually();
+    this.ui.hud?.setTopDownActive(false);
+  }
+
   // ---------- PHOTO MODE (GAME-PROMPT §18) ----------
   /** Free-orbit camera + tilt-shift slider + hide-HUD toggle + PNG snap. Reuses the existing
    *  pause (sim stops ticking) but is its own mode on top: entering always pauses (remembering
@@ -1687,6 +1714,7 @@ export class Game {
           twoFingerMidY = mid.y;
           const span = touchSpan();
           this.renderer.rig.pinchZoom(pinchBaseDist, span / pinchBaseSpan);
+          this.noteCameraMovedManually();
         }
         return;
       }
@@ -1695,6 +1723,7 @@ export class Game {
         this.renderer.rig.orbit(e.clientX - lastX, e.clientY - lastY);
         lastX = e.clientX;
         lastY = e.clientY;
+        this.noteCameraMovedManually();
       }
       // long-press cancels if the finger wanders too far before the timer fires
       if (longPressTimer !== null && this.gesture) {
@@ -1812,6 +1841,7 @@ export class Game {
     canvas.addEventListener('wheel', (e) => {
       this.noteInput();
       this.renderer.rig.zoom(e.deltaY);
+      this.noteCameraMovedManually();
       e.preventDefault();
     }, { passive: false });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -1852,6 +1882,8 @@ export class Game {
         // PHOTO MODE (§18): P toggles Photo Mode when a level is loaded; plain pause stays on
         // Escape/the HUD pause button — Photo Mode is a superset (it pauses AND frees the camera).
         if (this.sim) this.togglePhotoMode();
+      } else if (e.key === 'v' || e.key === 'V') {
+        if (this.sim && !this.photoMode) this.toggleTopDown();
       }
     });
   }
@@ -2061,6 +2093,18 @@ export class Game {
         // reads exactly as the player sees it, just zoomed in on the cursor.
         this.renderer.rig.pose(-Math.PI * 0.22, 0.92, 4.0);
         this.renderer.rig.target.set(7, 1.4, 7);
+        return;
+      }
+      // QA: the How-to-Play flip-book over the title.
+      case 'tutorial': {
+        this.showTitle();
+        this.ui.showTutorial(() => {});
+        return;
+      }
+      // QA: the overhead "see everything" framing over a staged battle.
+      case 'topdown': {
+        this.demo('battle');
+        this.toggleTopDown();
         return;
       }
       // ---------- P4 easter egg / photo mode demo scenes ----------

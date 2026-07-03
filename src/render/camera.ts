@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+/** A frozen camera pose, for save/restore around the top-down "see everything" toggle. */
+export interface CamSnapshot { yaw: number; pitch: number; dist: number; tx: number; ty: number; tz: number; }
+
 /** Orbitable diorama camera: constrained polar angle, smooth zoom, gentle inertia. */
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
@@ -32,6 +35,31 @@ export class CameraRig {
     this.pitch = THREE.MathUtils.clamp(pitch, 0.3, 1.3);
     this.dist = dist;
     this.targetDist = dist;
+  }
+
+  /** Snapshot the current framing (used to restore after the top-down "see everything" view). */
+  snapshot(): CamSnapshot {
+    return { yaw: this.yaw, pitch: this.pitch, dist: this.targetDist, tx: this.target.x, ty: this.target.y, tz: this.target.z };
+  }
+
+  /** Restore a snapshot, easing the distance in via the normal update lerp. */
+  restore(s: CamSnapshot): void {
+    this.yaw = s.yaw;
+    this.pitch = s.pitch;
+    this.targetDist = s.dist;
+    this.target.set(s.tx, s.ty, s.tz);
+    this.yawV = 0;
+  }
+
+  /** Snap to a near-overhead "see everything" framing. Bypasses the orbit pitch clamp so it can
+   *  go steeper than dragging allows; the next orbit()/zoom() re-enters the normal clamped range. */
+  overview(center: THREE.Vector3, pitch: number, dist: number, yaw: number): void {
+    this.target.copy(center);
+    this.yaw = yaw;
+    this.pitch = pitch;
+    this.dist = dist;
+    this.targetDist = dist;
+    this.yawV = 0;
   }
 
   orbit(dx: number, dy: number): void {

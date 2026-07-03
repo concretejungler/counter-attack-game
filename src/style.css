@@ -780,10 +780,12 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
 }
 .egg-timer small { font-size: 10px; font-weight: normal; }
 
-/* bottom corkboard build bar */
+/* bottom corkboard build bar. scale(0.8): the whole dock renders 20% smaller than its natural
+   size (kept bottom-pinned + centred via the origin); the mobile media query resets transform. */
 .build-bar {
   position: absolute; bottom: 0; left: 50%;
-  transform: translateX(-50%);
+  transform-origin: bottom center;
+  transform: translateX(-50%) scale(0.8);
   background:
     radial-gradient(circle at 13% 23%, rgba(110, 68, 38, 0.25) 1.5px, transparent 2.5px),
     radial-gradient(circle at 67% 51%, rgba(110, 68, 38, 0.22) 1.5px, transparent 2.5px),
@@ -860,8 +862,11 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
   font-size: 10px; font-weight: bold; color: #6e5a14;
 }
 
-/* speed/pause cluster */
-.speed-cluster { position: absolute; right: 14px; bottom: 12px; display: flex; gap: 6px; }
+/* speed/pause cluster — scaled 20% down to match the build bar (see .build-bar note). */
+.speed-cluster {
+  position: absolute; right: 14px; bottom: 12px; display: flex; gap: 6px;
+  transform: scale(0.8); transform-origin: bottom right;
+}
 .speed-btn {
   width: 42px; height: 42px;
   background: var(--paper);
@@ -872,6 +877,7 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
 }
 .speed-btn.active { background: var(--butter); }
 .speed-btn.photo-btn { font-size: 18px; }
+.speed-btn.topdown-btn { font-size: 21px; line-height: 1; }
 
 /* ---------- Photo Mode (GAME-PROMPT §18) ---------- */
 .photo-panel {
@@ -947,6 +953,45 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
 }
 .paper-modal h2 { font-size: 28px; margin-bottom: 4px; }
 .paper-modal .sub { font-size: 14px; color: #7a6a55; margin-bottom: 14px; }
+
+/* ---------- How-to-Play tutorial flip-book ---------- */
+.tutorial-modal {
+  width: min(560px, 92vw);
+  text-align: center;
+  display: flex; flex-direction: column;
+}
+.tutorial-head {
+  font-family: var(--font-hand);
+  font-size: 26px; font-weight: bold;
+  margin-bottom: 8px;
+}
+.tutorial-stage {
+  position: relative;
+  min-height: clamp(220px, 42vh, 320px);
+  display: flex; align-items: center; justify-content: center;
+}
+.tutorial-page { display: none; flex-direction: column; align-items: center; width: 100%; }
+.tutorial-page.active { display: flex; animation: tutorial-in 0.26s ease-out; }
+@keyframes tutorial-in { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+.tutorial-ico {
+  font-size: 62px; line-height: 1; margin-bottom: 6px;
+  filter: drop-shadow(0 4px 5px rgba(0,0,0,0.22));
+}
+.tutorial-title {
+  font-family: var(--font-hand);
+  font-size: 24px; font-weight: bold;
+  color: var(--cherry);
+  margin-bottom: 12px;
+}
+.tutorial-lines { max-width: 440px; }
+.tutorial-lines p { font-size: 15px; line-height: 1.5; margin: 0 0 10px; color: #4a4038; }
+.tutorial-lines b { color: var(--ink); font-weight: bold; }
+.tutorial-dots { display: flex; gap: 7px; justify-content: center; margin: 4px 0 14px; }
+.tutorial-dot { width: 9px; height: 9px; border-radius: 50%; background: #d8cbb4; transition: background 0.2s, transform 0.2s; }
+.tutorial-dot.on { background: var(--cherry); transform: scale(1.25); }
+.tutorial-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tutorial-nav .wood-btn { min-width: 96px; }
+.tutorial-skip { font-family: var(--font-label); font-size: 13px; color: #9a8c78; text-decoration: underline; }
 
 /* mutation draft */
 .mutation-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
@@ -1700,6 +1745,7 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
     right: 4px;
     bottom: calc(4px + env(safe-area-inset-bottom));
     left: auto;
+    transform: none;
     display: grid;
     grid-template-columns: repeat(2, 38px);
     gap: 3px;

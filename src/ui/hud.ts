@@ -11,6 +11,8 @@ export interface HudCallbacks {
   onPause(): void;
   /** PHOTO MODE (§18): the small camera button in the HUD corner. */
   onPhotoMode(): void;
+  /** Overhead "see everything" camera toggle. */
+  onTopDown(): void;
 }
 
 const el = (tag: string, cls = '', html = ''): HTMLElement => {
@@ -39,6 +41,7 @@ export class Hud {
   private clutterRow!: HTMLElement;
   private spellBtns = new Map<string, HTMLElement>();
   private speedBtns: HTMLButtonElement[] = [];
+  private topDownB!: HTMLButtonElement;
   selectedCard: { kind: 'tower' | 'clutter' | 'spell'; id: string } | null = null;
 
   constructor(
@@ -125,6 +128,10 @@ export class Hud {
     const pauseB = el('button', 'speed-btn', '⏸') as HTMLButtonElement;
     pauseB.onclick = () => this.cb.onPause();
     speed.append(pauseB);
+    this.topDownB = el('button', 'speed-btn topdown-btn', '⛶') as HTMLButtonElement;
+    this.topDownB.title = 'Overhead view — fit everything on screen (V)';
+    this.topDownB.onclick = () => this.cb.onTopDown();
+    speed.append(this.topDownB);
     const photoB = el('button', 'speed-btn photo-btn', '📸') as HTMLButtonElement;
     photoB.title = 'Photo Mode (P)';
     photoB.onclick = () => this.cb.onPhotoMode();
@@ -215,6 +222,11 @@ export class Hud {
     }
 
     this.speedBtns.forEach((b, i) => b.classList.toggle('active', speedMult === i + 1));
+  }
+
+  /** Reflect the renderer's top-down toggle on the overhead button. */
+  setTopDownActive(on: boolean): void {
+    this.topDownB.classList.toggle('active', on);
   }
 
   showForecast(text: string): void {
