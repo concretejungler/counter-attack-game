@@ -14,8 +14,13 @@
   --fridge: #e9ecef;
   --fridge-dark: #c8ccd2;
   --shadow: rgba(46, 38, 32, 0.4);
-  --font-hand: "Segoe Print", "Comic Sans MS", "Chalkboard SE", cursive;
-  --font-label: "Verdana", "Segoe UI", sans-serif;
+  /* ONE playful-but-readable family everywhere. Leads with Comic Sans MS — the most widely
+     installed rounded/friendly face (Windows + macOS) and far more legible than the old
+     "Segoe Print" first choice — then platform-equivalent friendlies, ending in a clean sans so
+     even a device with none of them stays readable. --font-label is aliased to it so the UI never
+     switches families between elements (labels/numbers used to fall back to Verdana). */
+  --font-hand: "Comic Sans MS", "Chalkboard SE", "Comic Neue", "Segoe Print", system-ui, sans-serif;
+  --font-label: var(--font-hand);
   /* ACCESSIBILITY SUITE (§23): UI scale slider, 0.85..1.3, default 1. Set from game.ts
      applyAccessibilitySettings(). Consumed via `zoom` on #ui below — zoom (not transform:scale)
      so layout AND hit-testing scale together; every absolutely-positioned HUD/menu rule in this

@@ -2146,6 +2146,14 @@ export class Game {
         this.toggleTopDown();
         return;
       }
+      // QA: orbit behind the north/west walls to verify they fade to see-through.
+      case 'wallfade': {
+        this.startLevel('kitchen-1', 1337);
+        this.fastForward(2);
+        this.renderer.rig.pose(Math.PI * 0.92, 0.82, 17);
+        this.renderer.rig.target.set(7, 1, 5);
+        return;
+      }
       // QA: a field of ground crumbs to eyeball the glow.
       case 'crumbs': {
         this.startLevel('kitchen-1', 1337);

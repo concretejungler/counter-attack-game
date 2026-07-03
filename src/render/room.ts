@@ -246,13 +246,21 @@ function buildWalls(W: number, D: number, TP: ThemePalette): THREE.Group {
   const wallMat = toonMat(TP.wallCream);
   const trimMat = toonMat(TP.wallTrim);
 
-  // back wall (north, z=0) and left wall (west, x=0) — diorama style, two walls only
-  const back = new THREE.Mesh(new THREE.BoxGeometry(W + 1, wallH, 0.4), wallMat);
+  // back wall (north, z=0) and left wall (west, x=0) — diorama style, two walls only.
+  // Each gets its OWN cloned material + a fadeWall tag so renderer.ts can turn it translucent when
+  // the camera orbits around to its outside (where it would otherwise block the whole board). The
+  // interior of both walls is on the +axis side, so "camera coord > wall coord" == looking from
+  // inside == solid. Kept transparent-flagged always so no per-frame material recompile is needed.
+  const back = new THREE.Mesh(new THREE.BoxGeometry(W + 1, wallH, 0.4), wallMat.clone());
   back.position.set(W / 2, wallH / 2, -0.2);
   back.receiveShadow = true;
-  const left = new THREE.Mesh(new THREE.BoxGeometry(0.4, wallH, D + 1), wallMat);
+  back.material.transparent = true;
+  back.userData.fadeWall = { axis: 'z', coord: back.position.z };
+  const left = new THREE.Mesh(new THREE.BoxGeometry(0.4, wallH, D + 1), wallMat.clone());
   left.position.set(-0.2, wallH / 2, D / 2);
   left.receiveShadow = true;
+  left.material.transparent = true;
+  left.userData.fadeWall = { axis: 'x', coord: left.position.x };
   g.add(back, left);
 
   // baseboards

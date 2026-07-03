@@ -80,6 +80,7 @@ export class GameRenderer {
   private oneShots: { obj: THREE.Object3D; t: number; anim: (obj: THREE.Object3D, t: number) => void }[] = [];
   private time = 0;
   private burnerRings: THREE.Object3D[] = [];
+  private fadeWalls: THREE.Mesh[] = [];
   // ACCESSIBILITY SUITE (GAME-PROMPT §23): 0..1 multipliers set from game.ts via
   // applyAccessibilitySettings(), read by every camera-shake trigger below and by the
   // full-screen flash pulse hook (onFlashPulse). Default to full intensity so renderer
@@ -273,8 +274,10 @@ export class GameRenderer {
     this.roomGroup = buildRoom(level, (sunflower) => this.eggs.registerSunflower(sunflower));
     this.scene.add(this.roomGroup);
     this.burnerRings = [];
+    this.fadeWalls = [];
     this.roomGroup.traverse((o) => {
       if (o.userData.burner) this.burnerRings.push(o);
+      if (o.userData.fadeWall) this.fadeWalls.push(o as THREE.Mesh);
     });
 
     // theme-tinted background/fog — matches the backdrop dome so its bottom edge (if ever visible
@@ -814,6 +817,21 @@ export class GameRenderer {
     this.burnerRings.forEach((b, i) => {
       b.scale.setScalar(1 + Math.sin(this.time * 3 + i) * 0.05);
     });
+
+    // see-through walls: fade each diorama wall as the camera orbits to its outside so it never
+    // blocks the board. dot > 0 = camera on the interior (+axis) side = solid; dot < 0 = outside.
+    if (this.fadeWalls.length > 0) {
+      const cam = this.rig.camera.position;
+      for (const w of this.fadeWalls) {
+        const f = w.userData.fadeWall as { axis: 'x' | 'z'; coord: number };
+        const dot = (f.axis === 'x' ? cam.x : cam.z) - f.coord;
+        // solid until the camera is ~1 unit past the wall, then ease to a faint ghost over 3 units.
+        let t = (dot + 4) / 3; // maps dot -4 -> 0, dot -1 -> 1
+        t = Math.max(0, Math.min(1, t));
+        t = t * t * (3 - 2 * t);
+        (w.material as THREE.MeshToonMaterial).opacity = 0.16 + 0.84 * t;
+      }
+    }
 
     this.syncShadowBlobs();
 

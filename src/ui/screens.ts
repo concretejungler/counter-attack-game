@@ -71,12 +71,12 @@ export function buildTitle(
   infest.style.setProperty('--tilt', '0.8deg');
   if (infestUnlocked) infest.onclick = onInfestation;
   const journalPct = critterdexCompletionPct(save);
-  const journal = el('button', 'fridge-note magnet-sticker', `📔 my journal!! <small>${journalPct}%</small>`);
+  const journal = el('button', 'fridge-note magnet-sticker', `📔 My Journal <small>${journalPct}%</small>`);
   journal.style.setProperty('--pin', '#d8a020');
   journal.style.setProperty('--tilt', '1.4deg');
   journal.onclick = onJournal;
   const bp = currentBP(save);
-  const drawer = el('button', 'fridge-note magnet-sticker', `🗄️ the junk drawer <small>${bp} 🧁 BP</small>`);
+  const drawer = el('button', 'fridge-note magnet-sticker', `🗄️ The Junk Drawer <small>${bp} 🧁 BP</small>`);
   drawer.style.setProperty('--pin', '#8a4a9c');
   drawer.style.setProperty('--tilt', '-0.6deg');
   drawer.onclick = onJunkDrawer;
