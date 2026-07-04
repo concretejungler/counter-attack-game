@@ -3,9 +3,9 @@ import { Game, exposeDebug } from './game';
 import type { RendererKind } from './render/view';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
-// Renderer switch: `?renderer=2d` selects the (WIP) Canvas-2D backend, anything else = three.js.
-// Default stays '3d' until packet P2-I integrates the 2D renderer.
-const rendererKind: RendererKind = new URLSearchParams(location.search).get('renderer') === '2d' ? '2d' : '3d';
+// Renderer switch: the game is 2D by default (Canvas-2D). `?renderer=3d` selects the three.js
+// backend as the debug fallback; anything else (or no param) stays on the 2D renderer.
+const rendererKind: RendererKind = new URLSearchParams(location.search).get('renderer') === '3d' ? '3d' : '2d';
 const game = new Game(canvas, rendererKind);
 exposeDebug(game);
 game.showTitle();

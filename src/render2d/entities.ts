@@ -45,6 +45,12 @@ interface CritterRS {
   tumble: number;         // fall/flung rotation
   boss: boolean;
   seen: boolean;
+  // cached sprite canvas + the discriminants it was resolved for, so the hot loop skips getSprite()
+  // (and its key-string allocation) on the ~85% of frames where none of these changed.
+  spr: HTMLCanvasElement | null;
+  sprFrame: number;
+  sprShiny: boolean;
+  sprBox: number;
 }
 
 interface Particle {
@@ -63,14 +69,25 @@ export class EntityLayer {
   private particles: Particle[] = [];
   private time = 0;
   private dpr = dprCap();
+  /** Sprites/marks stamped in the last frame() — surfaced by Renderer2D.drawCallCount() for QA. */
+  private stamped = 0;
 
   // reusable draw scratch (no per-frame allocation)
   private _ground: CritterRS[] = [];
   private _fliers: CritterRS[] = [];
   private _towers: Tower[] = [];
+  // reused sprite-opts objects — getSprite() reads their fields synchronously (and only calls the
+  // painter on a cache miss), so a single mutable object per kind is safe and avoids 300+ allocs/frame.
+  private _critterOpts: { variant: string; shiny: boolean } = { variant: '', shiny: false };
+  private _towerOpts: { variant: string; tier: number } = { variant: '', tier: 0 };
 
   build(content: ContentDB): void {
     this.content = content;
+  }
+
+  /** Count of entity sprites/marks drawn last frame (crumbs + critters + towers + projectiles). */
+  drawCount(): number {
+    return this.stamped;
   }
 
   reset(): void {
@@ -88,6 +105,7 @@ export class EntityLayer {
   frame(ctx: CanvasRenderingContext2D, cam: Camera2D, state: SimState, dt: number): void {
     this.dpr = dprCap();
     this.time += dt;
+    this.stamped = 0;
     this.updateCritters(state, dt);
 
     this.drawCrumbs(ctx, cam, state);
@@ -132,6 +150,7 @@ export class EntityLayer {
           x: c.pos.x, z: c.pos.z, lastX: c.pos.x, faceSign: 1,
           hp: c.hp, flash: 0, scale: 0.4, bob: 0, tumble: 0,
           boss: !!def?.boss || (def?.size ?? 0) >= 1, seen: true,
+          spr: null, sprFrame: -1, sprShiny: false, sprBox: 0,
         };
         this.critters.set(c.id, rs);
       }
@@ -174,7 +193,16 @@ export class EntityLayer {
     drawPx = Math.max(rs.boss ? 40 : 14, Math.min(260, drawPx));
 
     const frame = Math.floor(rs.bob) & 1;
-    const sprite = getSprite('critter', rs.def, box, frame, { variant: rs.boss ? 'boss' : '', shiny: c.shiny });
+    // reuse the cached canvas unless a discriminant changed (walk frame flips only every few frames)
+    if (rs.spr === null || rs.sprFrame !== frame || rs.sprShiny !== c.shiny || rs.sprBox !== box) {
+      this._critterOpts.variant = rs.boss ? 'boss' : '';
+      this._critterOpts.shiny = c.shiny;
+      rs.spr = getSprite('critter', rs.def, box, frame, this._critterOpts);
+      rs.sprFrame = frame;
+      rs.sprShiny = c.shiny;
+      rs.sprBox = box;
+    }
+    const sprite = rs.spr;
     if (!sprite) return;
 
     const sx = cam.worldToScreenX(rs.x);
@@ -202,6 +230,7 @@ export class EntityLayer {
       ctx.setTransform(dpr * sxs * rs.faceSign, 0, 0, dpr * sys, dpr * sx, dpr * sy);
     }
     ctx.drawImage(sprite, -half, -half, drawPx, drawPx);
+    this.stamped++;
 
     if (hidden) ctx.globalAlpha = 1;
 
@@ -308,8 +337,9 @@ export class EntityLayer {
   private drawTower(ctx: CanvasRenderingContext2D, cam: Camera2D, t: Tower): void {
     const def = this.content.towers[t.def];
     if (!def) return;
-    const variant = t.branch ? 'ascend' : '';
-    const sprite = getSprite('tower', t.def, TOWER_BOX, 0, { variant, tier: t.tier });
+    this._towerOpts.variant = t.branch ? 'ascend' : '';
+    this._towerOpts.tier = t.tier;
+    const sprite = getSprite('tower', t.def, TOWER_BOX, 0, this._towerOpts);
     if (!sprite) return;
     const sx = cam.worldToScreenX(t.pos.x);
     const sy = cam.worldToScreenY(t.pos.z);
@@ -321,6 +351,7 @@ export class EntityLayer {
     if (down) ctx.globalAlpha = 0.55;
     ctx.setTransform(dpr, 0, 0, dpr, dpr * sx, dpr * (sy + idleBob));
     ctx.drawImage(sprite, -half, -half, drawPx, drawPx);
+    this.stamped++;
     if (down) ctx.globalAlpha = 1;
     // morale sparkle
     if (t.moraleT > 0) {
@@ -361,6 +392,7 @@ export class EntityLayer {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     const pulse = 0.5 + 0.5 * Math.sin(this.time * 4);
     for (const cr of state.crumbEnts.values()) {
+      this.stamped++;
       const sx = cam.worldToScreenX(cr.pos.x);
       const sy = cam.worldToScreenY(cr.pos.z);
       const r = Math.max(2.5, cam.scale * (0.09 + Math.min(0.14, cr.value / 400)));
@@ -389,6 +421,7 @@ export class EntityLayer {
     if (state.projectiles.length === 0) return;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     for (const p of state.projectiles) {
+      this.stamped++;
       const sx = cam.worldToScreenX(p.pos.x);
       const sy = cam.worldToScreenY(p.pos.z);
       const col = dmgTypeColor(p.dmgType);

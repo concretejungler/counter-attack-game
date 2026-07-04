@@ -14,8 +14,7 @@
  * (see grid.ts worldOf/tileOfWorld).
  */
 
-import type { LevelDef, SimState, SurfaceDef, TileRef, ContentDB } from '../sim/types';
-import type { Grid } from '../sim/grid';
+import type { LevelDef, SimState, SurfaceDef, TileRef, Vec3, ContentDB } from '../sim/types';
 import type { ThemePalette } from '../render/palette';
 import { themePalette } from '../render/palette';
 import { dprCap } from '../core/device';
@@ -37,7 +36,6 @@ function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
 
 export class BoardLayer {
   private level!: LevelDef;
-  private grid!: Grid;
   private content!: ContentDB;
   private pal!: ThemePalette;
   private surfaces: SurfaceDef[] = [];
@@ -78,9 +76,15 @@ export class BoardLayer {
     this.dirty = true;
   }
 
+  /** Center of a tile in world coordinates (mirrors sim/grid.ts worldOf — a pure function of the
+   *  level surfaces, so the 2D board never needs the live sim `Grid`). */
+  private worldOf(t: TileRef): Vec3 {
+    const o = this.surfaces[t.s].origin;
+    return { x: o.x + t.c + 0.5, y: o.y, z: o.z + t.r + 0.5 };
+  }
+
   /** Re-render the static board into the offscreen canvas iff the camera moved or board changed. */
-  sync(cam: Camera2D, state: SimState, grid: Grid): void {
-    this.grid = grid;
+  sync(cam: Camera2D, state: SimState): void {
     const sig = `${state.clutter.size}:${state.cakeSlices}:${this.clutterHpSum(state)}`;
     const moved =
       cam.scale !== this.lastScale ||
@@ -308,7 +312,7 @@ export class BoardLayer {
   // ---- cake --------------------------------------------------------------
   private drawCake(ctx: CanvasRenderingContext2D, cam: Camera2D, state: SimState): void {
     const t = this.level.cakeTile;
-    const w = this.grid.worldOf(t);
+    const w = this.worldOf(t);
     const cx = cam.worldToScreenX(w.x);
     const cy = cam.worldToScreenY(w.z);
     const R = cam.scale * 0.62;
@@ -379,7 +383,7 @@ export class BoardLayer {
   // ---- entries / exits ---------------------------------------------------
   private drawSpawns(ctx: CanvasRenderingContext2D, cam: Camera2D): void {
     for (const sp of this.level.spawns) {
-      const w = this.grid.worldOf(sp.tile);
+      const w = this.worldOf(sp.tile);
       const cx = cam.worldToScreenX(w.x);
       const cy = cam.worldToScreenY(w.z);
       const s = cam.scale;
@@ -465,7 +469,9 @@ export class BoardLayer {
   }
 
   // ---- path preview chevrons (dynamic; called each frame by the renderer) ----
-  drawPathChevrons(ctx: CanvasRenderingContext2D, cam: Camera2D, polylines: TileRef[][], timeSec: number): void {
+  // `polylines` are WORLD-space point sequences (game.ts pushes them via setPathPolylines from the
+  // sim's own flow field) — the 2D board no longer traces the grid itself.
+  drawPathChevrons(ctx: CanvasRenderingContext2D, cam: Camera2D, polylines: readonly (readonly Vec3[])[], timeSec: number): void {
     if (!polylines.length) return;
     const s = cam.scale;
     // soft base line
@@ -474,9 +480,8 @@ export class BoardLayer {
     ctx.beginPath();
     for (const line of polylines) {
       for (let i = 0; i < line.length; i++) {
-        const w = this.grid.worldOf(line[i]);
-        const x = cam.worldToScreenX(w.x);
-        const y = cam.worldToScreenY(w.z);
+        const x = cam.worldToScreenX(line[i].x);
+        const y = cam.worldToScreenY(line[i].z);
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
     }
@@ -489,8 +494,8 @@ export class BoardLayer {
     ctx.beginPath();
     for (const line of polylines) {
       for (let i = 0; i + 1 < line.length; i++) {
-        const a = this.grid.worldOf(line[i]);
-        const b = this.grid.worldOf(line[i + 1]);
+        const a = line[i];
+        const b = line[i + 1];
         const ax = cam.worldToScreenX(a.x), ay = cam.worldToScreenY(a.z);
         const bx = cam.worldToScreenX(b.x), by = cam.worldToScreenY(b.z);
         const t = scroll;

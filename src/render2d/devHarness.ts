@@ -20,7 +20,7 @@ import type {
 } from '../sim/types';
 import { Grid } from '../sim/grid';
 import { CONTENT } from '../content/index';
-import { Renderer2D, type SimView } from './renderer2d';
+import { Renderer2D } from './renderer2d';
 
 const SIM_DT = 1 / 30;
 
@@ -192,6 +192,12 @@ export function startDevHarness(canvas: HTMLCanvasElement): HarnessHandle {
   const renderer = new Renderer2D(canvas);
   renderer.loadLevel(level, content);
   renderer.resize();
+  // push the enemy-path preview once (renderer2d no longer auto-traces the grid — game.ts/harness
+  // owns the routes now, mirroring the real integration).
+  const pathPolys = level.spawns
+    .map((sp) => grid.pathTo(sp.tile).map((t) => grid.worldOf(t)))
+    .filter((line) => line.length > 1);
+  renderer.setPathPolylines(pathPolys);
 
   // ---- population control (perf) ----
   const spawnTiles = level.spawns.map((s) => grid.worldOf(s.tile));
@@ -303,7 +309,6 @@ export function startDevHarness(canvas: HTMLCanvasElement): HarnessHandle {
   }
 
   // ---- rAF loop ----
-  const sim: SimView = { state, grid };
   let last = performance.now();
   let acc = 0;
   let running = true;
@@ -320,8 +325,10 @@ export function startDevHarness(canvas: HTMLCanvasElement): HarnessHandle {
       stepSim();
       acc -= SIM_DT * 1000;
     }
+    renderer.syncTick(state, []);
+    renderer.syncProjectiles(state);
     const t0 = performance.now();
-    renderer.frame(dtMs, sim, acc / (SIM_DT * 1000));
+    renderer.frame(dtMs / 1000);
     const ms = performance.now() - t0;
     msAvg = msAvg * 0.9 + ms * 0.1;
     raf = requestAnimationFrame(loop);

@@ -20,6 +20,10 @@
  * size, transparent bg, outlines included. opts.tier (1..3) drives tier pips;
  * opts.variant includes 'ascend' when a tier-3 branch has been chosen (golden rim).
  * Every tower must have a FACE (eyes/personality) per plan §2.
+ *
+ * REFERENCE PAINTER (P3-P) — the locked tower art pattern. See painters/GUIDE.md.
  */
+
+import './sgtSpritz'; // tower (96 box) reference
 
 export {};

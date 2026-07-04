@@ -108,7 +108,7 @@ export class Game {
   private photoWasPaused = false;
   private photoHudHidden = false;
 
-  constructor(private canvas: HTMLCanvasElement, rendererKind: RendererKind = '3d') {
+  constructor(private canvas: HTMLCanvasElement, rendererKind: RendererKind = '2d') {
     this.renderer = createGameView(canvas, rendererKind);
     this.save = loadSave();
     this.ui = new UI(CONTENT, this.save, {
@@ -2150,7 +2150,10 @@ export class Game {
       }
       // QA: verify the walls render as a constant super-transparent ghost (not fully invisible,
       // not blocking the board) regardless of camera angle — see renderer.ts's per-frame fade.
+      // 3D-only (there are no see-through walls in the top-down 2D view) — alias to `battle` in 2D
+      // so the scene still produces a stable, non-crashing frame for the screenshot harness.
       case 'wallfade': {
+        if (this.renderer.kind === '2d') { this.demo('battle'); return; }
         this.startLevel('kitchen-1', 1337);
         this.fastForward(2);
         this.renderer.poseForDemo({ yaw: Math.PI * 0.92, pitch: 0.82, dist: 17, target: { x: 7, y: 1, z: 5 } });
@@ -2160,6 +2163,24 @@ export class Game {
       case 'mobilesheet': {
         this.demo('battle');
         this.ui.hud?.openSheet();
+        return;
+      }
+      // PERF: stage ~300 live critters spread across the floor for tools/perf2d.mjs (§5 P2-I,
+      // the 4ms render budget at 300 critters). Uses debugSpawn so it's deterministic and does
+      // not depend on wave timing; run it, then setSpeed(3) + sample renderMs.
+      case 'stress': {
+        this.startLevel('kitchen-1', 1337);
+        const sim = this.sim!;
+        const floor = this.level!.surfaces[0];
+        const cols = Math.max(1, floor.cols - 2);
+        const rows = Math.max(1, floor.rows - 2);
+        const defs = ['ant-worker', 'ant-soldier', 'roach', 'fly-house', 'dust-bunny'];
+        for (let i = 0; i < 300; i++) {
+          const c = 1 + (i % cols);
+          const r = 1 + (Math.floor(i / cols) % rows);
+          sim.debugSpawn(defs[i % defs.length], { s: 0, c, r });
+        }
+        this.fastForward(2);
         return;
       }
       // QA: a field of ground crumbs to eyeball the glow.
@@ -2310,6 +2331,13 @@ export function exposeDebug(game: Game): void {
     fastForward: (ticks: number) => game.fastForward(ticks),
     levels: () => ALL_LEVELS.map((l) => l.id),
     drawCalls: () => game.renderer.drawCallCount(),
+    // Render CPU (ms) spent in the last frame — surfaced for tools/perf2d.mjs. The 2D renderer
+    // records it; the 3D renderer has no equivalent, so this reads 0 there.
+    renderMs: () => (game.renderer as { lastFrameMs?: number }).lastFrameMs ?? 0,
+    // World<->screen tooling hooks (used by pointer-driven QA/probes to aim real PointerEvents at a
+    // board location): project a world point to CSS px, and resolve a tile's world centre.
+    worldToScreen: (x: number, y: number, z: number) => game.renderer.worldToScreen(x, y, z),
+    tileWorld: (s: number, c: number, r: number) => game.sim?.grid.worldOf({ s, c, r }),
     get screenshotReady() {
       return game.screenshotReady;
     },

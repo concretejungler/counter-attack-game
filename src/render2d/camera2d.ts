@@ -121,6 +121,18 @@ export class Camera2D {
     this.clampPan();
   }
 
+  /** Absolute zoom (clamped). Used by demo poses to map a 3D camera distance onto a fit multiple. */
+  setZoom(z: number): void {
+    this.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+  }
+
+  /** Center the eye on an arbitrary world point (demo framing). Bypasses the pan clamp so a demo
+   *  can frame a board corner tightly; gameplay pans always go through panByScreen()/clampPan(). */
+  centerOn(wx: number, wz: number): void {
+    this.panX = wx - this.centerX;
+    this.panZ = wz - this.centerZ;
+  }
+
   /** True when framed at (near) fit with no manual pan — used for "top-down" vs "zoomed". */
   isAtFit(): boolean {
     return this.zoom <= ZOOM_MIN + 1e-3 && Math.abs(this.panX) < 1e-3 && Math.abs(this.panZ) < 1e-3;

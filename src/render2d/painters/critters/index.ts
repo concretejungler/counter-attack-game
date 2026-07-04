@@ -20,6 +20,13 @@
  * Painter signature (locked): (ctx, size, frame, opts) => void — draw centered in
  * a size x size box, transparent background, dark-cocoa outlines included. Use
  * opts.variant === 'boss' for boss-scale framing, opts.shiny for the golden treatment.
+ *
+ * REFERENCE PAINTERS (P3-P) — the locked art pattern the batch copies. See
+ * painters/GUIDE.md for the file template and rules.
  */
+
+import './workerAnt'; // baseline swarmer reference
+import './housefly';  // flier reference
+import './crumbKing'; // boss (128 box) reference
 
 export {};
