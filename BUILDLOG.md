@@ -2,6 +2,17 @@
 
 > Living status doc. Updated after every task. After context compaction: read this + CLAUDE.md + the plan, then continue.
 
+## 🚧 2D CONVERSION IN PROGRESS (started 2026-07-04) — plan: `docs/superpowers/plans/2026-07-04-2d-conversion.md`
+
+User directive: 3D doesn't work well on phones → the game becomes top-down 2D (Canvas 2D, zero deps, procedural sprites). Sim/content untouched throughout; 3D renderer stays as `?renderer=3d` debug fallback. Orchestrator plans/verifies/commits; Opus 4.8 + Codex agents implement.
+
+**✅ P1 landed (351/351, tsc/build/smoke green, 3D visually unchanged):**
+- **P1-A Interface Surgeon:** `src/render/view.ts` — `GameView` interface derived from real game.ts usage (lifecycle, NDC picking, camera INTENTS, ghosts, hand, path polylines, photo, egg decor). `game.ts` no longer imports three.js; `GameRenderer implements GameView` (compiler-enforced); `createView.ts` factory + `?renderer=2d|3d` param (default 3d until P2). Juice (shake/punch/bossIntro) deliberately NOT on the seam — renderers derive it from `syncTick` events.
+- **P1-B 2D Core:** full `src/render2d/` — camera2d (fit+24px margin, 1–2.5× zoom, pan/pinch), spriteCache (offscreen canvases @ dprCap, locked `SpritePainter` sig), fallback blob-with-eyes painters for EVERY critter/tower, board.ts (cached static layer: platforms w/ rims+shadows, slab clutter, depleting cake, entry markers, scrolling chevrons), entities.ts (status treatments, walk bob, poof pool, no hot-loop allocs), renderer2d.ts, vfx2d/hand2d stubs w/ hook APIs, painter registry barrels (ownership per plan §6), `tools/dev2d.html` harness. Perf: ~2ms/frame @ 316 critters, 2× DPR, unthrottled desktop.
+- **Known drift for P2-I to reconcile (expected):** frame/syncTick split, pick signatures (state arg, balloon bool-vs-id), `toggleTopDown` return, `poseForDemo` shape, `snapPhoto` Blob-vs-string, missing-in-2D: ghosts/hand passthroughs/retro/accessibility/egg decor/onFlashPulse/drawCallCount.
+
+**NEXT:** P2-I Integrator (2D becomes default, playable end-to-end w/ fallback art) → P3 art fan-out (Codex critters/towers, Opus VFX/Hand/rooms) → P4 QA sweep + deploy.
+
 ## ✅ MOBILE UX OVERHAUL (2026-07-03, 351/351 tests incl. balance): phone-first HUD rethink + menu-screen fixes + deploy tooling.
 
 User directive: "hard to play on the phone, screen is crowded — rethink how everything is shown." Design informed by a mobile-TD research pass (BTD6 / Kingdom Rush / Arknights patterns: ephemeral build menus, single cycling speed button, 2-4 quick-ability slots, whole-field default framing, no HUD over placeable tiles).

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>render2d dev harness</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #16100b; overflow: hidden;
+      font-family: "Comic Sans MS", system-ui, sans-serif; color: #f2e2c4; }
+    #bar { position: fixed; top: 0; left: 0; right: 0; height: 42px; z-index: 10;
+      display: flex; gap: 8px; align-items: center; padding: 0 10px;
+      background: rgba(20,14,9,0.72); backdrop-filter: blur(4px); }
+    #bar button { font: inherit; font-size: 13px; color: #2e2620; background: #ffd97a;
+      border: 2px solid #33211a; border-radius: 9px; padding: 4px 10px; cursor: pointer; }
+    #bar button:hover { background: #ffe9a8; }
+    #stats { margin-left: auto; font-size: 13px; opacity: 0.9; white-space: nowrap; }
+    #view { position: fixed; inset: 42px 0 0 0; }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <strong style="font-size:14px">render2d</strong>
+    <button data-n="0">showcase</button>
+    <button data-n="100">100</button>
+    <button data-n="300">300</button>
+    <button id="fit">fit</button>
+    <button id="toggle">zoom toggle</button>
+    <span id="stats">…</span>
+  </div>
+  <div id="view"><canvas id="c"></canvas></div>
+
+  <script type="module">
+    import { startDevHarness } from '../src/render2d/devHarness.ts';
+
+    const canvas = document.getElementById('c');
+    const statsEl = document.getElementById('stats');
+    const h = startDevHarness(canvas);
+
+    for (const b of document.querySelectorAll('#bar button[data-n]')) {
+      b.addEventListener('click', () => h.setCritterCount(Number(b.dataset.n)));
+    }
+    document.getElementById('fit').addEventListener('click', () => h.fit());
+    document.getElementById('toggle').addEventListener('click', () => h.toggle());
+
+    setInterval(() => {
+      const s = h.stats();
+      statsEl.textContent = `${s.critters} critters · ${s.ms.toFixed(2)} ms/frame`;
+    }, 250);
+
+    // expose for the screenshot script
+    window.__harness = h;
+  </script>
+</body>
+</html>

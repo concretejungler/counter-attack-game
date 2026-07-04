@@ -16,6 +16,8 @@ import { PAL, themePalette } from './palette';
 import { toonMat, canvasTexture } from './build';
 import { dprCap } from '../core/device';
 import { EggsController } from './eggs';
+import type { GameView, RendererKind, SurfacePick, DemoPose } from './view';
+import type { TileRef, Vec3 } from '../sim/types';
 
 interface CritterViewData {
   def: string;
@@ -51,7 +53,9 @@ interface PetViewData {
 const CRUMB_CAP = 160;
 const SHADOW_BLOB_CAP = 340; // critters (300 max, per GAME-PROMPT §22 perf target) + towers + clutter
 
-export class GameRenderer {
+export class GameRenderer implements GameView {
+  /** GameView discriminator — this is the three.js backend. */
+  readonly kind: RendererKind = '3d';
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly rig: CameraRig;
@@ -310,7 +314,9 @@ export class GameRenderer {
 
     const floor = level.surfaces[0];
     const center = new THREE.Vector3(floor.origin.x + floor.cols / 2 + 0.5, 1.3, floor.origin.z + floor.rows / 2);
-    this.rig.setBounds(center, Math.max(floor.cols, floor.rows) * 0.66);
+    const radius = Math.max(floor.cols, floor.rows) * 0.66;
+    this.defaultFraming = { center: center.clone(), radius };
+    this.rig.setBounds(center, radius);
 
     // Framing is re-established fresh per level — any prior top-down state/snapshot is stale.
     this.topDownActive = false;
@@ -952,7 +958,7 @@ export class GameRenderer {
   // ---------- picking ----------
   private raycaster = new THREE.Raycaster();
 
-  pickSurfacePoint(ndcX: number, ndcY: number): { surface: number; x: number; z: number } | null {
+  pickSurfacePoint(ndcX: number, ndcY: number): SurfacePick | null {
     this.raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.rig.camera);
     const hits = this.raycaster.intersectObjects(this.pickPlanes, false);
     // prefer the highest surface hit (counters above floor)
@@ -969,7 +975,7 @@ export class GameRenderer {
   /** Tile of the clutter block under the cursor, if any. Raycasts the actual (raised) clutter
    *  meshes so aiming at a block's top targets THAT block — the flat ground pick-plane would land
    *  a tile or two behind it (parallax), which is why placing a tower on clutter felt unreliable. */
-  pickClutterTile(ndcX: number, ndcY: number): { s: number; c: number; r: number } | null {
+  pickClutterTile(ndcX: number, ndcY: number): TileRef | null {
     const groups = [...this.clutterViews.values()];
     if (groups.length === 0) return null;
     this.raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.rig.camera);
@@ -1108,9 +1114,10 @@ export class GameRenderer {
     this.hand.setPose(pose);
   }
 
-  /** Replace the on-board enemy-path preview with fresh world-space routes (one per spawn). */
-  setEnemyPaths(paths: THREE.Vector3[][]): void {
-    this.pathView.rebuild(paths);
+  /** Replace the on-board enemy-path preview with fresh world-space routes (one per spawn).
+   *  Takes plain `{x,y,z}` points (renderer-agnostic seam) and lifts them to three vectors here. */
+  setPathPolylines(paths: readonly (readonly Vec3[])[]): void {
+    this.pathView.rebuild(paths.map((line) => line.map((p) => new THREE.Vector3(p.x, p.y, p.z))));
   }
 
   /** Toggle the enemy-path preview (settings hook). */
@@ -1120,6 +1127,73 @@ export class GameRenderer {
 
   private topDownActive = false;
   private camSnapshot: import('./camera').CamSnapshot | null = null;
+  /** Default fit-the-board framing, captured in loadLevel() and re-applied by fitBoard(). */
+  private defaultFraming: { center: THREE.Vector3; radius: number } | null = null;
+  /** Pinch baseline distance, snapshotted by beginPinch() at gesture start. */
+  private pinchBaseDist = 16;
+
+  // ---------- camera intents (GameView) — thin wrappers over CameraRig so game.ts never
+  //            touches rig/orbit/pinch internals directly (a 2D renderer maps these to pan/zoom). ----------
+  /** Drag-move: 3D orbits the diorama. */
+  panBy(dx: number, dy: number): void {
+    this.rig.orbit(dx, dy);
+  }
+
+  /** Wheel/step zoom. */
+  zoomBy(deltaY: number): void {
+    this.rig.zoom(deltaY);
+  }
+
+  /** Snapshot current zoom as the pinch baseline (hides the 3D "target distance" concept). */
+  beginPinch(): void {
+    this.pinchBaseDist = this.rig.getTargetDist();
+  }
+
+  /** Pinch zoom relative to the beginPinch() baseline. */
+  pinchZoom(spanRatio: number): void {
+    this.rig.pinchZoom(this.pinchBaseDist, spanRatio);
+  }
+
+  /** Photo Mode: relax orbit/zoom limits. */
+  setFreeOrbit(on: boolean): void {
+    this.rig.setFreeOrbit(on);
+  }
+
+  /** Fit the whole board at the default framing (drops any stale top-down snapshot state). */
+  fitBoard(): void {
+    if (this.defaultFraming) this.rig.setBounds(this.defaultFraming.center, this.defaultFraming.radius);
+    this.topDownActive = false;
+    this.camSnapshot = null;
+  }
+
+  /** Stage a fixed camera pose for a demo/screenshot scene (yaw/pitch/dist + look-at target). */
+  poseForDemo(pose: DemoPose): void {
+    this.rig.pose(pose.yaw, pose.pitch, pose.dist);
+    this.rig.target.set(pose.target.x, pose.target.y, pose.target.z);
+  }
+
+  // ---------- hand cursor (GameView) — wrap HandView so game.ts never holds the concrete hand. ----------
+  setHandTarget(x: number, y: number, z: number, surfaceY: number): void {
+    this.hand.setTarget(new THREE.Vector3(x, y, z), surfaceY);
+  }
+
+  handPress(): void {
+    this.hand.press();
+  }
+
+  // ---------- world <-> screen (GameView) ----------
+  /** Project a world point to CSS-pixel screen coords, or null if behind the camera / off far plane. */
+  worldToScreen(x: number, y: number, z: number): { x: number; y: number } | null {
+    const v = new THREE.Vector3(x, y, z).project(this.rig.camera);
+    if (v.z > 1) return null;
+    const { w, h } = this.viewportSize();
+    return { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h };
+  }
+
+  /** Release the WebGL context (GameView lifecycle; used when swapping renderers). */
+  dispose(): void {
+    this.renderer.dispose();
+  }
 
   /** "See everything" button: first press frames the whole board from near-overhead so nothing is
    *  off-screen; second press restores the previous framing. Returns the new active state. */

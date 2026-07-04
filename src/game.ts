@@ -1,10 +1,9 @@
-import { Vector3 } from 'three';
 import { DIFFICULTY, Sim, SIM_DT } from './sim/sim';
-import type { LevelDef, SimEvent, TileRef } from './sim/types';
+import type { LevelDef, SimEvent, TileRef, Vec3 } from './sim/types';
 import { rotateCells } from './sim/clutter';
 import { CONTENT, ALL_LEVELS, CAMPAIGN_LEVELS, levelById } from './content';
-import { GameRenderer } from './render/renderer';
-import type { HandPose } from './render/handView';
+import { createGameView } from './render/createView';
+import type { GameView, RendererKind, HandPose } from './render/view';
 import { UI } from './ui/ui';
 import { AudioMan } from './audio/audio';
 import { Sfx } from './audio/sfx';
@@ -50,7 +49,7 @@ const FIRE_SFX: Record<string, string> = {
 };
 
 export class Game {
-  readonly renderer: GameRenderer;
+  readonly renderer: GameView;
   readonly save: SaveData;
   readonly ui: UI;
   readonly audio = new AudioMan();
@@ -109,8 +108,8 @@ export class Game {
   private photoWasPaused = false;
   private photoHudHidden = false;
 
-  constructor(private canvas: HTMLCanvasElement) {
-    this.renderer = new GameRenderer(canvas);
+  constructor(private canvas: HTMLCanvasElement, rendererKind: RendererKind = '3d') {
+    this.renderer = createGameView(canvas, rendererKind);
     this.save = loadSave();
     this.ui = new UI(CONTENT, this.save, {
       onSelectTower: (def) => this.selectTower(def),
@@ -590,16 +589,16 @@ export class Game {
   private refreshEnemyPath(): void {
     if (!this.sim || !this.level) return;
     const grid = this.sim.grid;
-    const paths: Vector3[][] = [];
+    const paths: Vec3[][] = [];
     for (const sp of this.level.spawns) {
       const tiles = grid.pathTo(sp.tile);
       if (tiles.length < 2) continue;
       paths.push(tiles.map((t) => {
         const w = grid.worldOf(t);
-        return new Vector3(w.x, w.y, w.z);
+        return { x: w.x, y: w.y, z: w.z };
       }));
     }
-    this.renderer.setEnemyPaths(paths);
+    this.renderer.setPathPolylines(paths);
     this.lastPathVersion = grid.pathVersion;
   }
 
@@ -1445,7 +1444,7 @@ export class Game {
       }
       this.photoWasPaused = this.paused;
       this.paused = true;
-      this.renderer.rig.setFreeOrbit(true);
+      this.renderer.setFreeOrbit(true);
       this.photoMode = true;
       this.ui.showPhotoMode({
         onFocusY: (v) => this.renderer.setPhotoFocusY(v),
@@ -1457,7 +1456,7 @@ export class Game {
       this.sfx.play('ui-click');
     } else {
       this.photoMode = false;
-      this.renderer.rig.setFreeOrbit(false);
+      this.renderer.setFreeOrbit(false);
       // restore live tilt-shift defaults (matches DioramaShader's own uniform defaults)
       this.renderer.setPhotoFocusY(0.45);
       this.renderer.setPhotoBlurStrength(1.6);
@@ -1480,7 +1479,7 @@ export class Game {
   private exitPhotoModeIfOpen(): void {
     if (!this.photoMode) return;
     this.photoMode = false;
-    this.renderer.rig.setFreeOrbit(false);
+    this.renderer.setFreeOrbit(false);
     if (this.photoHudHidden) {
       this.photoHudHidden = false;
       this.ui.setHudHidden(false);
@@ -1592,7 +1591,6 @@ export class Game {
     // ---- multi-touch (two-finger orbit + pinch zoom) ----
     const activeTouches = new Map<number, { x: number; y: number }>();
     let twoFinger = false;
-    let pinchBaseDist = 16;
     let pinchBaseSpan = 1;
     let twoFingerMidX = 0;
     let twoFingerMidY = 0;
@@ -1625,7 +1623,7 @@ export class Game {
       this.renderer.setHandPose('point');
       twoFinger = true;
       pinchBaseSpan = Math.max(1, touchSpan());
-      pinchBaseDist = this.renderer.rig.getTargetDist();
+      this.renderer.beginPinch();
       const mid = touchMid();
       twoFingerMidX = mid.x;
       twoFingerMidY = mid.y;
@@ -1754,18 +1752,18 @@ export class Game {
       if (twoFinger) {
         if (activeTouches.size >= 2) {
           const mid = touchMid();
-          this.renderer.rig.orbit(mid.x - twoFingerMidX, mid.y - twoFingerMidY);
+          this.renderer.panBy(mid.x - twoFingerMidX, mid.y - twoFingerMidY);
           twoFingerMidX = mid.x;
           twoFingerMidY = mid.y;
           const span = touchSpan();
-          this.renderer.rig.pinchZoom(pinchBaseDist, span / pinchBaseSpan);
+          this.renderer.pinchZoom(span / pinchBaseSpan);
           this.noteCameraMovedManually();
         }
         return;
       }
       this.updatePointer(e);
       if (orbiting) {
-        this.renderer.rig.orbit(e.clientX - lastX, e.clientY - lastY);
+        this.renderer.panBy(e.clientX - lastX, e.clientY - lastY);
         lastX = e.clientX;
         lastY = e.clientY;
         this.noteCameraMovedManually();
@@ -1780,7 +1778,7 @@ export class Game {
       const hit = this.renderer.pickSurfacePoint(this.pointer.ndcX, this.pointer.ndcY);
       if (hit && this.level) {
         const y = this.level.surfaces[hit.surface].origin.y;
-        this.renderer.hand.setTarget(new Vector3(hit.x, y, hit.z), y);
+        this.renderer.setHandTarget(hit.x, y, hit.z, y);
       }
       // sweep while dragging
       if (this.gesture?.type === 'sweep' && this.gesture.towerHoldId === undefined && this.sim) {
@@ -1830,7 +1828,7 @@ export class Game {
         if (dist < 16 && performance.now() - g.startT < 350) {
           // tap = squash attempt
           this.sim.command({ type: 'squash', critterId: g.critterId });
-          this.renderer.hand.press();
+          this.renderer.handPress();
         } else if (dist >= 16) {
           // slingshot: pull back, fling forward
           const cr = this.sim.state.critters.get(g.critterId);
@@ -1885,7 +1883,7 @@ export class Game {
 
     canvas.addEventListener('wheel', (e) => {
       this.noteInput();
-      this.renderer.rig.zoom(e.deltaY);
+      this.renderer.zoomBy(e.deltaY);
       this.noteCameraMovedManually();
       e.preventDefault();
     }, { passive: false });
@@ -2050,8 +2048,7 @@ export class Game {
         this.fastForward(2);
         // camera placed roughly where the critter is walking TOWARD (the cake, north of spawn)
         // so its face — which turns to track its facing/walk direction — points at the lens.
-        this.renderer.rig.pose(1.0, 0.85, 4.3);
-        this.renderer.rig.target.set(7.5, 0.4, 9.1);
+        this.renderer.poseForDemo({ yaw: 1.0, pitch: 0.85, dist: 4.3, target: { x: 7.5, y: 0.4, z: 9.1 } });
         return;
       }
       case 'mutation': {
@@ -2110,8 +2107,7 @@ export class Game {
         sim.command({ type: 'placeTower', def: 'gnomeo', at: { s: 0, c: 12, r: 2 } });
         sim.command({ type: 'placeTower', def: 'stick-rick', at: { s: 0, c: 12, r: 8 } });
         this.fastForward(4);
-        this.renderer.rig.pose(0.05, 0.8, 11.5);
-        this.renderer.rig.target.set(7, 1.0, 4);
+        this.renderer.poseForDemo({ yaw: 0.05, pitch: 0.8, dist: 11.5, target: { x: 7, y: 1.0, z: 4 } });
         return;
       }
       case 'critters': {
@@ -2123,8 +2119,7 @@ export class Game {
         });
         for (const cr of sim.state.critters.values()) cr.statuses.frozen = 9999;
         this.fastForward(2);
-        this.renderer.rig.pose(0.05, 0.85, 9);
-        this.renderer.rig.target.set(7, 0.4, 7);
+        this.renderer.poseForDemo({ yaw: 0.05, pitch: 0.85, dist: 9, target: { x: 7, y: 0.4, z: 7 } });
         return;
       }
       // QA: frames the Hand cursor up close so its orientation/pose can be visually verified.
@@ -2132,12 +2127,11 @@ export class Game {
         this.startLevel('kitchen-1', 1337);
         this.fastForward(2);
         const pose = (globalThis as { __handPose?: HandPose }).__handPose ?? 'point';
-        this.renderer.hand.setTarget(new Vector3(7, 1.4, 7), 0.4);
-        this.renderer.hand.setPose(pose);
+        this.renderer.setHandTarget(7, 1.4, 7, 0.4);
+        this.renderer.setHandPose(pose);
         // match the real play camera angle (yaw/pitch from CameraRig defaults) so the hand
         // reads exactly as the player sees it, just zoomed in on the cursor.
-        this.renderer.rig.pose(-Math.PI * 0.22, 0.92, 4.0);
-        this.renderer.rig.target.set(7, 1.4, 7);
+        this.renderer.poseForDemo({ yaw: -Math.PI * 0.22, pitch: 0.92, dist: 4.0, target: { x: 7, y: 1.4, z: 7 } });
         return;
       }
       // QA: the How-to-Play flip-book over the title.
@@ -2159,8 +2153,7 @@ export class Game {
       case 'wallfade': {
         this.startLevel('kitchen-1', 1337);
         this.fastForward(2);
-        this.renderer.rig.pose(Math.PI * 0.92, 0.82, 17);
-        this.renderer.rig.target.set(7, 1, 5);
+        this.renderer.poseForDemo({ yaw: Math.PI * 0.92, pitch: 0.82, dist: 17, target: { x: 7, y: 1, z: 5 } });
         return;
       }
       // QA: the mobile bottom-sheet build bar, sprung open (sections + spell pins visible).
@@ -2182,8 +2175,7 @@ export class Game {
           }
         }
         this.fastForward(1);
-        this.renderer.rig.pose(0.05, 0.8, 11);
-        this.renderer.rig.target.set(7, 0.3, 6);
+        this.renderer.poseForDemo({ yaw: 0.05, pitch: 0.8, dist: 11, target: { x: 7, y: 0.3, z: 6 } });
         return;
       }
       // ---------- P4 easter egg / photo mode demo scenes ----------
@@ -2209,8 +2201,7 @@ export class Game {
         this.renderer.maybeSpawnBalloon(1); // force-spawn for screenshot verification
         // Balloon drift is centered on the window (see EggsController.reset) with only a ~4.5-unit
         // half-span each way, so framing on the window at a normal-ish zoom always catches it.
-        this.renderer.rig.pose(0.15, 0.85, 11);
-        this.renderer.rig.target.set(8.7, 4.4, 0.5);
+        this.renderer.poseForDemo({ yaw: 0.15, pitch: 0.85, dist: 11, target: { x: 8.7, y: 4.4, z: 0.5 } });
         return;
       }
       case 'campfire': {
@@ -2223,8 +2214,7 @@ export class Game {
         const w = sim.grid.worldOf({ s: 0, c: 4, r: 8 });
         this.renderer.spawnCampfire(w);
         this.fastForward(1);
-        this.renderer.rig.pose(0.2, 0.9, 6.5);
-        this.renderer.rig.target.set(w.x, w.y + 0.3, w.z);
+        this.renderer.poseForDemo({ yaw: 0.2, pitch: 0.9, dist: 6.5, target: { x: w.x, y: w.y + 0.3, z: w.z } });
         return;
       }
       case 'magnets': {
