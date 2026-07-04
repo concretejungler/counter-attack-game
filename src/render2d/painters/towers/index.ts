@@ -25,5 +25,33 @@
  */
 
 import './sgtSpritz'; // tower (96 box) reference
+import './alexis';
+import './audreyTheThird';
+import './bandolero';
+import './bigBlow';
+import './bubblesLaroux';
+import './countBlendula';
+import './djDecibel';
+import './eauDeNo';
+import './gnomeo';
+import './herrTickTock';
+import './jarFirefly';
+import './jarPillbug';
+import './jarQueenAnt';
+import './jarStag';
+import './jarWasp';
+import './luxInterior';
+import './mikeRowave';
+import './oldSmacky';
+import './oldStinky';
+import './professorScorch';
+import './saltimusPrime';
+import './sirToastsalot';
+import './snappyAndSons';
+import './static';
+import './stickRick';
+import './theColdfather';
+import './theDailySmack';
+import './vroomba';
 
 export {};

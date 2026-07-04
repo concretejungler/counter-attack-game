@@ -20,6 +20,7 @@ import { themePalette } from '../render/palette';
 import { dprCap } from '../core/device';
 import type { Camera2D } from './camera2d';
 import { COCOA_CSS, hex, rgba, lighten, darken, mix } from './colors';
+import { getRoomTreatment, type RoomTreatment, type RoomCtx } from './painters/rooms/index';
 
 interface WorldRect { minX: number; minZ: number; maxX: number; maxZ: number; }
 
@@ -39,6 +40,8 @@ export class BoardLayer {
   private content!: ContentDB;
   private pal!: ThemePalette;
   private surfaces: SurfaceDef[] = [];
+  /** Per-theme room treatment (P3-R): re-skins the cached board layer. null = generic look. */
+  private treatment: RoomTreatment | null = null;
 
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
@@ -57,6 +60,7 @@ export class BoardLayer {
     this.content = content;
     this.surfaces = level.surfaces;
     this.pal = themePalette(level.theme);
+    this.treatment = getRoomTreatment(level.theme);
     this.dirty = true;
     this.lastSig = '';
   }
@@ -122,15 +126,60 @@ export class BoardLayer {
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
 
-    this.drawFloor(ctx, cam);
-    this.drawPlatforms(ctx, cam);
-    this.drawSpawns(ctx, cam);
+    // P3-R additive hook: a themed treatment re-skins floor/tint/decor/platforms/markers into this
+    // same cached layer, all UNDER gameplay entities. `rc` is null (generic fallback) for any theme
+    // without a registered treatment. Draw order: floor -> mood tint -> decor props -> platforms ->
+    // spawn markers -> clutter -> cake (tint sits below decor light-pools so dark themes stay legible).
+    const rc = (this.treatment && this.surfaces[0]) ? this.makeRoomCtx(ctx, cam, state) : null;
+
+    this.drawFloor(ctx, cam, rc);
+    if (rc && this.treatment) {
+      const t = this.treatment;
+      if (t.tint) this.withFloorClip(ctx, cam, () => t.tint!(rc));
+      if (t.decor) this.withFloorClip(ctx, cam, () => t.decor!(rc));
+    }
+    this.drawPlatforms(ctx, cam, rc);
+    this.drawSpawns(ctx, cam, rc);
     this.drawClutter(ctx, cam, state);
     this.drawCake(ctx, cam, state);
   }
 
+  /** Screen-space rect (CSS px) of the floor island footprint + its corner radius. */
+  private floorScreenRect(cam: Camera2D): { x: number; y: number; w: number; h: number; rad: number } | null {
+    const floor = this.surfaces[0];
+    if (!floor) return null;
+    const r = this.surfaceRect(floor);
+    const x = cam.worldToScreenX(r.minX);
+    const y = cam.worldToScreenY(r.minZ);
+    const w = (r.maxX - r.minX) * cam.scale;
+    const h = (r.maxZ - r.minZ) * cam.scale;
+    return { x, y, w, h, rad: Math.min(w, h) * 0.03 };
+  }
+
+  /** Run `fn` clipped to the floor island (so decor/tint never bleed into the transparent margin). */
+  private withFloorClip(ctx: CanvasRenderingContext2D, cam: Camera2D, fn: () => void): void {
+    const fr = this.floorScreenRect(cam);
+    if (!fr) return;
+    ctx.save();
+    roundRectPath(ctx, fr.x, fr.y, fr.w, fr.h, fr.rad);
+    ctx.clip();
+    fn();
+    ctx.restore();
+  }
+
+  /** Assemble the treatment context once per redraw (only called when a treatment + floor exist). */
+  private makeRoomCtx(ctx: CanvasRenderingContext2D, cam: Camera2D, state: SimState): RoomCtx {
+    const floor = this.surfaces[0];
+    const fr = this.floorScreenRect(cam)!;
+    return {
+      ctx, cam, pal: this.pal, level: this.level, surfaces: this.surfaces, state,
+      floor, floorRect: { x: fr.x, y: fr.y, w: fr.w, h: fr.h }, scale: cam.scale,
+      roundRect: (a, b, c, d, e) => roundRectPath(ctx, a, b, c, d, e),
+    };
+  }
+
   // ---- floor -------------------------------------------------------------
-  private drawFloor(ctx: CanvasRenderingContext2D, cam: Camera2D): void {
+  private drawFloor(ctx: CanvasRenderingContext2D, cam: Camera2D, rc: RoomCtx | null): void {
     const floor = this.surfaces[0];
     if (!floor) return;
     const r = this.surfaceRect(floor);
@@ -146,18 +195,23 @@ export class BoardLayer {
     ctx.fill();
     ctx.clip();
 
-    // checker tiles (only if the count is sane; else leave the flat fill)
-    const cols = floor.cols, rows = floor.rows;
-    if (cols * rows <= 600) {
-      const a = hex(this.pal.floorTileA);
-      const b = hex(this.pal.floorTileB);
-      for (let c = 0; c < cols; c++) {
-        for (let rr = 0; rr < rows; rr++) {
-          if (((c + rr) & 1) === 0) continue;
-          const tx = cam.worldToScreenX(floor.origin.x + c);
-          const ty = cam.worldToScreenY(floor.origin.z + rr);
-          ctx.fillStyle = ((c + rr) & 2) === 0 ? a : b;
-          ctx.fillRect(tx, ty, cam.scale + 0.6, cam.scale + 0.6);
+    if (rc && this.treatment?.floor) {
+      // themed floor material (checker/plank/hex/brick/stone/concrete/carpet/grass...)
+      this.treatment.floor(rc);
+    } else {
+      // generic checker tiles (only if the count is sane; else leave the flat fill)
+      const cols = floor.cols, rows = floor.rows;
+      if (cols * rows <= 600) {
+        const a = hex(this.pal.floorTileA);
+        const b = hex(this.pal.floorTileB);
+        for (let c = 0; c < cols; c++) {
+          for (let rr = 0; rr < rows; rr++) {
+            if (((c + rr) & 1) === 0) continue;
+            const tx = cam.worldToScreenX(floor.origin.x + c);
+            const ty = cam.worldToScreenY(floor.origin.z + rr);
+            ctx.fillStyle = ((c + rr) & 2) === 0 ? a : b;
+            ctx.fillRect(tx, ty, cam.scale + 0.6, cam.scale + 0.6);
+          }
         }
       }
     }
@@ -180,7 +234,7 @@ export class BoardLayer {
   }
 
   // ---- raised surfaces (platform islands) --------------------------------
-  private drawPlatforms(ctx: CanvasRenderingContext2D, cam: Camera2D): void {
+  private drawPlatforms(ctx: CanvasRenderingContext2D, cam: Camera2D, rc: RoomCtx | null): void {
     const raised = this.surfaces
       .map((s, i) => ({ s, i }))
       .filter((e) => e.i > 0 || e.s.kind !== 'floor')
@@ -202,8 +256,9 @@ export class BoardLayer {
       ctx.fillStyle = rgba(0x1a120c, 0.3);
       ctx.fill();
 
-      // slab
-      const surfCol = this.surfaceColor(s);
+      // slab (treatment may re-tint the top per surface kind)
+      const themed = rc && this.treatment?.surfaceColor ? this.treatment.surfaceColor(s, this.pal) : null;
+      const surfCol = themed ?? this.surfaceColor(s);
       roundRectPath(ctx, x, y, w, h, rad);
       ctx.fillStyle = hex(surfCol);
       ctx.fill();
@@ -224,6 +279,15 @@ export class BoardLayer {
       ctx.lineTo(x + ctx.lineWidth * 0.5, y + h - rad);
       ctx.stroke();
       ctx.restore();
+
+      // themed surface dressing (counter grain, table cloth, workbench, washer top...), clipped to slab
+      if (rc && this.treatment?.platformTop) {
+        ctx.save();
+        roundRectPath(ctx, x, y, w, h, rad);
+        ctx.clip();
+        this.treatment.platformTop(rc, s, { x, y, w, h }, rad);
+        ctx.restore();
+      }
 
       // blocked cells (sink / stove / appliances) as darker metal insets
       if (s.blocked) {
@@ -381,12 +445,15 @@ export class BoardLayer {
   }
 
   // ---- entries / exits ---------------------------------------------------
-  private drawSpawns(ctx: CanvasRenderingContext2D, cam: Camera2D): void {
+  private drawSpawns(ctx: CanvasRenderingContext2D, cam: Camera2D, rc: RoomCtx | null): void {
     for (const sp of this.level.spawns) {
       const w = this.worldOf(sp.tile);
       const cx = cam.worldToScreenX(w.x);
       const cy = cam.worldToScreenY(w.z);
       const s = cam.scale;
+      // themed marker first (shower drain, manhole, garage door...); fall back to the generic set
+      const themed = !!(rc && this.treatment?.marker && this.treatment.marker(rc, sp, cx, cy, s));
+      if (!themed) {
       ctx.lineWidth = Math.max(1.5, s * 0.05);
       ctx.strokeStyle = COCOA_CSS;
       switch (sp.kind) {
@@ -459,7 +526,9 @@ export class BoardLayer {
           ctx.stroke();
         }
       }
-      // "in" arrow hint
+      } // end generic-marker fallback
+
+      // "in" arrow hint (drawn for every spawn, themed or generic)
       ctx.fillStyle = rgba(0x2e2620, 0.55);
       ctx.font = `700 ${Math.round(s * 0.24)}px "Comic Sans MS", system-ui, sans-serif`;
       ctx.textAlign = 'center';

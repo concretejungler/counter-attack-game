@@ -324,9 +324,15 @@ export class Renderer2D implements GameView {
     return best;
   }
 
-  /** Easter-egg props aren't in the 2D view yet (P3-H) — never pick. */
-  pickBalloon(_ndcX: number, _ndcY: number): boolean { return false; }
-  pickSunflower(_ndcX: number, _ndcY: number): boolean { return false; }
+  /** Easter-egg props (P3-H) — hit-test against the drifting balloon / windowsill sunflower. */
+  pickBalloon(ndcX: number, ndcY: number): boolean {
+    const p = this.ndcToScreen(ndcX, ndcY);
+    return this.hand.pickBalloon(p.x, p.y, this.cam);
+  }
+  pickSunflower(ndcX: number, ndcY: number): boolean {
+    const p = this.ndcToScreen(ndcX, ndcY);
+    return this.hand.pickSunflower(p.x, p.y, this.cam);
+  }
 
   // ---- placement ghosts --------------------------------------------------
   showGhost(cells: readonly Vec3[], valid: boolean): void {
@@ -401,7 +407,7 @@ export class Renderer2D implements GameView {
     this.hand.setWorldTarget(x, z);
   }
   handPress(): void {
-    this.hand.setPose('press');
+    this.hand.press();
   }
 
   // ---- enemy-path preview ------------------------------------------------
@@ -531,14 +537,14 @@ export class Renderer2D implements GameView {
     });
   }
 
-  // ---- easter-egg decor (§20) — harmless no-ops until P3-H brings 2D visuals ----
-  maybeSpawnBalloon(_chance?: number): void { /* no-op (P3-H) */ }
-  spawnCampfire(_at: Vec3): void { /* no-op (P3-H) */ }
-  clearCampfire(): void { /* no-op (P3-H) */ }
-  get campfireActive(): boolean { return false; }
-  eggsSwaySunflower(): void { /* no-op (P3-H) */ }
-  drapeTowelsOnTowers(): void { /* no-op (P3-H) */ }
-  clearTowels(): void { /* no-op (P3-H) */ }
+  // ---- easter-egg decor (§20) — routed to the Hand2D "& friends" props layer (P3-H) ----
+  maybeSpawnBalloon(chance?: number): void { this.hand.maybeSpawnBalloon(chance); }
+  spawnCampfire(at: Vec3): void { this.hand.spawnCampfire({ x: at.x, z: at.z }); }
+  clearCampfire(): void { this.hand.clearCampfire(); }
+  get campfireActive(): boolean { return this.hand.campfireActive; }
+  eggsSwaySunflower(): void { this.hand.swaySunflower(); }
+  drapeTowelsOnTowers(): void { this.hand.drapeTowels(); }
+  clearTowels(): void { this.hand.clearTowels(); }
 
   // ---- debug / QA --------------------------------------------------------
   drawCallCount(): number {
