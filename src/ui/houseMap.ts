@@ -33,6 +33,8 @@ export interface HouseMapCallbacks {
   onJournal: () => void;
   onJunkDrawer: () => void;
   onEndless?: () => void;
+  /** THE TOWER STORE (Addendum 2 §2) — the corner "🛒" button. */
+  onStore?: () => void;
 }
 
 const el = (tag: string, cls = '', html = ''): HTMLElement => {
@@ -317,6 +319,12 @@ export function buildHouseMap(save: SaveData, cb: HouseMapCallbacks): HTMLElemen
   drawerBtn.title = 'The Junk Drawer';
   drawerBtn.onclick = cb.onJunkDrawer;
   cluster.append(journalBtn, drawerBtn);
+  if (cb.onStore) {
+    const storeBtn = el('button', 'house2-util wood-btn small', '🛒');
+    storeBtn.title = 'Tower Store';
+    storeBtn.onclick = () => cb.onStore?.();
+    cluster.append(storeBtn);
+  }
   if (cb.onEndless && (save.stars['kitchen-5'] ?? 0) > 0) {
     const endlessBtn = el('button', 'house2-util wood-btn small', '🥫');
     endlessBtn.title = `Pantry Panic${save.stats.endlessBest ? ` — best ${save.stats.endlessBest}` : ''}`;

@@ -2,6 +2,10 @@ import type { LevelDef, SimState, Tower } from '../sim/types';
 import type { ContentDB } from '../sim/types';
 import { SHAPE_ICONS, SPELL_ICONS, TOWER_ICONS } from './icons';
 import { persistSave, type SaveData } from '../meta/save';
+import {
+  type StoreCategory, BELT_LIMITS, categoryOf, storeItemName,
+  toggleBelt, isEquipped, beltFor, reconcileQuickSpells,
+} from './storeData';
 
 export interface HudCallbacks {
   onSelectTower(def: string): void;
@@ -45,9 +49,17 @@ export class Hud {
   private callBtn!: HTMLButtonElement;
   private callCluster!: HTMLElement;
   private towerCards = new Map<string, HTMLElement>();
+  private towerSec!: HTMLElement;
   private clutterRow!: HTMLElement;
   private spellBtns = new Map<string, HTMLElement>();
   private spellPins = new Map<string, HTMLElement>();
+  /** Both "🛒 belt" entry buttons (desktop speed cluster + mobile sheet footer). Hidden during an
+   *  Infestation deck fight (the deck, not the belt, is the loadout there). */
+  private beltBtns: HTMLElement[] = [];
+  private beltDrawerEl: HTMLElement | null = null;
+  /** Signature of the allowedTowersOverride the tower strip currently reflects (Infestation deck).
+   *  '' = campaign/tutorial (belt-filtered). Rebuilds the strip once when this changes. */
+  private appliedOverrideKey = '';
   private speedBtns: HTMLButtonElement[] = [];
   private topDownB!: HTMLButtonElement;
   /** Both the desktop cluster's ⛶ button and the mobile dock's ⛶ button — setTopDownActive()
@@ -113,54 +125,20 @@ export class Hud {
     const bar = el('div', 'build-bar');
     this.bar = bar;
     const scroll = el('div', 'build-bar-scroll');
+    // TOWER STORE + BELTS (Addendum 2 §2): the build bar shows the BELT only, not the whole roster
+    // (kills the icon flood). The tower/spell strips are (re)built by dedicated methods so the
+    // in-level belt drawer can swap loadout live, and so an Infestation deck can override the strip.
     const towerSec = el('div', 'bar-section');
-    const allowed = this.level.allowedTowers ?? Object.keys(this.content.towers).filter((t) => !t.startsWith('test-'));
-    for (const def of allowed) {
-      const t = this.content.towers[def];
-      if (!t) continue;
-      const card = el('div', 'card', `
-        <div class="face">${TOWER_ICONS[def] ?? '🔧'}</div>
-        <div class="nm">${t.name}</div>
-        <div class="cost">🍪${t.tiers[0].cost}</div>
-      `);
-      card.style.setProperty('--tilt', `${(Math.random() * 3 - 1.5).toFixed(1)}deg`);
-      card.title = `${t.name} — ${t.role}\n${t.desc}`;
-      card.onclick = () => {
-        this.cb.onSelectTower(def);
-        this.closeSheetIfMobile();
-      };
-      this.towerCards.set(def, card);
-      towerSec.append(card);
-    }
+    this.towerSec = towerSec;
+    this.rebuildTowerSection();
 
     this.clutterRow = el('div', 'bar-section');
 
     const spellSec = el('div', 'bar-section');
     this.spellSec = spellSec;
-    for (const id of Object.keys(this.content.spells).filter((s) => !s.startsWith('test-'))) {
-      const sp = this.content.spells[id];
-      const btn = el('button', 'spell-btn', `${SPELL_ICONS[id] ?? '✨'}<div class="cd"></div><span class="cost-tag">${sp.cost}</span>`);
-      btn.title = `${sp.name} (${sp.cost} charge)\n${sp.desc}`;
-      btn.onclick = () => {
-        this.cb.onSelectSpell(id);
-        this.closeSheetIfMobile();
-      };
-      // MOBILE UX quick-slots (§4): a small corner pin toggle (★ pinned / ☆ not). Hidden on
-      // desktop via style.css. Lives in a sibling wrapper (not a child of .spell-btn) so it
-      // isn't clipped by the button's own overflow:hidden (needed for the circular cd wash).
-      const pin = el('span', 'spell-pin', this.save.settings.quickSpells.includes(id) ? '★' : '☆');
-      pin.title = 'pin to quick slots';
-      pin.addEventListener('pointerdown', (e) => e.stopPropagation());
-      pin.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.togglePin(id);
-      });
-      this.spellPins.set(id, pin);
-      const wrap = el('div', 'spell-slot-wrap');
-      wrap.append(btn, pin);
-      this.spellBtns.set(id, btn);
-      spellSec.append(wrap);
-    }
+    // pins are the mobile quick-slots (§4); keep them a subset of the spell belt from the start.
+    reconcileQuickSpells(this.save);
+    this.rebuildSpellSection();
 
     // Section labels above each build-bar area. Shown on BOTH surfaces now: the desktop strip
     // (see .bar-section-label in style.css) and the mobile slide-up sheet. Title Case matches the
@@ -177,12 +155,16 @@ export class Hud {
     // sheet footer (mobile-only): photo mode's function moves here since the desktop cluster's
     // camera button is hidden on mobile.
     const sheetFooter = el('div', 'sheet-footer');
+    const sheetBeltBtn = el('button', 'sheet-belt-btn', '🛒 belt') as HTMLButtonElement;
+    sheetBeltBtn.title = 'swap your belt loadout (game keeps running)';
+    sheetBeltBtn.onclick = () => this.openBeltDrawer();
+    this.beltBtns.push(sheetBeltBtn);
     const sheetPhotoBtn = el('button', 'sheet-photo-btn', '📸 photo mode') as HTMLButtonElement;
     sheetPhotoBtn.onclick = () => {
       this.cb.onPhotoMode();
       this.closeSheet();
     };
-    sheetFooter.append(sheetPhotoBtn);
+    sheetFooter.append(sheetBeltBtn, sheetPhotoBtn);
 
     bar.append(scroll, sheetFooter);
 
@@ -210,6 +192,12 @@ export class Hud {
     photoB.title = 'Photo Mode (P)';
     photoB.onclick = () => this.cb.onPhotoMode();
     speed.append(photoB);
+    // TOWER STORE + BELTS (Addendum 2 §2): desktop belt-swap entry (mobile uses the sheet footer's).
+    const beltB = el('button', 'speed-btn belt-btn', '🛒') as HTMLButtonElement;
+    beltB.title = 'Swap belt loadout — the game keeps running';
+    beltB.onclick = () => this.openBeltDrawer();
+    speed.append(beltB);
+    this.beltBtns.push(beltB);
 
     // ---------- mobile dock (hidden on desktop via style.css) ----------
     const dock = el('div', 'dock');
@@ -258,6 +246,156 @@ export class Hud {
     this.renderQuickSlots();
   }
 
+  // ---------- TOWER STORE + BELTS (Addendum 2 §2): belt-filtered build strips ----------
+
+  /** (Re)build the build-bar tower strip. No override: beltTowers ∩ (level.allowedTowers ?? all
+   *  buildable) — and if that intersection is empty the pool shows instead (a level is never left
+   *  un-playable; matches the "allowedTowers wins if empty ∩" rule). With an override (Infestation
+   *  deck) the deck shows verbatim, unfiltered — deck flow unchanged. */
+  private rebuildTowerSection(override?: string[]): void {
+    if (!this.towerSec) return;
+    this.towerSec.innerHTML = '';
+    this.towerCards.clear();
+    const buildable = Object.keys(this.content.towers).filter((t) => !t.startsWith('test-') && !t.startsWith('jar-'));
+    let ids: string[];
+    if (override && override.length) {
+      ids = override.filter((id) => this.content.towers[id]);
+    } else {
+      const pool = this.level.allowedTowers ?? buildable;
+      const belt = beltFor(this.save, 'tower').filter((id) => pool.includes(id));
+      ids = belt.length > 0 ? belt : pool;
+    }
+    for (const def of ids) {
+      const t = this.content.towers[def];
+      if (!t) continue;
+      const card = el('div', 'card', `
+        <div class="face">${TOWER_ICONS[def] ?? '🔧'}</div>
+        <div class="nm">${t.name}</div>
+        <div class="cost">🍪${t.tiers[0].cost}</div>
+      `);
+      // deterministic tilt (no Math.random) so a live belt swap never re-jitters the surviving cards.
+      card.style.setProperty('--tilt', `${(((def.length * 37) % 30) / 10 - 1.5).toFixed(1)}deg`);
+      card.dataset.def = def;
+      card.title = `${t.name} — ${t.role}\n${t.desc}`;
+      card.onclick = () => { this.cb.onSelectTower(def); this.closeSheetIfMobile(); };
+      this.towerCards.set(def, card);
+      this.towerSec.append(card);
+    }
+    if (this.selectedCard?.kind === 'tower') this.towerCards.get(this.selectedCard.id)?.classList.add('selected');
+  }
+
+  /** (Re)build the spell strip from the spell belt (beltSpells), or the full grimoire if the belt
+   *  is somehow empty. Rebuilds the pin (quick-slot) toggles too. */
+  private rebuildSpellSection(): void {
+    if (!this.spellSec) return;
+    this.spellSec.innerHTML = '';
+    this.spellBtns.clear();
+    this.spellPins.clear();
+    const all = Object.keys(this.content.spells).filter((s) => !s.startsWith('test-'));
+    const belt = beltFor(this.save, 'spell').filter((id) => this.content.spells[id]);
+    const ids = belt.length > 0 ? belt : all;
+    for (const id of ids) {
+      const sp = this.content.spells[id];
+      const btn = el('button', 'spell-btn', `${SPELL_ICONS[id] ?? '✨'}<div class="cd"></div><span class="cost-tag">${sp.cost}</span>`);
+      btn.dataset.spell = id;
+      btn.title = `${sp.name} (${sp.cost} charge)\n${sp.desc}`;
+      btn.onclick = () => { this.cb.onSelectSpell(id); this.closeSheetIfMobile(); };
+      const pin = el('span', 'spell-pin', this.save.settings.quickSpells.includes(id) ? '★' : '☆');
+      pin.title = 'pin to quick slots';
+      pin.addEventListener('pointerdown', (e) => e.stopPropagation());
+      pin.addEventListener('click', (e) => { e.stopPropagation(); this.togglePin(id); });
+      this.spellPins.set(id, pin);
+      const wrap = el('div', 'spell-slot-wrap');
+      wrap.append(btn, pin);
+      this.spellBtns.set(id, btn);
+      this.spellSec.append(wrap);
+    }
+    if (this.selectedCard?.kind === 'spell') this.spellBtns.get(this.selectedCard.id)?.classList.add('selected');
+  }
+
+  // ---------- in-level belt drawer (non-pausing) ----------
+
+  /** Open the belt drawer: a lightweight overlay to swap belt items from the OWNED pool mid-level.
+   *  It's a plain child of the HUD root — NEVER routed through UI.openModal — so `ui.modalOpen`
+   *  stays false and game.ts keeps ticking the sim behind it. No purchases here (Store only). */
+  openBeltDrawer(): void {
+    this.closeBeltDrawer();
+    const overlay = el('div', 'belt-drawer-wrap');
+    const scrim = el('div', 'belt-drawer-scrim');
+    scrim.onclick = () => this.closeBeltDrawer();
+    const drawer = el('div', 'belt-drawer');
+    drawer.addEventListener('pointerdown', (e) => e.stopPropagation());
+    const head = el('div', 'belt-drawer-head');
+    head.append(el('div', 'belt-drawer-title', '🛒 Your Belt'));
+    head.append(el('div', 'belt-drawer-sub', 'swap gear from what you own — the fight keeps going'));
+    drawer.append(head);
+
+    const body = el('div', 'belt-drawer-body');
+    const cats: { cat: StoreCategory; label: string }[] = [
+      { cat: 'tower', label: 'Towers' },
+      { cat: 'block', label: 'Building Blocks' },
+      { cat: 'spell', label: 'Power-Ups' },
+    ];
+    for (const { cat, label } of cats) {
+      const belt = beltFor(this.save, cat);
+      const sec = el('div', 'belt-drawer-sec');
+      sec.append(el('div', 'belt-drawer-sec-label', `${label} <b>${belt.length}/${BELT_LIMITS[cat]}</b>`));
+      const owned = this.save.store.owned.filter((id) => categoryOf(id) === cat);
+      const row = el('div', 'belt-drawer-chips');
+      if (owned.length === 0) row.append(el('div', 'belt-drawer-empty', 'none owned — visit the Tower Store!'));
+      for (const id of owned) {
+        const eq = isEquipped(this.save, id);
+        const ico = cat === 'tower' ? (TOWER_ICONS[id] ?? '🔧') : cat === 'block' ? (SHAPE_ICONS[id] ?? '📦') : (SPELL_ICONS[id] ?? '✨');
+        const chip = el('button', `belt-drawer-chip${eq ? ' on' : ''}`, `<span class="bdc-ico">${ico}</span><span class="bdc-nm">${storeItemName(id)}</span>`) as HTMLButtonElement;
+        chip.dataset.id = id;
+        chip.onclick = () => this.beltToggle(id);
+        row.append(chip);
+      }
+      sec.append(row);
+      body.append(sec);
+    }
+    drawer.append(body);
+
+    const foot = el('div', 'belt-drawer-foot');
+    const done = el('button', 'wood-btn small', 'Done') as HTMLButtonElement;
+    done.onclick = () => this.closeBeltDrawer();
+    foot.append(done);
+    drawer.append(foot);
+
+    overlay.append(scrim, drawer);
+    this.beltDrawerEl = overlay;
+    this.root.append(overlay);
+  }
+
+  private beltToggle(id: string): void {
+    const res = toggleBelt(this.save, id);
+    if (!res.ok) {
+      if (res.reason === 'full') {
+        const cat = categoryOf(id)!;
+        this.beltToast(`belt full — ${BELT_LIMITS[cat]} max. take one off first!`);
+      }
+      return;
+    }
+    persistSave(this.save);
+    // reflect the new loadout live: rebuild strips + quick slots, refresh clutter, re-render drawer.
+    this.rebuildTowerSection();
+    this.rebuildSpellSection();
+    this.refreshClutter(this.lastHand);
+    this.renderQuickSlots();
+    this.openBeltDrawer();
+  }
+
+  private beltToast(text: string): void {
+    const t = el('div', 'toast-msg', text);
+    this.root.append(t);
+    setTimeout(() => t.remove(), 1800);
+  }
+
+  closeBeltDrawer(): void {
+    this.beltDrawerEl?.remove();
+    this.beltDrawerEl = null;
+  }
+
   setSelected(sel: { kind: 'tower' | 'clutter' | 'spell'; id: string } | null): void {
     this.selectedCard = sel;
     for (const [def, card] of this.towerCards) {
@@ -283,8 +421,14 @@ export class Hud {
   refreshClutter(hand: string[], sel = this.selectedCard): void {
     this.lastHand = hand;
     this.clutterRow.innerHTML = '';
+    // Belt filter (Addendum 2 §2): show only hand pieces on the block belt. Fallback: if NONE of the
+    // dealt hand is on the belt, show the whole hand — never hide every placeable piece (the sim
+    // deals the hand from the level's clutterDeck; we can't leave the player with nothing to place).
+    const belt = beltFor(this.save, 'block');
+    const beltInHand = hand.filter((s) => belt.includes(s));
+    const shown = beltInHand.length > 0 ? beltInHand : hand;
     const counts = new Map<string, number>();
-    for (const s of hand) counts.set(s, (counts.get(s) ?? 0) + 1);
+    for (const s of shown) counts.set(s, (counts.get(s) ?? 0) + 1);
     for (const [shape, count] of counts) {
       const def = this.content.shapes[shape];
       if (!def) continue;
@@ -310,6 +454,18 @@ export class Hud {
   }
 
   update(state: SimState, speedMult: number): void {
+    // Infestation deck override (Addendum 2 §2): when a run threads a deck via
+    // state.allowedTowersOverride, show it verbatim and hide the belt-swap buttons (the deck, not
+    // the belt, is the loadout there). Campaign leaves this '' so build()'s belt filter stands.
+    const override = state.allowedTowersOverride;
+    const key = override && override.length ? override.join(',') : '';
+    if (key !== this.appliedOverrideKey) {
+      this.appliedOverrideKey = key;
+      this.rebuildTowerSection(key ? key.split(',') : undefined);
+      for (const b of this.beltBtns) b.classList.toggle('hidden', !!key);
+      if (key) this.closeBeltDrawer();
+    }
+
     (this.cakeChip.querySelector('.v') as HTMLElement).textContent = `${state.cakeSlices}/${state.cakeMax}`;
     (this.crumbChip.querySelector('.v') as HTMLElement).textContent = `${state.crumbs}`;
     (this.waveChip.querySelector('.v') as HTMLElement).textContent =

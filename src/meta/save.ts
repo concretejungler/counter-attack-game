@@ -1,4 +1,5 @@
 import type { RunState } from './infestation';
+import { type StoreSave, defaultStoreSave, sanitizeStore } from '../ui/storeData';
 
 /** Versioned localStorage save with export/import codes. */
 export interface SaveData {
@@ -84,6 +85,12 @@ export interface SaveData {
   achievements: string[];
   /** Purchased Junk Drawer unlock ids (src/meta/achievements.ts JUNK_DRAWER_ITEMS). */
   junkDrawer: string[];
+  /** TOWER STORE + BELTS (Addendum 2 §2, src/ui/storeData.ts). `owned` are BP-purchased (or
+   *  starter-kit / veteran-backfilled) tower/block/spell ids usable everywhere; the three belt
+   *  arrays are the equipped loadout (≤ BELT_LIMITS 5/3/3) the HUD renders instead of the whole
+   *  roster. Optional-safe: added after v1 shipped, so loadSave() backfills it via sanitizeStore()
+   *  for older saves — starter kit + any demonstrably-used towers, or everything for >10-star vets. */
+  store: StoreSave;
   /** INFESTATION MODE (§15): the in-progress run, or null between runs. Optional-safe like
    *  critterdex/flyShooed above — backfilled to null by loadSave() for saves written before this
    *  existed. A run is abandoned by simply setting this back to null (no separate "abandoned"
@@ -141,6 +148,7 @@ export function defaultSave(): SaveData {
     browniePoints: { earned: 0, spent: 0 },
     achievements: [],
     junkDrawer: [],
+    store: defaultStoreSave(),
     infestation: null,
     lastDailyChoreDay: null,
     eggs: { fridgeMagnetsSolved: false, sunflowerClicks: 0 },
@@ -180,6 +188,10 @@ export function loadSave(): SaveData {
       browniePoints: { ...defaultSave().browniePoints, ...data.browniePoints },
       achievements: [...(data.achievements ?? [])],
       junkDrawer: [...(data.junkDrawer ?? [])],
+      // TOWER STORE (Addendum 2 §2): backfill/repair the owned+belts bag from the raw save. A
+      // missing bag (older save) is generated from stars + towerNames; a partial/stale one is
+      // sanitized (drops unowned belt ids, guarantees the starter kit, never leaves a belt empty).
+      store: sanitizeStore(data.store, data),
       infestation: data.infestation ?? null,
       lastDailyChoreDay: data.lastDailyChoreDay ?? null,
       eggs: { ...defaultSave().eggs, ...data.eggs },
@@ -206,6 +218,9 @@ export function importCode(code: string): SaveData | null {
   try {
     const data = JSON.parse(decodeURIComponent(escape(atob(code.trim())))) as SaveData;
     if (data.version !== 1) return null;
+    // Store bridge (Addendum 2 §2): a code exported before the store existed has no `store` bag;
+    // backfill/repair it so any consumer of an imported save gets a valid owned+belts loadout.
+    data.store = sanitizeStore(data.store, data);
     return data;
   } catch {
     return null;

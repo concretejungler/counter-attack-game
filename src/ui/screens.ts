@@ -84,6 +84,7 @@ export function buildTitle(
   onDailyChore: () => void,
   onMagnetsSolved: () => void,
   onHowToPlay: () => void,
+  onStore: () => void,
 ): HTMLElement {
   const screen = el('div', 'screen title2');
   const stage = el('div', 'title-stage');
@@ -259,7 +260,10 @@ export function buildTitle(
   const howto = titleTile('🎓', 'How to Play', 'the house rules');
   howto.onclick = onHowToPlay;
 
-  for (const tile of [infest, journal, drawer, chore, howto]) {
+  const store = titleTile('🛒', 'Tower Store', 'buy & equip gear');
+  store.onclick = onStore;
+
+  for (const tile of [store, infest, journal, drawer, chore, howto]) {
     tile.style.width = `${MENU.tileW}px`;
     tile.style.minHeight = `${MENU.tileH}px`;
     tiles.append(tile);
@@ -454,6 +458,7 @@ export function buildLevelSelect(
   onJunkDrawer: () => void,
   onEndless?: () => void,
   onPickSecret?: (id: string) => void,
+  onStore?: () => void,
 ): HTMLElement {
   return buildHouseMap(save, {
     onPick,
@@ -463,6 +468,7 @@ export function buildLevelSelect(
     onJournal,
     onJunkDrawer,
     onEndless,
+    onStore,
   });
 }
 

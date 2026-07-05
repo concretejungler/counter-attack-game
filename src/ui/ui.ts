@@ -5,6 +5,7 @@ import {
   buildJournal, buildJunkDrawer, buildLevelSelect, buildRecap, buildSettings, buildTitle, buildTutorial, type RecapInfo,
   buildInfestationMap, buildInfestationDraft, buildGarageSale, buildRunOver, type RunOverInfo,
 } from './screens';
+import { buildStore } from './store';
 import { MUTATION_ICONS } from './icons';
 import { isMobileViewport, isPortrait, isFinePointer } from '../core/device';
 import { ChoicePanel, type ChoicePanelCallbacks } from './choicePanel';
@@ -222,7 +223,19 @@ export class UI {
       () => this.cb.onDailyChoreStart(),
       () => this.cb.onMagnetsSolved(),
       () => this.showTutorial(() => {}),
+      () => this.showStore('title'),
     ));
+  }
+
+  /** THE TOWER STORE (Addendum 2 §2). Reachable from the title tile and the house-map corner
+   *  button; remembers where to return. Purchases + belt edits are handled inside buildStore
+   *  (it mutates save.store and persists) — no game.ts callback needed. */
+  showStore(returnTo: JournalReturnTo): void {
+    this.clearScreen();
+    this.mountScreen(buildStore(this.save, () => {
+      if (returnTo === 'title') this.showTitle();
+      else this.showLevelSelect();
+    }));
   }
 
   /** The "How to Play" flip-book. Shown as a modal over the current screen; `onDone` runs after
@@ -247,6 +260,7 @@ export class UI {
       () => this.showJunkDrawer('levels'),
       () => this.cb.onStartEndless?.(),
       (id) => this.cb.onStartSecretLevel?.(id),
+      () => this.showStore('levels'),
     ));
   }
 

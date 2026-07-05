@@ -33,6 +33,15 @@ export const SHAPE_ICONS: Record<string, string> = {
   'tupper-o': '🥡',
   'sponge-s': '🧽',
   'spatula-t': '🥄',
+  // later-world + store-only shapes (Addendum 2 §3). Fall back to 📦 if any new def lacks an entry.
+  'soap-i': '🧼',
+  'toolbox-o': '🧰',
+  'wine-l': '🍷',
+  'flowerpot-t': '🪴',
+  'napkin-i3': '🧻',
+  'jars-o': '🫙',
+  'ladder-i': '🪜',
+  'shuttle-drawer': '🗄️',
 };
 
 export const SPELL_ICONS: Record<string, string> = {
