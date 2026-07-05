@@ -5,10 +5,13 @@
  * wheels peeking under the south edge. ZERO spider traits — it stands in for
  * spider species when arachnophobia mode is on (a wiring agent maps them here),
  * and must also read at the 128 boss box (Grandma Longlegs substitution).
+ * V2: hard-plastic shading — belly + rim + one spec streak + a gloss dot, a
+ * cel-shaded bumper ring, and the LED stays the lone warm accent.
  */
 import { registerCritterPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { ramp, celCrescent, belly, rim, specStreak, glossDot, haloBehind } from '../../paint';
 
 registerCritterPainter('googly-roomba', (ctx, size, frame, opts) => {
   const cx = size / 2;
@@ -18,42 +21,58 @@ registerCritterPainter('googly-roomba', (ctx, size, frame, opts) => {
   const boss = opts.variant === 'boss';
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.4) : c);
   const shell = warm(lighten(PAL.metal, 0.16)); // friendly light disc, not menacing black
+  const shellR = ramp(shell);
   const bumper = warm(darken(PAL.metal, 0.16));
+  const bumperR = ramp(bumper);
   const wobble = frame ? 1 : -1;
   const stroke = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
 
   const R = size * 0.42;
 
   // --- tiny caster wheels peeking under the south edge (behind the disc) ---
-  ctx.fillStyle = hex(PAL.metalDark);
   for (const sgn of [-1, 1]) {
     ctx.beginPath();
     ctx.ellipse(cx + sgn * size * 0.2, cy + R * 0.92, size * 0.06, size * 0.036, 0, 0, Math.PI * 2);
     ctx.fillStyle = hex(PAL.metalDark); ctx.fill(); stroke(size * 0.02);
   }
 
-  // --- main vacuum disc ---
+  // --- main vacuum disc (hard plastic): belly + spec + gloss + cel + rim ---
   ctx.beginPath(); ctx.ellipse(cx, cy, R, R * 0.96, 0, 0, Math.PI * 2);
   ctx.fillStyle = hex(shell); ctx.fill(); stroke();
-  // rubber bumper ring (darker band just inside the rim)
+  belly(ctx, cx, cy, R * 0.97, R * 0.93, shellR, 0.5);
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(cx, cy, R * 0.97, R * 0.93, 0, 0, Math.PI * 2); ctx.clip();
+  specStreak(ctx, cx - R * 0.28, cy - R * 0.34, R * 1.15, size * 0.055, 0.4);
+  // bin-lid seam sweeping across the lower disc
+  ctx.strokeStyle = rgba(shellR.shadow, 0.55); ctx.lineWidth = size * 0.022;
+  ctx.beginPath(); ctx.arc(cx, cy - R * 0.15, R * 0.72, 0.18 * Math.PI, 0.82 * Math.PI); ctx.stroke();
+  ctx.restore();
+  glossDot(ctx, cx - R * 0.42, cy - R * 0.46, size * 0.032, 0.8);
+  celCrescent(ctx, cx, cy, R, R * 0.96, shellR.shadow, 0.45, 0.4);
+  rim(ctx, cx, cy, R, R * 0.96, shellR.light, size * 0.03, 0.5);
+
+  // --- rubber bumper ring (cel-shaded band just inside the rim) ---
   ctx.beginPath(); ctx.ellipse(cx, cy, R * 0.9, R * 0.86, 0, 0, Math.PI * 2);
   ctx.strokeStyle = hex(bumper); ctx.lineWidth = size * 0.052; ctx.stroke();
-  // top-left sheen
-  ctx.beginPath(); ctx.ellipse(cx - R * 0.34, cy - R * 0.36, R * 0.42, R * 0.3, 0, 0, Math.PI * 2);
-  ctx.fillStyle = rgba(lighten(shell, 0.45), 0.45); ctx.fill();
-  // bin-lid seam sweeping across the lower disc
-  ctx.strokeStyle = rgba(darken(shell, 0.32), 0.6); ctx.lineWidth = size * 0.022;
-  ctx.beginPath(); ctx.arc(cx, cy - R * 0.15, R * 0.72, 0.18 * Math.PI, 0.82 * Math.PI); ctx.stroke();
+  ctx.lineWidth = size * 0.052;
+  ctx.strokeStyle = rgba(bumperR.shadow, 0.7);
+  ctx.beginPath(); ctx.ellipse(cx, cy, R * 0.9, R * 0.86, 0, Math.PI * 0.05, Math.PI * 0.95); ctx.stroke();
+  ctx.strokeStyle = rgba(bumperR.light, 0.55); ctx.lineWidth = size * 0.02;
+  ctx.beginPath(); ctx.ellipse(cx, cy, R * 0.9, R * 0.86, 0, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
 
-  // --- status LED near the front (north) rim ---
+  // --- status LED near the front (north) rim (the lone accent) ---
   if (boss) { // boss gets a raised sensor puck so the big disc isn't empty
+    haloBehind(ctx, cx, cy - R * 0.68, size * 0.11, warm(PAL.cherry), 0.35);
     ctx.beginPath(); ctx.arc(cx, cy - R * 0.68, size * 0.075, 0, Math.PI * 2);
     ctx.fillStyle = hex(warm(mix(PAL.metal, PAL.mint, 0.5))); ctx.fill(); stroke(size * 0.024);
     ctx.beginPath(); ctx.arc(cx, cy - R * 0.68, size * 0.03, 0, Math.PI * 2);
     ctx.fillStyle = hex(warm(PAL.cherry)); ctx.fill(); stroke(size * 0.014);
   } else {
+    haloBehind(ctx, cx, cy - R * 0.72, size * 0.07, warm(PAL.cherry), 0.4);
     ctx.beginPath(); ctx.arc(cx, cy - R * 0.72, size * 0.032, 0, Math.PI * 2);
     ctx.fillStyle = hex(warm(PAL.cherry)); ctx.fill(); stroke(size * 0.016);
+    ctx.beginPath(); ctx.arc(cx - size * 0.012, cy - R * 0.73, size * 0.011, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fill();
   }
 
   // --- BIG googly eyes with loose offset pupils (the personality) ---
