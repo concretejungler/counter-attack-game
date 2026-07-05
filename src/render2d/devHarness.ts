@@ -62,6 +62,7 @@ function emptyState(level: LevelDef): SimState {
     critters: new Map(), towers: new Map(), projectiles: [],
     crumbEnts: new Map(), clutter: new Map(), clutterHand: [],
     hand: { flickCharges: 3, flickMax: 3, flickRecharge: 0, squashCd: 0, carryCd: 0, carrying: null, zapT: 0 },
+    handMagnet: null,
     spellCds: {}, mutations: [], mutationOffer: null, grudges: [],
     jarring: null, jarredStock: [],
     recap: {

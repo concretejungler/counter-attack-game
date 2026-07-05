@@ -56,6 +56,14 @@ interface Gesture {
  */
 const SWEEP_PICKUP_RADIUS = 1.7;
 
+/**
+ * Hand-magnet feed rate. While the pointer is over the board, game.ts sends a queued `handMove`
+ * command (last board point the Hand hovers) at most this often — the sim keeps crumbs drifting
+ * toward it for ~0.5s per command (MAGNET_FRESH_TICKS), so re-sending at ~10Hz keeps the magnet
+ * live for both a moving AND a parked pointer. Purely a real-pointer path; never runs in tests.
+ */
+const HAND_MOVE_THROTTLE_MS = 100;
+
 const FIRE_SFX: Record<string, string> = {
   'sgt-spritz': 'shoot-spray',
   'old-smacky': 'slam',
@@ -82,6 +90,10 @@ export class Game {
   private acc = 0;
   private last = 0;
   private pointer = { x: 0, y: 0, ndcX: 0, ndcY: 0 };
+  /** Hand-magnet: last board point the pointer hovered (world units + surface), or null when the
+   *  pointer is off the board. Fed to the sim as throttled `handMove` commands (see maybeSendHandMove). */
+  private handMoveTarget: { surface: number; x: number; z: number } | null = null;
+  private lastHandMoveT = 0;
   private inspectedTower: number | null = null;
   // star trackers
   private towerIds = new Set<number>();
@@ -965,6 +977,9 @@ export class Game {
   // ---------- main loop ----------
   private update(dt: number): void {
     if (this.sim && this.level && !this.paused && !this.ui.modalOpen && !this.ui.rotateBlocking) {
+      // hand-magnet: keep the last hovered board point fresh even when the pointer sits still
+      // (pointermove stops firing), so a parked pointer keeps pulling crumbs in. Throttled internally.
+      this.maybeSendHandMove();
       this.acc += dt * this.speedMult;
       let guard = 0;
       while (this.acc >= SIM_DT && guard++ < 10) {
@@ -1532,6 +1547,18 @@ export class Game {
     this.ui.toast('📸 saved!');
   }
 
+  /** Hand-magnet feed: queue a throttled `handMove` for the last board point the pointer hovered so
+   *  the sim keeps ALL crumbs on that surface drifting toward the Hand (no clicking). Throttled to
+   *  ~10Hz; re-called every frame from update() so a parked (non-moving) pointer stays magnetic. */
+  private maybeSendHandMove(): void {
+    if (!this.sim || !this.handMoveTarget) return;
+    const now = performance.now();
+    if (now - this.lastHandMoveT < HAND_MOVE_THROTTLE_MS) return;
+    this.lastHandMoveT = now;
+    const t = this.handMoveTarget;
+    this.sim.command({ type: 'handMove', surface: t.surface, x: t.x, z: t.z });
+  }
+
   // ---------- input ----------
   private tileAtPointer(): TileRef | null {
     const hit = this.renderer.pickSurfacePoint(this.pointer.ndcX, this.pointer.ndcY);
@@ -1804,6 +1831,11 @@ export class Game {
       if (hit && this.level) {
         const y = this.level.surfaces[hit.surface].origin.y;
         this.renderer.setHandTarget(hit.x, y, hit.z, y);
+        // hand-magnet: reuse this pick (no extra picking) as the crumb-attraction point.
+        this.handMoveTarget = { surface: hit.surface, x: hit.x, z: hit.z };
+        this.maybeSendHandMove();
+      } else {
+        this.handMoveTarget = null; // pointer left the board — attraction lapses after MAGNET_FRESH_TICKS
       }
       // sweep while dragging — interpolate along the drag segment so a fast swipe leaves no gaps
       // between the throttled 90ms samples (each intermediate point banks any crumbs it passes).
@@ -1834,6 +1866,9 @@ export class Game {
     const endTouch = (e: PointerEvent) => {
       if (e.pointerType !== 'touch') return;
       activeTouches.delete(e.pointerId);
+      // hand-magnet: a lifted finger has no lingering "hover", so stop feeding handMove once the
+      // last touch ends (a mouse, by contrast, keeps hovering and stays magnetic while parked).
+      if (activeTouches.size === 0) this.handMoveTarget = null;
       if (twoFinger && activeTouches.size < 2) {
         twoFinger = false;
         if (activeTouches.size === 1) {

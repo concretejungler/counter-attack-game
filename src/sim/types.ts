@@ -390,6 +390,7 @@ export type SimCommand =
   | { type: 'flick'; critterId: number; dir: Vec2; power: number }
   | { type: 'squash'; critterId: number }
   | { type: 'sweep'; surface: number; x: number; z: number; radius: number }
+  | { type: 'handMove'; surface: number; x: number; z: number } // hand-magnet: crumbs on `surface` drift toward this point (see SimState.handMagnet)
   | { type: 'carryStart'; towerId: number }
   | { type: 'carryDrop'; at: TileRef }
   | { type: 'carryCancel' }
@@ -581,6 +582,14 @@ export interface SimState {
   clutter: Map<number, ClutterPiece>;
   clutterHand: string[];    // shapes available to place this build phase
   hand: HandState;
+  /**
+   * Hand-magnet target (GAME-PROMPT crumb magnetism): the last board point the Hand hovered, tagged
+   * with the tick it was set. Each tick, while `tick - handMagnet.tick <= MAGNET_FRESH_TICKS`, every
+   * crumb on the SAME surface accelerates toward it (updateCrumbMagnet, crumbs.ts) and auto-banks on
+   * contact. null unless a `handMove` command has been applied — so it is null throughout every test
+   * / balance run (the harness never sends handMove) and the feature is byte-identical to absent.
+   */
+  handMagnet: { surface: number; x: number; z: number; tick: number } | null;
   spellCds: Record<string, number>;
   mutations: string[];
   mutationOffer: string[] | null;

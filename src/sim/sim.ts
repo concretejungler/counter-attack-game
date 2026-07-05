@@ -5,7 +5,7 @@ import { damageCritter, spawnCritter, updateCritters } from './critters';
 import { tryPlaceClutter } from './clutter';
 import { towerStats, tryBranchTower, tryPlaceTower, trySellTower, tryUpgradeTower, updateTowers } from './towers';
 import { updateProjectiles } from './projectiles';
-import { applySweep, updateCrumbEating } from './crumbs';
+import { applySweep, updateCrumbEating, updateCrumbMagnet } from './crumbs';
 import {
   applyCarryCancel, applyCarryDrop, applyCarryStart, applyFlick,
   applyHighFive, applyJarCancel, applyJarStart, applyRearmTrap, applySquash, isJarTower, updateHand,
@@ -179,6 +179,7 @@ export class Sim implements SimCtx {
       clutter: new Map(),
       clutterHand: [],
       hand: { flickCharges: 3 + (opts.metaMods?.flickMax ?? 0), flickMax: 3 + (opts.metaMods?.flickMax ?? 0), flickRecharge: 0, squashCd: 0, carryCd: 0, carrying: null, zapT: 0 },
+      handMagnet: null,
       spellCds: {},
       mutations: [],
       mutationOffer: null,
@@ -360,6 +361,7 @@ export class Sim implements SimCtx {
     this.updateStationaryAutoSweep();
     updateProjectiles(this, dt);
     updateCrumbEating(this, dt);
+    updateCrumbMagnet(this, dt);
     updateSpells(this, dt);
     this.updateScent(dt);
     if (this.eventsOn) updateActiveEvents(this, dt);
@@ -456,6 +458,11 @@ export class Sim implements SimCtx {
         return;
       case 'sweep':
         applySweep(this, cmd.surface, cmd.x, cmd.z, cmd.radius);
+        return;
+      case 'handMove':
+        // hand-magnet: remember where the Hand hovers + when, so updateCrumbMagnet can drift crumbs
+        // toward it while the target stays fresh. Additive & inert unless a real pointer feeds it.
+        this.state.handMagnet = { surface: cmd.surface, x: cmd.x, z: cmd.z, tick: this.state.tick };
         return;
       case 'carryStart':
         applyCarryStart(this, cmd.towerId);
