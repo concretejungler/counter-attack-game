@@ -2,6 +2,15 @@
 
 > Living status doc. Updated after every task. After context compaction: read this + CLAUDE.md + the plan, then continue.
 
+## ✅ LEVEL-SELECT EDGE AUTO-SCROLL (2026-07-05)
+
+User ask: on the house-map level select, moving the mouse toward the top/bottom should auto-scroll.
+`src/ui/houseMap.ts` — RTS-style edge scroll on `.house2-viewport`: a 120px top/bottom band drives a
+`requestAnimationFrame` loop, `scrollTop += dir * 15px * strength` where strength ramps `0.12→1` the
+closer the cursor is to the edge. Fine-pointer only (`(pointer: fine)`), paused while the level sheet
+is open or the map is zoomed out, and skipped under reduced-motion. Pure view layer — no sim touch.
+Gates: tsc clean · build · smoke OK.
+
 ## ✅ STEAM PC PIVOT — DESKTOP APP + INSTALLER (2026-07-05) — plan: `docs/superpowers/plans/2026-07-05-steam-pc-pivot.md`
 
 User pivot: the game targets a STEAM PC launch (mobile no longer primary; responsive work retained). Delivered:

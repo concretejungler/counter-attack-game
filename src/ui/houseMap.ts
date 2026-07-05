@@ -501,6 +501,46 @@ export function buildHouseMap(save: SaveData, cb: HouseMapCallbacks): HTMLElemen
     }
   });
 
+  // ---------- edge auto-scroll (PC) ----------
+  // With a mouse, hovering the top/bottom band of the map scrolls it — faster the closer the
+  // cursor is to the edge (like an RTS camera). Disabled on touch (no hover), while the level
+  // sheet is open, and under reduced-motion.
+  const EDGE_BAND = 120;        // px from top/bottom edge that starts scrolling
+  const EDGE_MAX_SPEED = 15;    // px/frame at the very edge
+  const finePointer = matchMedia('(pointer: fine)').matches;
+  if (finePointer && !reducedMotion()) {
+    let edgeDir = 0;            // -1 up, +1 down, 0 idle
+    let edgeStrength = 0;       // 0..1 proximity ramp
+    let edgeRAF = 0;
+    const stopEdge = (): void => {
+      if (edgeRAF) { cancelAnimationFrame(edgeRAF); edgeRAF = 0; }
+      edgeDir = 0;
+    };
+    const stepEdge = (): void => {
+      if (edgeDir === 0 || sheetOpen || zoomed) { edgeRAF = 0; return; }
+      viewport.scrollTop += edgeDir * EDGE_MAX_SPEED * edgeStrength;
+      edgeRAF = requestAnimationFrame(stepEdge);
+    };
+    viewport.addEventListener('mousemove', (e) => {
+      if (sheetOpen || zoomed) { stopEdge(); return; }
+      const r = viewport.getBoundingClientRect();
+      const fromTop = e.clientY - r.top;
+      const fromBottom = r.bottom - e.clientY;
+      if (fromTop < EDGE_BAND) {
+        edgeDir = -1;
+        edgeStrength = Math.max(0.12, 1 - fromTop / EDGE_BAND);
+      } else if (fromBottom < EDGE_BAND) {
+        edgeDir = 1;
+        edgeStrength = Math.max(0.12, 1 - fromBottom / EDGE_BAND);
+      } else {
+        edgeDir = 0;
+      }
+      if (edgeDir !== 0 && !edgeRAF) edgeRAF = requestAnimationFrame(stepEdge);
+      else if (edgeDir === 0) stopEdge();
+    });
+    viewport.addEventListener('mouseleave', stopEdge);
+  }
+
   // keep sheet dismissable via Escape without stealing gameplay keys (this screen has no others)
   const onKey = (e: KeyboardEvent): void => {
     if (e.key === 'Escape' && sheetOpen) { closeSheet(); }
