@@ -19,11 +19,11 @@ import { LEVEL_ICONS } from './icons';
 import { THEME_PALETTES, type ThemePalette } from '../render/palette';
 import {
   worldsGrouped, bossLevelOf, isLevelUnlocked, isWorldUnlocked, starsFor,
-  furthestUnlockedLevel, prerequisiteRoomLabel, ROOM_LABEL, totalStars,
+  furthestUnlockedLevel, prerequisiteRoomLabel,
   SECRET_LEVELS, isSecretUnlocked, secretLockHint, type SecretLevelId,
 } from '../meta/progress';
-import { currentBP } from '../meta/achievements';
 import { SCENE, ROOMS, NODES, SECRET_NODES, PATH } from './houseMapData';
+import { buildStatusRibbon } from './statusRibbon';
 
 export interface HouseMapCallbacks {
   onPick: (levelId: string) => void;
@@ -43,6 +43,14 @@ const el = (tag: string, cls = '', html = ''): HTMLElement => {
 };
 
 const reducedMotion = (): boolean => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Title-Case a kid-voice room label ("the living room" → "The Living Room") so EVERY room label
+ *  matches the title-menu convention ("My Journal", "The Junk Drawer"). Fixes the U1 casing drift
+ *  where map labels rendered inconsistently ("The Kitchen" vs "the Living Room"). */
+const titleCase = (s: string): string => s.replace(/\b\w/g, (c) => c.toUpperCase());
+/** Canonical Title-Case label per theme, derived from the house-map data (all authored as "the X"). */
+const ROOM_TITLE = new Map(ROOMS.map((r) => [r.theme, titleCase(r.label)] as const));
+const roomTitle = (theme: RoomTheme): string => ROOM_TITLE.get(theme) ?? titleCase(theme);
 
 /** Fallback room glyph for nodes without a bespoke LEVEL_ICONS entry. */
 const ROOM_ICON: Record<RoomTheme, string> = {
@@ -300,7 +308,7 @@ export function buildHouseMap(save: SaveData, cb: HouseMapCallbacks): HTMLElemen
   const back = el('button', 'house2-back wood-btn small', '← Fridge');
   back.onclick = cb.onBack;
   const ribbon = el('div', 'house2-ribbon');
-  ribbon.innerHTML = `<span class="h2-rib">⭐ ${totalStars(save)}</span><span class="h2-rib">🧁 ${currentBP(save)}</span>`;
+  ribbon.append(buildStatusRibbon(save, true));
   const cluster = el('div', 'house2-corner');
   const journalBtn = el('button', 'house2-util wood-btn small', '📔');
   journalBtn.title = 'My Journal';
@@ -372,7 +380,7 @@ export function buildHouseMap(save: SaveData, cb: HouseMapCallbacks): HTMLElemen
       <div class="h2s-ico">${LEVEL_ICONS[levelId] ?? ROOM_ICON[level.theme]}</div>
       <div class="h2s-titles">
         <div class="h2s-name">${isBoss ? '👑 ' : ''}${level.name}</div>
-        <div class="h2s-sub">${ROOM_LABEL[level.theme]} · level ${level.index}</div>
+        <div class="h2s-sub">${roomTitle(level.theme)} · level ${level.index}</div>
       </div>`;
     sheet.append(head);
 
@@ -599,7 +607,7 @@ function buildRoomOverlays(save: SaveData): string {
     const unlocked = isWorldUnlocked(save, wl);
     const cyc = y + h / 2;
     html += `<div class="house2-roomhit" data-cy="${cyc}" style="left:${pct(x, SCENE.w)};top:${pct(y, SCENE.h)};width:${pct(w, SCENE.w)};height:${pct(h, SCENE.h)}"></div>`;
-    html += `<div class="house2-roomlabel${unlocked ? '' : ' locked'}" style="left:${pct(x + w / 2, SCENE.w)};top:${pct(y + 4, SCENE.h)}">${room.label}</div>`;
+    html += `<div class="house2-roomlabel${unlocked ? '' : ' locked'}" style="left:${pct(x + w / 2, SCENE.w)};top:${pct(y + 4, SCENE.h)}">${titleCase(room.label)}</div>`;
     if (!unlocked) {
       const wi = worldsGrouped().findIndex((wx) => wx[0].theme === room.theme);
       const prereq = prerequisiteRoomLabel(wi);
@@ -620,6 +628,26 @@ function buildGatewayGlyphs(save: SaveData): string {
     html += `<div class="house2-gateway${lit ? ' lit' : ''}" style="left:${pct(g.x, SCENE.w)};top:${pct(g.y, SCENE.h)}" title="${g.type}">${GATEWAY_ICON[g.type] ?? '🚪'}</div>`;
   }
   return html;
+}
+
+/** The "you are here" callout for the current node (U1 fix 4a): auto-flip it to the vertical side
+ *  with free space so it never covers a sibling node. On fresh saves the next node sits above-right
+ *  of the current one, so the old always-above pill overlapped it — we place the pill OPPOSITE the
+ *  nearest neighbour, and nudge it horizontally away from that neighbour too. */
+function arrowCallout(cur: { x: number; y: number }): string {
+  let nx = cur.x, ny = cur.y, bestD = Infinity;
+  for (const n of NODES) {
+    if (n.x === cur.x && n.y === cur.y) continue;
+    const d = (n.x - cur.x) ** 2 + (n.y - cur.y) ** 2;
+    if (d < bestD) { bestD = d; nx = n.x; ny = n.y; }
+  }
+  const nearTop = cur.y < SCENE.h * 0.08;
+  const siblingAbove = ny < cur.y - 6;
+  const below = nearTop || siblingAbove;           // flip under the node if a sibling is above it
+  const ico = below ? '👆' : '👇';
+  // horizontal nudge away from the nearest neighbour (px of the node's own container width)
+  const nudge = nx > cur.x + 6 ? -18 : nx < cur.x - 6 ? 18 : 0;
+  return `<span class="hn-arrow ${below ? 'below' : 'above'}" style="--nudge:${nudge}px">${ico} you are here</span>`;
 }
 
 function buildNodeButtons(save: SaveData, bossIds: Set<string>, furthestId: string): string {
@@ -647,7 +675,7 @@ function buildNodeButtons(save: SaveData, bossIds: Set<string>, furthestId: stri
     const title = unlocked
       ? `${level.name} — ${level.blurb}`
       : 'beat the previous level first!';
-    const arrow = isCurrent ? '<span class="hn-arrow">👇 you are here</span>' : '';
+    const arrow = isCurrent ? arrowCallout(n) : '';
     html += `<button class="${cls}" data-level="${n.levelId}" title="${title.replace(/"/g, '&quot;')}"
       style="left:${pct(n.x, SCENE.w)};top:${pct(n.y, SCENE.h)}">
       ${arrow}<span class="hn-face">${face}</span><span class="hn-num">${level.index}</span>${starRow}</button>`;

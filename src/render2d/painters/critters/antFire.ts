@@ -5,7 +5,8 @@
  */
 import { registerCritterPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, celCrescent, belly, haloBehind } from '../../paint';
 
 registerCritterPainter('ant-fire', (ctx, size, frame, opts) => {
   const cx = size / 2;
@@ -14,9 +15,10 @@ registerCritterPainter('ant-fire', (ctx, size, frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.4) : c);
   const base = warm(PAL.cherry);
+  const r3 = ramp(base);
   const orange = warm(PAL.antBullet);
-  const head = warm(darken(PAL.cherry, 0.1));
-  const leg = darken(PAL.cherry, 0.38);
+  const head = warm(mix(PAL.cherry, r3.shadow, 0.2));
+  const leg = mix(r3.shadow, 0x000000, 0.12);
   const glow = warm(PAL.flame);
   const stroke = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
   const oval = (x: number, y: number, rx: number, ry: number, fill: number) => { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.fillStyle = hex(fill); ctx.fill(); stroke(); };
@@ -44,10 +46,20 @@ registerCritterPainter('ant-fire', (ctx, size, frame, opts) => {
     ctx.beginPath(); ctx.moveTo(cx + sgn * size * 0.05, headY - size * 0.055); ctx.quadraticCurveTo(cx + sgn * size * 0.16, headY - size * 0.2, cx + sgn * size * 0.105, headY - size * 0.31); ctx.stroke();
     ctx.beginPath(); ctx.arc(cx + sgn * size * 0.105, headY - size * 0.31, size * 0.025, 0, Math.PI * 2); ctx.fillStyle = COCOA_CSS; ctx.fill();
   }
-  oval(cx, cy + size * 0.18, size * 0.16, size * 0.19, base);
-  ctx.beginPath(); ctx.moveTo(cx, cy + size * 0.02); ctx.quadraticCurveTo(cx - size * 0.09, cy + size * 0.12, cx - size * 0.035, cy + size * 0.23); ctx.quadraticCurveTo(cx, cy + size * 0.18, cx + size * 0.035, cy + size * 0.3); ctx.quadraticCurveTo(cx + size * 0.095, cy + size * 0.14, cx, cy + size * 0.02); ctx.closePath(); ctx.fillStyle = rgba(glow, 0.78); ctx.fill();
+  // V2: a faint warm ember halo behind the abdomen (the "spicy" read-target),
+  // then belly + cel shading; the flame mark stays the focal detail region.
+  const abY = cy + size * 0.18;
+  haloBehind(ctx, cx, abY, size * 0.24, glow, 0.16);
+  oval(cx, abY, size * 0.16, size * 0.19, base);
+  belly(ctx, cx, abY, size * 0.15, size * 0.18, r3, 0.5);
+  celCrescent(ctx, cx, abY, size * 0.16, size * 0.19, r3.shadow, 0.45, 0.5);
+  ctx.beginPath(); ctx.moveTo(cx, cy + size * 0.02); ctx.quadraticCurveTo(cx - size * 0.09, cy + size * 0.12, cx - size * 0.035, cy + size * 0.23); ctx.quadraticCurveTo(cx, cy + size * 0.18, cx + size * 0.035, cy + size * 0.3); ctx.quadraticCurveTo(cx + size * 0.095, cy + size * 0.14, cx, cy + size * 0.02); ctx.closePath(); ctx.fillStyle = rgba(glow, 0.85); ctx.fill();
+  // flame-mark hot core (two tones read as fire even at 24px)
+  ctx.beginPath(); ctx.moveTo(cx, cy + size * 0.08); ctx.quadraticCurveTo(cx - size * 0.04, cy + size * 0.15, cx, cy + size * 0.24); ctx.quadraticCurveTo(cx + size * 0.045, cy + size * 0.15, cx, cy + size * 0.08); ctx.closePath(); ctx.fillStyle = rgba(warm(PAL.butter), 0.9); ctx.fill();
   oval(cx, thoraxY, size * 0.095, size * 0.11, orange);
+  celCrescent(ctx, cx, thoraxY, size * 0.095, size * 0.11, ramp(orange).shadow, 0.5, 0.55);
   oval(cx, headY, size * 0.125, size * 0.12, head);
-  ctx.beginPath(); ctx.ellipse(cx - size * 0.04, headY - size * 0.03, size * 0.055, size * 0.05, 0, 0, Math.PI * 2); ctx.fillStyle = rgba(lighten(head, 0.35), 0.45); ctx.fill();
+  celCrescent(ctx, cx, headY, size * 0.125, size * 0.12, r3.shadow, 0.42, 0.5);
+  ctx.beginPath(); ctx.ellipse(cx - size * 0.04, headY - size * 0.03, size * 0.055, size * 0.05, 0, 0, Math.PI * 2); ctx.fillStyle = rgba(r3.light, 0.5); ctx.fill();
   for (const sgn of [-1, 1]) eye(cx + sgn * size * 0.055, headY - size * 0.005, size * 0.048, sgn);
 });

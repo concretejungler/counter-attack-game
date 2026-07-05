@@ -5,7 +5,8 @@
  */
 import { registerCritterPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix, lighten } from '../../colors';
+import { ramp, celCrescent, belly as bellyGrad, woodGrain } from '../../paint';
 
 registerCritterPainter('ant-carpenter', (ctx, size, frame, opts) => {
   const cx = size / 2;
@@ -14,10 +15,12 @@ registerCritterPainter('ant-carpenter', (ctx, size, frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.4) : c);
   const body = warm(mix(PAL.antSoldier, PAL.woodDark, 0.28));
+  const bodyR = ramp(body);
   const belly = warm(lighten(PAL.antSoldier, 0.08));
-  const head = warm(darken(PAL.antSoldier, 0.08));
+  const bellyR = ramp(belly);
+  const head = warm(mix(PAL.antSoldier, bodyR.shadow, 0.18));
   const wood = warm(PAL.wood);
-  const leg = darken(PAL.antSoldier, 0.36);
+  const leg = mix(bodyR.shadow, 0x000000, 0.1);
   const stroke = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
   const oval = (x: number, y: number, rx: number, ry: number, fill: number, rot = 0) => { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); ctx.fillStyle = hex(fill); ctx.fill(); stroke(); };
   const eye = (x: number, y: number, r: number, sgn: number) => {
@@ -44,15 +47,20 @@ registerCritterPainter('ant-carpenter', (ctx, size, frame, opts) => {
     ctx.beginPath(); ctx.moveTo(cx + sgn * size * 0.055, headY - size * 0.065); ctx.quadraticCurveTo(cx + sgn * size * 0.18, headY - size * 0.2, cx + sgn * size * 0.13, headY - size * 0.31); ctx.stroke();
     ctx.beginPath(); ctx.arc(cx + sgn * size * 0.13, headY - size * 0.31, size * 0.027, 0, Math.PI * 2); ctx.fillStyle = COCOA_CSS; ctx.fill();
   }
-  oval(cx, cy + size * 0.19, size * 0.16, size * 0.18, belly);
+  // V2: belly gradient on the abdomen, cel per segment, REAL wood grain on the plank.
+  const abY = cy + size * 0.19;
+  oval(cx, abY, size * 0.16, size * 0.18, belly);
+  bellyGrad(ctx, cx, abY, size * 0.15, size * 0.17, bellyR, 0.5);
+  celCrescent(ctx, cx, abY, size * 0.16, size * 0.18, bellyR.shadow, 0.45, 0.5);
   oval(cx, thoraxY, size * 0.12, size * 0.13, body);
+  celCrescent(ctx, cx, thoraxY, size * 0.12, size * 0.13, bodyR.shadow, 0.5, 0.55);
   ctx.save(); ctx.translate(cx, thoraxY - size * 0.02); ctx.rotate(-0.18);
   ctx.beginPath(); ctx.rect(-size * 0.13, -size * 0.045, size * 0.26, size * 0.09); ctx.fillStyle = hex(wood); ctx.fill(); stroke(size * 0.02);
-  ctx.strokeStyle = rgba(PAL.woodDark, 0.75); ctx.lineWidth = size * 0.012;
-  for (const y of [-0.018, 0.018]) { ctx.beginPath(); ctx.moveTo(-size * 0.1, size * y); ctx.lineTo(size * 0.1, size * y); ctx.stroke(); }
+  woodGrain(ctx, -size * 0.13, -size * 0.045, size * 0.26, size * 0.09, PAL.woodDark, 7, 2);
   ctx.restore();
   oval(cx, headY, size * 0.13, size * 0.12, head);
-  ctx.fillStyle = hex(darken(head, 0.18));
+  celCrescent(ctx, cx, headY, size * 0.13, size * 0.12, bodyR.shadow, 0.42, 0.5);
+  ctx.fillStyle = hex(mix(head, bodyR.shadow, 0.45));
   for (const sgn of [-1, 1]) { ctx.beginPath(); ctx.ellipse(cx + sgn * size * 0.075, headY - size * 0.115, size * 0.045, size * 0.025, sgn * 0.45, 0, Math.PI * 2); ctx.fill(); stroke(size * 0.019); }
   for (const sgn of [-1, 1]) eye(cx + sgn * size * 0.056, headY - size * 0.012, size * 0.048, sgn);
 });

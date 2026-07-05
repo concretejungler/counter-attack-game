@@ -10,6 +10,8 @@ import { isMobileViewport, isPortrait } from '../core/device';
 import { ChoicePanel, type ChoicePanelCallbacks } from './choicePanel';
 import { Fly } from './fly';
 import { DECK_MAX, type RunState } from '../meta/infestation';
+import { AudioMan } from '../audio/audio';
+import { Sfx } from '../audio/sfx';
 
 const el = (tag: string, cls = '', html = ''): HTMLElement => {
   const e = document.createElement(tag);
@@ -77,6 +79,12 @@ export class UI {
   /** ACCESSIBILITY SUITE (§23): full-screen flash/vignette pulse, driven by renderer.ts'
    *  onFlashPulse hook (game.ts wires it). Mounted once and reused — see pulseFlash(). */
   private flashEl: HTMLElement;
+  /** Menu juice audio (§A3): the diegetic-menu cues (button tick, screen whoosh) are wired from
+   *  the UI layer, not game.ts, so the UI owns its own tiny synth bus. Its sfx gain is synced to
+   *  the player's sfx-volume setting on each play. Lazy: no AudioContext exists until a user
+   *  gesture unlocks it (AudioMan.ensure() returns null before then), so boot stays silent. */
+  private menuAudio = new AudioMan();
+  private menuSfxPlayer = new Sfx(this.menuAudio);
 
   constructor(
     private content: ContentDB,
@@ -127,6 +135,64 @@ export class UI {
     this.rotateEl.classList.toggle('show', show);
   }
 
+  // ---------- menu juice (§A3): shared button spring + tick + screen-change whoosh ----------
+
+  /** Play a diegetic-menu cue through the UI's own synth bus, at the player's sfx volume. Silent
+   *  until a user gesture has unlocked audio (ensure() returns null before then). */
+  private menuSfx(name: string): void {
+    const ctx = this.menuAudio.ensure();
+    if (!ctx) return;
+    this.menuAudio.setVolumes(0, this.save.settings.sfxVol);
+    this.menuSfxPlayer.play(name, 22);
+  }
+
+  /** Mount a full menu screen: fade/slide it in, wire the button spring + tick, whoosh on change. */
+  private mountScreen(screen: HTMLElement): void {
+    this.screenEl = screen;
+    this.attachJuice(screen);
+    screen.classList.add('screen-enter');
+    this.root.append(screen);
+    requestAnimationFrame(() => requestAnimationFrame(() => screen.classList.remove('screen-enter')));
+    this.menuSfx('menu-whoosh');
+  }
+
+  /** Mount a modal overlay: fade/scale it in, wire the button spring + tick (no whoosh — modals
+   *  layer over the current screen and often coincide with a game cue, e.g. win/lose on recap). */
+  private openModal(modal: HTMLElement): void {
+    this.modalEl = modal;
+    this.attachJuice(modal);
+    modal.classList.add('modal-enter');
+    this.root.append(modal);
+    requestAnimationFrame(() => requestAnimationFrame(() => modal.classList.remove('modal-enter')));
+  }
+
+  /** Delegated button juice for a menu container: press-scale on pointerdown (with a soft tick),
+   *  overshoot-pop on release. Scoped to the given screen/modal element — the in-game HUD/dock are
+   *  never wired, so gameplay controls keep their own feel. Uses the CSS `scale` property so it
+   *  composes with buttons that already use `transform` for layout (e.g. the map's centred nodes). */
+  private attachJuice(container: HTMLElement): void {
+    let pressed: HTMLElement | null = null;
+    container.addEventListener('pointerdown', (e) => {
+      const btn = (e.target as HTMLElement | null)?.closest('button') as HTMLButtonElement | null;
+      if (!btn || !container.contains(btn) || btn.disabled || btn.classList.contains('locked')) return;
+      pressed = btn;
+      btn.classList.remove('spring-pop');
+      btn.classList.add('spring', 'spring-down');
+      this.menuSfx('menu-tick');
+    });
+    const release = (): void => {
+      if (!pressed) return;
+      const btn = pressed; pressed = null;
+      btn.classList.remove('spring-down');
+      btn.classList.add('spring-pop');
+      const done = (): void => { btn.classList.remove('spring-pop'); btn.removeEventListener('animationend', done); };
+      btn.addEventListener('animationend', done);
+    };
+    container.addEventListener('pointerup', release);
+    container.addEventListener('pointercancel', release);
+    container.addEventListener('pointerleave', release);
+  }
+
   private clearScreen(): void {
     this.screenEl?.remove();
     this.screenEl = null;
@@ -146,7 +212,7 @@ export class UI {
 
   showTitle(): void {
     this.clearScreen();
-    this.screenEl = buildTitle(
+    this.mountScreen(buildTitle(
       this.save,
       () => this.cb.onToLevels(),
       () => this.showSettings(),
@@ -156,8 +222,7 @@ export class UI {
       () => this.cb.onDailyChoreStart(),
       () => this.cb.onMagnetsSolved(),
       () => this.showTutorial(() => {}),
-    );
-    this.root.append(this.screenEl);
+    ));
   }
 
   /** The "How to Play" flip-book. Shown as a modal over the current screen; `onDone` runs after
@@ -165,16 +230,15 @@ export class UI {
    *  from the first-level gate). `finishLabel` sets the last page's button ("Got it!" vs "Let's Play!"). */
   showTutorial(onDone: () => void, finishLabel?: string): void {
     this.closeModal();
-    this.modalEl = buildTutorial(() => {
+    this.openModal(buildTutorial(() => {
       this.closeModal();
       onDone();
-    }, finishLabel);
-    this.root.append(this.modalEl);
+    }, finishLabel));
   }
 
   showLevelSelect(): void {
     this.clearScreen();
-    this.screenEl = buildLevelSelect(
+    this.mountScreen(buildLevelSelect(
       this.save,
       (id) => this.cb.onStartLevel(id),
       () => this.cb.onBackToTitle(),
@@ -183,34 +247,31 @@ export class UI {
       () => this.showJunkDrawer('levels'),
       () => this.cb.onStartEndless?.(),
       (id) => this.cb.onStartSecretLevel?.(id),
-    );
-    this.root.append(this.screenEl);
+    ));
   }
 
   /** The Critterdex. Reachable from the title fridge and from level select; remembers
    *  which screen to pop back to. */
   showJournal(returnTo: JournalReturnTo): void {
     this.clearScreen();
-    this.screenEl = buildJournal(this.save, this.content, () => {
+    this.mountScreen(buildJournal(this.save, this.content, () => {
       if (returnTo === 'title') this.showTitle();
       else this.showLevelSelect();
-    });
-    this.root.append(this.screenEl);
+    }));
   }
 
   /** The Junk Drawer (§18). Reachable from the title fridge and from level select, same
    *  return-to-caller pattern as the Critterdex above. */
   showJunkDrawer(returnTo: JournalReturnTo): void {
     this.clearScreen();
-    this.screenEl = buildJunkDrawer(
+    this.mountScreen(buildJunkDrawer(
       this.save,
       (id) => this.cb.onJunkDrawerPurchase(id),
       () => {
         if (returnTo === 'title') this.showTitle();
         else this.showLevelSelect();
       },
-    );
-    this.root.append(this.screenEl);
+    ));
   }
 
   // ---------- INFESTATION MODE (§15) ----------
@@ -218,29 +279,27 @@ export class UI {
   /** The run map screen — a branching house cross-section, reachable nodes clickable. */
   showInfestationMap(run: RunState): void {
     this.clearScreen();
-    this.screenEl = buildInfestationMap(
+    this.mountScreen(buildInfestationMap(
       run,
       this.content,
       (i) => this.cb.onInfestationPickNode(i),
       () => this.cb.onInfestationAbandon(),
-    );
-    this.root.append(this.screenEl);
+    ));
   }
 
   /** Card draft modal after a fight win — modal-over-map, matching the mutation draft pattern. */
   showInfestationDraft(options: string[]): void {
     this.closeModal();
-    this.modalEl = buildInfestationDraft(this.content, options, (id) => {
+    this.openModal(buildInfestationDraft(this.content, options, (id) => {
       this.closeModal();
       this.cb.onInfestationDraftPick(id);
-    });
-    this.root.append(this.modalEl);
+    }));
   }
 
   /** Garage Sale shop screen. */
   showGarageSale(run: RunState, floor: number, nodeIndex: number): void {
     this.clearScreen();
-    this.screenEl = buildGarageSale(
+    this.mountScreen(buildGarageSale(
       run,
       this.content,
       floor,
@@ -250,8 +309,7 @@ export class UI {
       (id) => this.cb.onGarageSaleRemoveCurse(id),
       () => this.cb.onGarageSaleBuySlices(),
       () => this.cb.onGarageSaleLeave(),
-    );
-    this.root.append(this.screenEl);
+    ));
   }
 
   /** Re-renders the Garage Sale in place after a purchase, so wares/prices refresh without
@@ -263,11 +321,10 @@ export class UI {
   /** Run-over recap (won floor-3 boss, or died) — modal like the campaign recap. */
   showRunOver(info: RunOverInfo): void {
     this.closeModal();
-    this.modalEl = buildRunOver(info, () => {
+    this.openModal(buildRunOver(info, () => {
       this.closeModal();
       this.cb.onRunOverReturn();
-    });
-    this.root.append(this.modalEl);
+    }));
   }
 
   showHud(level: LevelDef): void {
@@ -391,20 +448,17 @@ export class UI {
     }
     modal.append(row);
     wrap.append(modal);
-    this.modalEl = wrap;
-    this.root.append(wrap);
+    this.openModal(wrap);
   }
 
   showRecap(info: RecapInfo, onRetry: () => void, onLevels: () => void, onNext: (() => void) | null): void {
     this.closeModal();
-    this.modalEl = buildRecap(info, onRetry, onLevels, onNext);
-    this.root.append(this.modalEl);
+    this.openModal(buildRecap(info, onRetry, onLevels, onNext));
   }
 
   showSettings(): void {
     this.closeModal();
-    this.modalEl = buildSettings(this.save, this.cb.onSettingsChanged, () => this.closeModal());
-    this.root.append(this.modalEl);
+    this.openModal(buildSettings(this.save, this.cb.onSettingsChanged, () => this.closeModal()));
   }
 
   showPause(): void {
@@ -422,8 +476,7 @@ export class UI {
       this.cb.onToLevels();
     };
     veil.append(resume, quit);
-    this.modalEl = veil;
-    this.root.append(veil);
+    this.openModal(veil);
   }
 
   closeModal(): void {

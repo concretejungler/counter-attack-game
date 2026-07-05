@@ -15,6 +15,8 @@ import {
 } from '../meta/infestation';
 import { levelById } from '../content';
 import { buildHouseMap } from './houseMap';
+import { buildStatusRibbon } from './statusRibbon';
+import { getSprite } from '../render2d/spriteCache';
 
 const dayNumberLocal = (): number => dayNumber(Date.now());
 
@@ -27,6 +29,44 @@ const el = (tag: string, cls = '', html = ''): HTMLElement => {
 
 const TITLE_COLORS = ['#e8504f', '#3f5d7d', '#d8a020', '#3c8a5e', '#8a4a9c', '#d87f2e'];
 
+/** A tiny canvas painted with a real critter sprite (via the render2d cache — read-only) for the
+ *  title diorama's peek-a-boo bug. Falls back to an emoji if the painter isn't registered yet. */
+function buildCritterPeek(): HTMLElement {
+  const wrap = el('div', 't2-critter');
+  const size = 74;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const spr = getSprite('critter', 'ant-worker', size, 0, {}) ?? getSprite('critter', 'housefly', size, 0, {});
+  if (spr) {
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(size * dpr);
+    cv.height = Math.round(size * dpr);
+    cv.style.width = `${size}px`;
+    cv.style.height = `${size}px`;
+    const ctx = cv.getContext('2d');
+    if (ctx) { ctx.scale(dpr, dpr); ctx.drawImage(spr, 0, 0, size, size); }
+    wrap.append(cv);
+  } else {
+    wrap.append(el('div', 't2-critter-emoji', '🐜'));
+  }
+  return wrap;
+}
+
+/** One compact secondary destination tile for the title menu grid. */
+function titleTile(icon: string, label: string, sub: string, locked = false): HTMLButtonElement {
+  return el(
+    'button',
+    `t2-tile${locked ? ' locked' : ''}`,
+    `<span class="t2-tile-ico">${icon}</span><span class="t2-tile-label">${label}</span><span class="t2-tile-sub">${sub}</span>`,
+  ) as HTMLButtonElement;
+}
+
+/** TITLE — the LIVING DIORAMA (mobile-store revamp §A2). A shallow-parallax kitchen scene (back
+ *  wall+window / counter+toaster+fridge / drifting motes) with a critter that peeks from behind
+ *  the toaster, a dominant "DEFEND THE CAKE!" crayon CTA in the bottom thumb-band, a compact row
+ *  of secondary tiles, a light-switch Settings control, and the shared status ribbon up top. The
+ *  fridge-poetry magnets egg + OPEN SESAME note are relocated onto the diorama's fridge. Parallax
+ *  and the peek freeze under prefers-reduced-motion (handled in CSS). All callbacks / unlock states
+ *  / kid-voice casing are preserved verbatim from the old fridge menu. */
 export function buildTitle(
   save: SaveData,
   onPlay: () => void,
@@ -38,9 +78,42 @@ export function buildTitle(
   onMagnetsSolved: () => void,
   onHowToPlay: () => void,
 ): HTMLElement {
-  const screen = el('div', 'screen');
-  const fridge = el('div', 'fridge');
+  const screen = el('div', 'screen title2');
 
+  // ---- shared persistent status ribbon (top, safe-area aware) ----
+  const ribbonBar = el('div', 't2-ribbonbar');
+  ribbonBar.append(buildStatusRibbon(save));
+  screen.append(ribbonBar);
+
+  // ---- Settings: a diegetic wall light-switch in the top corner ----
+  const settings = el('button', 't2-settings', '<span class="t2-switch"><span class="t2-switch-nub"></span></span>');
+  settings.title = 'Settings — the thermostat';
+  settings.setAttribute('aria-label', 'Settings');
+  settings.onclick = onSettings;
+  screen.append(settings);
+
+  // ---- living diorama: 3 drifting parallax layers + the peek-a-boo critter ----
+  const scene = el('div', 'title2-scene');
+  const back = el('div', 't2-layer t2-back',
+    '<div class="t2-window"><span class="t2-sun"></span><span class="t2-mull t2-mull-v"></span><span class="t2-mull t2-mull-h"></span></div>');
+  const counter = el('div', 't2-layer t2-counter',
+    '<div class="t2-counter-top"></div><div class="t2-toaster"><span class="t2-slot"></span><span class="t2-slot"></span><span class="t2-lever"></span></div>');
+  counter.append(buildCritterPeek()); // sits BEHIND the toaster (lower z within the layer) so it peeks up and ducks
+  const fore = el('div', 't2-layer t2-fore');
+  for (let i = 0; i < 7; i++) {
+    const m = el('span', 't2-mote');
+    m.style.left = `${8 + ((i * 137) % 86)}%`;
+    m.style.top = `${20 + ((i * 71) % 60)}%`;
+    m.style.setProperty('--sz', `${5 + (i % 3) * 3}px`);
+    m.style.setProperty('--d', `${8 + (i % 4) * 1.7}s`);
+    m.style.animationDelay = `${-(i * 1.3).toFixed(1)}s`;
+    fore.append(m);
+  }
+  scene.append(back, counter, fore);
+  screen.append(scene);
+
+  // ---- brand wordmark (kept: the magnet letters) ----
+  const brand = el('div', 'title2-brand');
   const title = el('div', 'magnet-title');
   let letterIdx = 0;
   for (const word of 'COUNTER ATTACK!'.split(' ')) {
@@ -54,59 +127,13 @@ export function buildTitle(
     }
     title.append(wordWrap);
   }
+  brand.append(title, el('div', 'subtitle', 'critters vs. housewares — a tower defense of household proportions'));
+  screen.append(brand);
 
-  const menu = el('div', 'fridge-menu');
-  const play = el('button', 'fridge-note', '🎂 Defend the Cake');
-  play.style.setProperty('--pin', '#e8504f');
-  play.onclick = onPlay;
-  const infestUnlocked = (save.stars['kitchen-5'] ?? 0) > 0;
-  const inRun = !!save.infestation && !save.infestation.over;
-  const infest = el(
-    'button',
-    `fridge-note magnet-sticker${infestUnlocked ? '' : ' locked'}`,
-    infestUnlocked
-      ? `🐜 Infestation${inRun ? ` <small>resume — floor ${save.infestation!.floor}</small>` : ''}`
-      : '🐜 Infestation Mode <small>(beat the Crumb King first!!)</small>',
-  );
-  infest.style.setProperty('--pin', '#3c8a5e');
-  infest.style.setProperty('--tilt', '0.8deg');
-  if (infestUnlocked) infest.onclick = onInfestation;
-  const journalPct = critterdexCompletionPct(save);
-  const journal = el('button', 'fridge-note magnet-sticker', `📔 My Journal <small>${journalPct}%</small>`);
-  journal.style.setProperty('--pin', '#d8a020');
-  journal.style.setProperty('--tilt', '1.4deg');
-  journal.onclick = onJournal;
-  const bp = currentBP(save);
-  const drawer = el('button', 'fridge-note magnet-sticker', `🗄️ The Junk Drawer <small>${bp} 🧁 BP</small>`);
-  drawer.style.setProperty('--pin', '#8a4a9c');
-  drawer.style.setProperty('--tilt', '-0.6deg');
-  drawer.onclick = onJunkDrawer;
-  const today = dayNumberLocal();
-  const choreDone = save.lastDailyChoreDay === today;
-  const chore = el('button', 'fridge-note magnet-sticker', choreDone ? '📅 Daily Chore <small>done for today! ✔</small>' : '📅 Daily Chore <small>+25 BP</small>');
-  chore.style.setProperty('--pin', '#d87f2e');
-  chore.style.setProperty('--tilt', '-1.6deg');
-  if (!choreDone) chore.onclick = onDailyChore;
-  else chore.classList.add('locked');
-  const howto = el('button', 'fridge-note magnet-sticker', '🎓 How to Play');
-  howto.style.setProperty('--pin', '#5aa0c8');
-  howto.style.setProperty('--tilt', '0.5deg');
-  howto.onclick = onHowToPlay;
-  const settings = el('button', 'fridge-note', '🌡️ Settings');
-  settings.style.setProperty('--pin', '#3f5d7d');
-  settings.style.setProperty('--tilt', '-1deg');
-  settings.onclick = onSettings;
-  menu.append(play, journal, drawer, infest, chore, howto, settings);
-
-  fridge.append(
-    title,
-    el('div', 'subtitle', 'critters vs. housewares — a tower defense of household proportions'),
-    menu,
-    el('div', 'fridge-foot', 'the wish came true at 7:42pm. defend the birthday cake.'),
-  );
-
-  // Fridge poetry magnets (§20.4) — a scatter of draggable word tiles pinned below the menu.
-  // Arranging OPEN + SESAME adjacent pops a hidden relic note open (+50 BP, once per save).
+  // ---- fridge-poetry magnets egg + OPEN SESAME note, relocated ONTO the diorama's fridge ----
+  const fridge = el('div', 't2-fridge-egg');
+  fridge.append(el('div', 't2-fridge-handle'));
+  fridge.append(el('div', 't2-fridge-cap', '✎ fridge poetry'));
   const magnetsCb: MagnetsCallbacks = {
     onSolved: () => {
       doorNote.classList.add('open');
@@ -114,14 +141,49 @@ export function buildTitle(
     },
   };
   const magnets = new FridgeMagnets(magnetsCb, save.eggs.fridgeMagnetsSolved);
-  fridge.append(magnets.root);
-
+  const magnetHost = el('div', 't2-magnet-host');
+  magnetHost.append(magnets.root);
+  fridge.append(magnetHost);
   const doorNote = el('div', `fridge-door-note${save.eggs.fridgeMagnetsSolved ? ' open' : ''}`, `
     🔓 the magnets spelled it out... <b>OPEN SESAME</b><br>a rare relic tumbles out. <b>+50 🧁 BP!</b>
   `);
   fridge.append(doorNote);
-
   screen.append(fridge);
+
+  // ---- bottom menu: one dominant CTA + a compact row of equal secondary tiles ----
+  const menu = el('div', 'title2-menu');
+  const cta = el('button', 't2-cta', '<span class="t2-cta-ico">🎂</span><span class="t2-cta-label">DEFEND THE CAKE!</span>');
+  cta.onclick = onPlay;
+
+  const tiles = el('div', 't2-tiles');
+  const infestUnlocked = (save.stars['kitchen-5'] ?? 0) > 0;
+  const inRun = !!save.infestation && !save.infestation.over;
+  const infest = titleTile(
+    '🐜', 'Infestation',
+    infestUnlocked ? (inRun ? `resume · floor ${save.infestation!.floor}` : 'roguelike run') : 'beat the Crumb King!!',
+    !infestUnlocked,
+  );
+  if (infestUnlocked) infest.onclick = onInfestation;
+
+  const journal = titleTile('📔', 'My Journal', `${critterdexCompletionPct(save)}% filled`);
+  journal.onclick = onJournal;
+
+  const drawer = titleTile('🗄️', 'The Junk Drawer', `${currentBP(save)} 🧁 BP`);
+  drawer.onclick = onJunkDrawer;
+
+  const choreDone = save.lastDailyChoreDay === dayNumberLocal();
+  const chore = titleTile('📅', 'Daily Chore', choreDone ? 'done today! ✔' : '+25 BP', choreDone);
+  if (!choreDone) chore.onclick = onDailyChore;
+
+  const howto = titleTile('🎓', 'How to Play', 'the house rules');
+  howto.onclick = onHowToPlay;
+
+  tiles.append(infest, journal, drawer, chore, howto);
+  // menu flows top→bottom: tiles, then the dominant CTA in the thumb band, then the foot flavor.
+  menu.append(tiles, cta);
+  menu.append(el('div', 'title2-foot', 'the wish came true at 7:42pm. defend the birthday cake.'));
+  screen.append(menu);
+
   return screen;
 }
 
@@ -289,6 +351,10 @@ export function buildJournal(save: SaveData, content: ContentDB, onBack: () => v
   const screen = el('div', 'screen journal-screen');
   const book = el('div', 'journal-book');
 
+  const ribbonWrap = el('div', 't2-ribbonbar inline');
+  ribbonWrap.append(buildStatusRibbon(save));
+  book.append(ribbonWrap);
+
   const pct = critterdexCompletionPct(save);
   const header = el('div', 'journal-header');
   header.append(
@@ -379,6 +445,10 @@ export function buildJunkDrawer(
 ): HTMLElement {
   const screen = el('div', 'screen drawer-screen');
   const wrap = el('div', 'drawer-wrap');
+
+  const ribbonWrap = el('div', 't2-ribbonbar inline');
+  ribbonWrap.append(buildStatusRibbon(save));
+  wrap.append(ribbonWrap);
 
   const titleRow = el('div', 'drawer-title-row');
   titleRow.append(el('div', 'drawer-title', '🗄️ The Junk Drawer'));

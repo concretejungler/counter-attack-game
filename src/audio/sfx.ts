@@ -276,6 +276,25 @@ const RECIPES: Record<string, Recipe> = {
     noise(c, o, 0.015, 0.5, 4500, 4, 0, 'bandpass');
     noise(c, o, 0.02, 0.35, 2200, 4, 0.05, 'bandpass');
   },
+
+  // ---- Menu juice (mobile-store revamp §A3) — the diegetic-UI interaction cues, played from
+  // the ui layer (not game.ts). Kept soft + rounded so they read as "kitchen paper/wood", not
+  // arcade blips; distinct from the sharper in-game 'ui-click'. ----
+
+  // Soft press tick: a gentle woody blip + a whisper of felt — the "fridge-note tap". Quiet on
+  // purpose (fires on every menu button press), pitched low so rapid presses don't get shrill.
+  'menu-tick': (c, o) => {
+    tone(c, o, 'sine', 540, 360, 0.05, 0.11);
+    tone(c, o, 'triangle', 880, 700, 0.03, 0.05, 0.005);
+    noise(c, o, 0.03, 0.06, 700, 0.8, 0, 'lowpass');
+  },
+  // Screen-change whoosh: a soft lowpassed air sweep + a gentle rising body — the "page turns /
+  // camera slides to the next room" cue between menu screens. Short and unobtrusive.
+  'menu-whoosh': (c, o) => {
+    noise(c, o, 0.26, 0.15, 1000, 0.7, 0, 'lowpass');
+    tone(c, o, 'sine', 280, 560, 0.24, 0.10);
+    tone(c, o, 'sine', 210, 420, 0.26, 0.07, 0.02);
+  },
 };
 
 export class Sfx {

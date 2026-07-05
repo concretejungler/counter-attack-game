@@ -37,9 +37,24 @@ interface Gesture {
   startY: number;
   startT: number;
   lastSweep: number;
+  /** Last swept board point (world units) + surface, used to interpolate a continuous swept path
+   *  across fast drags whose throttled 90ms samples would otherwise leave gaps. */
+  lastSweepX?: number;
+  lastSweepZ?: number;
+  lastSweepSurface?: number;
   /** true while this gesture is a touch/pen press-and-hold on a tower, waiting to decide long-press (carry) vs tap (inspect). */
   towerHoldId?: number;
 }
+
+/**
+ * Player-facing crumb pickup radius, in tiles (1 world unit = 1 tile). A sweep banks every crumb
+ * within this radius of the swept board point. Deliberately generous (~1.7 tiles) so tapping or
+ * dragging NEAR a crumb collects it and precise aim isn't required — especially on touch screens.
+ * This is intentionally separate from the balance harness, which passes its own radius (1.4, see
+ * tests/harness/autoplay.ts), so widening player forgiveness never shifts the difficulty report.
+ * Was 0.95 tiles.
+ */
+const SWEEP_PICKUP_RADIUS = 1.7;
 
 const FIRE_SFX: Record<string, string> = {
   'sgt-spritz': 'shoot-spray',
@@ -1790,12 +1805,27 @@ export class Game {
         const y = this.level.surfaces[hit.surface].origin.y;
         this.renderer.setHandTarget(hit.x, y, hit.z, y);
       }
-      // sweep while dragging
+      // sweep while dragging — interpolate along the drag segment so a fast swipe leaves no gaps
+      // between the throttled 90ms samples (each intermediate point banks any crumbs it passes).
       if (this.gesture?.type === 'sweep' && this.gesture.towerHoldId === undefined && this.sim) {
         const now = performance.now();
         if (now - this.gesture.lastSweep > 90 && hit) {
-          this.gesture.lastSweep = now;
-          this.sim.command({ type: 'sweep', surface: hit.surface, x: hit.x, z: hit.z, radius: 0.95 });
+          const g = this.gesture;
+          g.lastSweep = now;
+          if (g.lastSweepSurface === hit.surface && g.lastSweepX !== undefined && g.lastSweepZ !== undefined) {
+            const dx = hit.x - g.lastSweepX;
+            const dz = hit.z - g.lastSweepZ;
+            // step ~1 tile apart between the previous sample and this one; radius overlap covers the seams
+            const steps = Math.min(12, Math.floor(Math.hypot(dx, dz)));
+            for (let i = 1; i <= steps; i++) {
+              const f = i / (steps + 1);
+              this.sim.command({ type: 'sweep', surface: hit.surface, x: g.lastSweepX + dx * f, z: g.lastSweepZ + dz * f, radius: SWEEP_PICKUP_RADIUS });
+            }
+          }
+          this.sim.command({ type: 'sweep', surface: hit.surface, x: hit.x, z: hit.z, radius: SWEEP_PICKUP_RADIUS });
+          g.lastSweepX = hit.x;
+          g.lastSweepZ = hit.z;
+          g.lastSweepSurface = hit.surface;
           this.sfx.play('sweep', 160);
         }
       }
@@ -1859,6 +1889,15 @@ export class Game {
             }
           }
         }
+        return;
+      }
+
+      // a plain tap (or the tail of a drag) on the floor banks crumbs near the release point too,
+      // so a single tap NEAR a crumb collects it — the same forgiveness as the drag-sweep. Reuses
+      // the existing sweep gesture/command; no new gesture type.
+      if (g.type === 'sweep' && g.towerHoldId === undefined) {
+        const hit = this.renderer.pickSurfacePoint(this.pointer.ndcX, this.pointer.ndcY);
+        if (hit) this.sim.command({ type: 'sweep', surface: hit.surface, x: hit.x, z: hit.z, radius: SWEEP_PICKUP_RADIUS });
         return;
       }
 

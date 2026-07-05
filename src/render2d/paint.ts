@@ -122,6 +122,31 @@ export function celCrescent(
 }
 
 /**
+ * celCrescentPath — celCrescent for an arbitrary silhouette: `tracePath` must
+ * begin/trace/close the path (it is called inside beginPath). The shadow lens
+ * is an ellipse around (x,y,rx,ry) offset away from the light, clipped to the
+ * shape. Use for darts/blobs/rects where an ellipse clip won't fit.
+ */
+export function celCrescentPath(
+  ctx: CanvasRenderingContext2D,
+  tracePath: () => void,
+  x: number, y: number, rx: number, ry: number,
+  shadowTone: number,
+  k = 0.45,
+  alpha = 0.8,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  tracePath();
+  ctx.clip();
+  ctx.beginPath();
+  ctx.ellipse(x - LIGHT.x * rx * k, y - LIGHT.y * ry * k, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fillStyle = rgba(shadowTone, alpha);
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
  * belly — ONE soft radial gradient for the sprite's dominant round mass:
  * light core offset ~30% toward the light, falling to the base at the rim.
  * Use at most once per sprite; hard cel for sub-forms.

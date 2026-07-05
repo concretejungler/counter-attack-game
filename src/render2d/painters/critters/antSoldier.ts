@@ -5,7 +5,8 @@
  */
 import { registerCritterPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix, lighten } from '../../colors';
+import { ramp, celCrescent, belly, specStreak } from '../../paint';
 
 registerCritterPainter('ant-soldier', (ctx, size, frame, opts) => {
   const cx = size / 2;
@@ -14,9 +15,11 @@ registerCritterPainter('ant-soldier', (ctx, size, frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.4) : c);
   const body = warm(PAL.antSoldier);
+  const r3 = ramp(body);
   const armor = warm(mix(PAL.antSoldier, PAL.metalDark, 0.28));
-  const head = warm(darken(PAL.antSoldier, 0.08));
-  const leg = darken(PAL.antSoldier, 0.36);
+  const armorR = ramp(armor);
+  const head = warm(mix(PAL.antSoldier, r3.shadow, 0.18));
+  const leg = mix(r3.shadow, 0x000000, 0.1);
   const stroke = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
   const oval = (x: number, y: number, rx: number, ry: number, fill: number) => { ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.fillStyle = hex(fill); ctx.fill(); stroke(); };
   const eye = (x: number, y: number, r: number, sgn: number) => {
@@ -43,11 +46,24 @@ registerCritterPainter('ant-soldier', (ctx, size, frame, opts) => {
     ctx.beginPath(); ctx.moveTo(cx + sgn * size * 0.06, headY - size * 0.055); ctx.quadraticCurveTo(cx + sgn * size * 0.19, headY - size * 0.19, cx + sgn * size * 0.13, headY - size * 0.31); ctx.stroke();
     ctx.beginPath(); ctx.arc(cx + sgn * size * 0.13, headY - size * 0.31, size * 0.027, 0, Math.PI * 2); ctx.fillStyle = COCOA_CSS; ctx.fill();
   }
-  oval(cx, cy + size * 0.18, size * 0.17, size * 0.18, body);
-  ctx.strokeStyle = rgba(darken(body, 0.25), 0.8); ctx.lineWidth = size * 0.025;
+  // V2: belly gradient on the abdomen (dominant mass) + cel crescents per segment.
+  const abY = cy + size * 0.18;
+  oval(cx, abY, size * 0.17, size * 0.18, body);
+  belly(ctx, cx, abY, size * 0.16, size * 0.17, r3, 0.5);
+  celCrescent(ctx, cx, abY, size * 0.17, size * 0.18, r3.shadow, 0.45, 0.55);
+  ctx.strokeStyle = rgba(r3.shadow, 0.75); ctx.lineWidth = size * 0.025;
   for (const dy of [0.1, 0.2, 0.29]) { ctx.beginPath(); ctx.ellipse(cx, cy + size * dy, size * 0.13, size * 0.018, 0, 0, Math.PI * 2); ctx.stroke(); }
   oval(cx, thoraxY, size * 0.125, size * 0.125, armor);
+  celCrescent(ctx, cx, thoraxY, size * 0.125, size * 0.125, armorR.shadow, 0.5, 0.6);
   oval(cx, headY, size * 0.145, size * 0.13, head);
+  celCrescent(ctx, cx, headY, size * 0.145, size * 0.13, r3.shadow, 0.42, 0.5);
+  // helmet cap: cel-lit metal with one spec streak = "hard shiny"
   ctx.beginPath(); ctx.ellipse(cx, headY - size * 0.055, size * 0.13, size * 0.065, 0, Math.PI, Math.PI * 2); ctx.lineTo(cx + size * 0.13, headY - size * 0.03); ctx.quadraticCurveTo(cx, headY + size * 0.03, cx - size * 0.13, headY - size * 0.03); ctx.closePath(); ctx.fillStyle = hex(lighten(armor, 0.1)); ctx.fill(); stroke(size * 0.025);
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(cx, headY - size * 0.045, size * 0.125, size * 0.06, 0, 0, Math.PI * 2); ctx.clip();
+  specStreak(ctx, cx - size * 0.04, headY - size * 0.06, size * 0.14, size * 0.03, 0.5);
+  ctx.fillStyle = rgba(armorR.shadow, 0.4);
+  ctx.fillRect(cx + size * 0.02, headY - size * 0.12, size * 0.12, size * 0.1);
+  ctx.restore();
   for (const sgn of [-1, 1]) eye(cx + sgn * size * 0.062, headY + size * 0.005, size * 0.05, sgn);
 });
