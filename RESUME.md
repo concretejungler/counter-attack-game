@@ -103,7 +103,21 @@ docs/superpowers/plans/2026-06-12-counter-attack.md   implementation plan
 
 ---
 
-## 4a. Most recent session (2026-07-04 — THE 2D CONVERSION)
+## 4. LATEST session (2026-07-05 — MOBILE-STORE REVAMP; read BUILDLOG top entry for detail)
+
+Store-quality menu/level-select rebuild + full art re-light, per user directives. Key state:
+- Level select = the crayon house-map (`src/ui/houseMap.ts` + `houseMapData.ts`); title = parallax
+  diorama; shared `statusRibbon.ts`; menu juice lives in the ui layer (own small audio bus).
+- ALL sprites use the v2 "one-light" system: toolkit `src/render2d/paint.ts`, law in
+  `painters/GUIDE.md` V2 section — any new painter MUST follow it (ramp() shadows, cel crescents,
+  ≤6-8 marks, tier rules). Coverage gates: `check-painters <kind> --strict`.
+- Board auto-fits ABOVE the HUD bars (Camera2D insets, renderer2d measures the DOM bars);
+  bar sections labeled Towers / Building Blocks / Power-Ups.
+- Crumb sweep: `SWEEP_PICKUP_RADIUS = 1.7` tiles in game.ts (harness radius is separate — 1.4).
+- Perf stress number (300 critters, 4× throttle) sits ~8ms vs the aspirational 4ms budget —
+  Canvas-2D drawImage floor + contended hosts; judge on real devices before optimizing further.
+
+## 4a. Prior session (2026-07-04 — THE 2D CONVERSION)
 
 The whole view layer was replaced: the game now renders top-down 2D via `src/render2d/` (Canvas 2D,
 sprite-cache + code-drawn painters for all 45 critters/29 towers/10 room themes, pooled VFX, 2D hand/

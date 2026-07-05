@@ -99,6 +99,10 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   background: radial-gradient(ellipse at 50% 30%, #4a3826 0%, #2a1f14 70%);
   overflow-y: auto;
   padding: 12px 0;
+  /* Own stacking context: the title diorama layers its props at z-index 15–21; without this the
+     modal-wrap scrim (z-index 10) mounted as a sibling can't cover them, so settings/tutorial/etc.
+     leaked the fridge + menu tiles + CTA over the dialog. Contain all screen internals below modals. */
+  z-index: 1;
 }
 
 .wood-btn {
@@ -306,7 +310,9 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   box-shadow: inset 0 0 0 3px #cbb489, 0 8px 16px rgba(0,0,0,0.12);
 }
 .t2-sun {
-  position: absolute; right: 16%; top: 16%; width: 32px; height: 32px; border-radius: 50%;
+  /* upper-LEFT of the window: keeps the disc clear of the centred magnet logo, whose first
+     letters used to sit right over a right-hung sun on short landscape screens (known-fix 3). */
+  position: absolute; left: 13%; top: 17%; right: auto; width: 30px; height: 30px; border-radius: 50%;
   background: radial-gradient(circle at 40% 40%, #fff4b4, #ffd357);
   box-shadow: 0 0 20px #ffdf7a; animation: t2sun 6s ease-in-out infinite;
 }
@@ -499,9 +505,18 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   .title2-brand { top: calc(max(6px, env(safe-area-inset-top)) + 38px); }
   .title2-brand .magnet-title span { font-size: clamp(18px, 4vw, 26px); }
   .title2-brand .subtitle { display: none; } /* flavor — dropped on the tight landscape band; shown on desktop */
-  .t2-fridge-egg { top: calc(max(6px, env(safe-area-inset-top)) + 78px); width: min(410px, 52vw); padding-bottom: 8px; }
+  /* fridge-poetry egg reads as a small PROP, not a form: dropped below the logo's air and scaled
+     down so its right edge no longer crowds the centred wordmark (known-fix 1). */
+  .t2-fridge-egg {
+    top: calc(max(6px, env(safe-area-inset-top)) + 92px); width: min(410px, 52vw); padding-bottom: 8px;
+    transform: scale(0.72); transform-origin: top left;
+  }
   .t2-fridge-egg .magnet-board { height: 78px; margin-top: 6px; }
   .t2-fridge-cap { margin-bottom: 0; }
+  /* toaster: seated firmly on the counter and pushed to the right edge, clear of the rightmost
+     menu tile ("How to Play") it used to clip (known-fix 2). The peek critter rides with it. */
+  .t2-toaster { right: 6%; bottom: 42%; width: min(104px, 13%); height: min(70px, 17%); }
+  .t2-critter { right: 9%; bottom: 42%; }
   .t2-cta { min-height: 54px; padding: 10px 28px; }
   .t2-tile { width: 98px; min-height: 52px; padding: 6px 8px; }
   .title2-menu { gap: 8px; }
@@ -2630,7 +2645,13 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
   .thermo-section { margin-top: 12px; }
   .thermo-section h3 { font-size: 12.5px; }
   .thermo-hint { font-size: 9.5px; }
-  .recap-graph { margin: 6px 0; }
+  /* recap: compress the scent graph + stat columns so every stats row clears the sticky action
+     bar without needing to scroll (the 3rd/4th rows were hiding behind the pinned buttons). */
+  .recap-graph { height: 44px; margin: 5px 0; }
+  .recap-cols { gap: 10px; margin-top: 2px; }
+  .recap-cols ul { font-size: 11.5px; line-height: 1.3; }
+  .recap-cols h4 { font-size: 12px; margin-bottom: 2px; }
+  .recap-actions { margin-top: 8px !important; }
   .recap-stars { font-size: 24px; margin: 4px 0; }
   .mutation-card { width: 130px; padding: 10px 9px; }
   .mutation-card .mut-ico { font-size: 26px; margin-bottom: 3px; }

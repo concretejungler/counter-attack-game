@@ -2,6 +2,17 @@
 
 > Living status doc. Updated after every task. After context compaction: read this + CLAUDE.md + the plan, then continue.
 
+## ✅ MOBILE-STORE REVAMP COMPLETE + DEPLOYED (2026-07-05) — plan: `docs/superpowers/plans/2026-07-05-mobile-store-revamp.md`
+
+User directives: store-quality menus/level-select for eventual Android/iOS (web-only for now), much more detailed graphics, bigger crumb pickup, board never under the HUD bars, labeled bar sections. Two research agents (TD menu/level-select patterns; TD art-detail techniques) fed the plan.
+
+- **Crayon house-map level select** (`src/ui/houseMap.ts` + Codex `houseMapData.ts`): the cutaway dollhouse IS the level select — SVG rooms/furniture/crumb-trail, 3-state nodes (locked scribble / pulsing you-are-here / stars), boss door nodes, secret ghosts, bottom-sheet level card w/ pet picker + PLAY in thumb band, whole-house zoom fast-travel, path-draw + camera-travel unlock juice.
+- **Living-diorama title**: parallax kitchen (window/sun, counter+toaster, motes), peeking sprite critter, crayon DEFEND THE CAKE! CTA, light-switch settings, magnets egg relocated; shared `statusRibbon.ts` (⭐/🧁/chore) across menus; global juice (button springs, screen slides, menu-tick/whoosh sfx in ui layer w/ its own small audio bus).
+- **Board clearance + labels**: Camera2D view insets (fit/projection/pick/cull/zoom inset-aware); renderer2d measures `.hud-top` + persistent bottom bar and re-fits on resize/orientation — the board NEVER sits under bars. "Towers / Building Blocks / Power-Ups" labels on the desktop strip + mobile sheet.
+- **Crumb pickup forgiveness** (user ask): `SWEEP_PICKUP_RADIUS = 1.7` tiles (was 0.95 literal; balance harness uses its own 1.4 — decoupled, zero sim edits), drag interpolation (no gaps between 90ms samples), tap-near-crumb pickup. Probe-proven 1.25-tile miss collects / 1.95 doesn't. NOTE: these game.ts changes rode into commit `fb175b1` via a concurrent-agent `git add -A` — lesson: scope adds while agents run.
+- **V2 art system — every sprite re-lit** (`src/render2d/paint.ts` + GUIDE v2 "one-light doctrine"): hue-shifted-shadow ramps (never plain darker), cel crescents w/ turning-edge slivers, one belly gradient per sprite, rim light, ≤6-8 material marks (woodGrain/specStreak/rivets/glossDot/fabricTicks/furEdgePath), tier rules (fodder/elite/boss). Fable authored toolkit + references + law; 4 Opus + 2 Codex agents fanned the recipe across all 45 critters + 29 towers (all strict gates 45/45+29/29); V-F added board depth (baked AO under furniture/platforms/clutter/wall feet, warm path-track emphasis, coarsened floor noise) + motion polish (phase-offset idle bob, walk squash, spawn overshoot, flier shadow coupling, tower breathing, cached boss halos) with no hot-loop allocations.
+- **Final QA (Opus)**: fixed title composition (poetry panel scaled/reseated, toaster seated, sun moved), modal z-index bleed (`.screen { z-index:1 }` — title was painting over settings/tutorial scrims), mobile recap clipping. Swept both viewports incl. dark themes + mid-campaign map: SHIP. Open: perf 8.2ms avg @300-critter 4×-throttle stress (documented Canvas-2D drawImage floor, contended host; real-device is arbiter), desktop `tutorial` Playwright shot flake (tooling only).
+
 ## ✅ 2D CONVERSION COMPLETE + DEPLOYED (2026-07-04) — plan: `docs/superpowers/plans/2026-07-04-2d-conversion.md`
 
 **P4 QA + polish landed (351/351, tsc/build/smoke green, strict sprite gates 45/45 + 29/29):**
