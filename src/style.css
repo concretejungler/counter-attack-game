@@ -293,86 +293,133 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
 }
 @keyframes chore-pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: 0.72; } }
 
-/* ---------- the living-diorama title (§A2) ---------- */
+/* ================================================================
+   TITLE v3 — THE COMPOSED STAGE (plan 2026-07-05 §Addendum).
+   ONE fixed 1600×900 stage scaled uniformly (contain) + centered; a
+   subtly darker wall tone fills the letterbox beyond it. Props + menu
+   are placed in STAGE coords (src/ui/titleSceneData.ts) so the
+   composition is IDENTICAL at every resolution/aspect — only the
+   uniform --stage-scale (set by a ResizeObserver in screens.ts) changes.
+   ================================================================ */
 .screen.title2 {
-  padding: 0; display: block; overflow: hidden;
-  background: linear-gradient(180deg, #f3d7a4 0%, #ecc78a 55%, #e0b476 100%);
+  padding: 0; overflow: hidden;
+  display: flex; align-items: center; justify-content: center; flex-direction: row;
+  background: linear-gradient(180deg, #c49a63 0%, #a67c48 100%); /* darker wall — the letterbox */
 }
-.title2-scene { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-.t2-layer { position: absolute; inset: -44px; will-change: transform; }
-.t2-back {
+.title-stage {
+  position: relative; flex: 0 0 auto;
+  transform: scale(var(--stage-scale, 1));
+  transform-origin: center center;
+  visibility: hidden; /* revealed once the fit-scale lands — no unscaled first-frame flash */
   background:
-    radial-gradient(ellipse at 78% 120%, rgba(255,255,255,0.12), transparent 60%),
-    linear-gradient(180deg, #f6dfb0 0%, #f0d199 56%, #e6bf82 100%);
-  animation: t2driftBack 15s ease-in-out infinite alternate;
+    radial-gradient(ellipse at 30% 6%, rgba(255,255,255,0.10), transparent 55%),
+    linear-gradient(180deg, #f3d7a4 0%, #ecc78a 55%, #e0b476 100%);
+  box-shadow: 0 0 0 2px rgba(120,80,40,0.18), 0 30px 80px rgba(0,0,0,0.45);
 }
-.t2-window {
-  position: absolute; left: 9%; top: 13%;
-  width: min(230px, 25%); height: min(150px, 33%);
-  background: linear-gradient(180deg, #bfe4f2 0%, #d8eecf 70%, #c9e6be 100%);
-  border: 9px solid #f2e6ca; border-radius: 10px;
-  box-shadow: inset 0 0 0 3px #cbb489, 0 8px 16px rgba(0,0,0,0.12);
+.title-stage.ready { visibility: visible; }
+.ts-prop { position: absolute; }
+
+/* wall — a soft floor-line shadow over the stage wash */
+.ts-wall { background: linear-gradient(180deg, transparent 60%, rgba(150,100,50,0.06) 100%); }
+
+/* window (upper-left third) + sun + mullions + daylight beam */
+.ts-window {
+  background: linear-gradient(180deg, #bfe4f2 0%, #d8eecf 68%, #c9e6be 100%);
+  border: 10px solid #f2e6ca; border-radius: 12px;
+  box-shadow: inset 0 0 0 3px #cbb489, 0 12px 22px rgba(0,0,0,0.12);
 }
-.t2-sun {
-  /* upper-LEFT of the window: keeps the disc clear of the centred magnet logo, whose first
-     letters used to sit right over a right-hung sun on short landscape screens (known-fix 3). */
-  position: absolute; left: 13%; top: 17%; right: auto; width: 30px; height: 30px; border-radius: 50%;
+.ts-mull { position: absolute; background: #f2e6ca; }
+.ts-mull-v { left: 50%; top: 0; width: 7px; height: 100%; margin-left: -3.5px; }
+.ts-mull-h { top: 50%; left: 0; height: 7px; width: 100%; margin-top: -3.5px; }
+.ts-sun {
+  border-radius: 50%;
   background: radial-gradient(circle at 40% 40%, #fff4b4, #ffd357);
-  box-shadow: 0 0 20px #ffdf7a; animation: t2sun 6s ease-in-out infinite;
+  box-shadow: 0 0 26px #ffdf7a; animation: ts-sun 6s ease-in-out infinite;
 }
-.t2-mull { position: absolute; background: #f2e6ca; }
-.t2-mull-v { left: 50%; top: 0; width: 6px; height: 100%; margin-left: -3px; }
-.t2-mull-h { top: 50%; left: 0; height: 6px; width: 100%; margin-top: -3px; }
-
-.t2-counter { animation: t2driftMid 12s ease-in-out infinite alternate; }
-.t2-counter-top {
-  position: absolute; left: 47%; right: -44px; bottom: 33%; height: 11%;
-  background: linear-gradient(180deg, #e6b874 0%, #d89f56 20%, #c1863f 58%, #a96f34 100%);
-  border-top: 5px solid #8a5a30; border-radius: 16px 0 0 0;
-  box-shadow: inset 0 5px 0 rgba(255,255,255,0.16), 0 10px 0 #90632c, 0 20px 26px rgba(0,0,0,0.16);
-}
-.t2-toaster {
-  position: absolute; right: 15%; bottom: 44%;
-  width: min(126px, 15%); height: min(88px, 20%);
-  background: linear-gradient(180deg, #eef2f6 0%, #d3dae1 62%, #b2bac4 100%);
-  border: 4px solid #7c8894; border-radius: 16px 16px 9px 9px;
-  box-shadow: inset 0 3px 0 rgba(255,255,255,0.7), 0 10px 16px rgba(0,0,0,0.22);
-  z-index: 3;
-}
-.t2-slot { position: absolute; top: 22%; width: 26%; height: 15%; background: #363b43; border-radius: 4px; box-shadow: inset 0 2px 3px rgba(0,0,0,0.6); }
-.t2-slot:nth-of-type(1) { left: 19%; }
-.t2-slot:nth-of-type(2) { left: 54%; }
-.t2-lever { position: absolute; left: -7px; top: 40%; width: 11px; height: 18px; background: #7c8894; border-radius: 4px 0 0 4px; }
-.t2-critter {
-  position: absolute; right: 18%; bottom: 44%;
-  width: 74px; height: 74px; z-index: 2; /* BEHIND toaster (z 3) — its head pokes up over the top edge */
-  transform: translateY(22px);
-  animation: t2peek 8.5s ease-in-out infinite;
-}
-.t2-critter canvas, .t2-critter-emoji { display: block; width: 100%; height: 100%; }
-.t2-critter-emoji { font-size: 54px; text-align: center; line-height: 74px; }
-
-.t2-fore { animation: t2driftFore 9s ease-in-out infinite alternate; }
-.t2-mote {
-  position: absolute; width: var(--sz, 6px); height: var(--sz, 6px); border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, rgba(255,250,232,0.95), rgba(255,236,190,0.35));
-  box-shadow: 0 0 5px rgba(255,244,214,0.6);
-  animation: t2mote var(--d, 9s) linear infinite;
+.ts-beam {
+  background: linear-gradient(120deg, rgba(255,246,206,0.5), rgba(255,240,190,0.04) 72%);
+  clip-path: polygon(6% 0, 30% 0, 78% 100%, 42% 100%);
+  filter: blur(3px); mix-blend-mode: screen; pointer-events: none;
 }
 
-@keyframes t2driftBack { from { transform: translate3d(-9px, 0, 0); } to { transform: translate3d(9px, 0, 0); } }
-@keyframes t2driftMid  { from { transform: translate3d(13px, 0, 0); } to { transform: translate3d(-13px, 0, 0); } }
-@keyframes t2driftFore { from { transform: translate3d(-17px, -5px, 0); } to { transform: translate3d(17px, 5px, 0); } }
-@keyframes t2sun { 0%,100% { box-shadow: 0 0 18px #ffdf7a; } 50% { box-shadow: 0 0 30px #ffe89a; } }
-@keyframes t2peek {
-  0%, 58%, 100% { transform: translateY(22px); }    /* tucked behind the toaster */
-  70%, 86%      { transform: translateY(-16px); }   /* head pokes up over the top, then ducks back */
+/* counter (full-width, bottom third) */
+.ts-counter {
+  background: linear-gradient(180deg, #e6b874 0%, #d89f56 16%, #c1863f 46%, #a96f34 100%);
+  border-top: 6px solid #8a5a30; border-radius: 22px 22px 0 0;
+  box-shadow: inset 0 6px 0 rgba(255,255,255,0.16), 0 -2px 0 #90632c, 0 -12px 24px rgba(0,0,0,0.10);
 }
-@keyframes t2mote {
-  0%   { transform: translate(0, 0); opacity: 0; }
-  15%  { opacity: 0.75; }
-  70%  { opacity: 0.55; }
-  100% { transform: translate(26px, -46px); opacity: 0; }
+
+/* fridge (tall, far left) */
+.ts-fridge {
+  background: linear-gradient(165deg, #f4f6f8 0%, #dfe3e8 42%, #c6ccd4 100%);
+  border: 5px solid #aab0b8; border-radius: 22px 22px 12px 12px;
+  box-shadow: inset 0 3px 14px rgba(255,255,255,0.7), 0 18px 34px rgba(0,0,0,0.30);
+}
+.ts-fridge-seam { position: absolute; left: 0; right: 0; top: 116px; height: 5px; background: rgba(140,150,160,0.5); }
+.ts-fridge-handle { position: absolute; right: 16px; top: 132px; width: 12px; height: 150px; background: linear-gradient(90deg, #c8ccd2, #9aa0a8); border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.35); }
+
+/* peek-a-boo critter (behind the toaster) — canvas fills the placed box */
+.ts-critter { transform: translateY(40px); animation: ts-peek 8.5s ease-in-out infinite; }
+.ts-critter canvas, .ts-critter-emoji { display: block; width: 100%; height: 100%; }
+.ts-critter-emoji { font-size: 58px; text-align: center; }
+
+/* toaster (right end of the counter) */
+.ts-toaster {
+  background: linear-gradient(180deg, #eef2f6 0%, #d3dae1 60%, #b2bac4 100%);
+  border: 5px solid #7c8894; border-radius: 22px 22px 10px 10px;
+  box-shadow: inset 0 3px 0 rgba(255,255,255,0.7), 0 14px 20px rgba(0,0,0,0.22);
+}
+.ts-slot { position: absolute; top: 22px; width: 52px; height: 20px; background: #363b43; border-radius: 5px; box-shadow: inset 0 2px 3px rgba(0,0,0,0.6); }
+.ts-slot:nth-of-type(1) { left: 40px; }
+.ts-slot:nth-of-type(2) { left: 108px; }
+.ts-lever { position: absolute; left: -9px; top: 54px; width: 13px; height: 24px; background: #7c8894; border-radius: 5px 0 0 5px; }
+
+/* birthday cake (center-left on the counter) — the stakes, candles lit */
+.ts-cake-plate { position: absolute; left: -4%; right: -4%; bottom: 0; height: 14px; border-radius: 50%; background: linear-gradient(180deg, #eef1f4, #c9ccd2); box-shadow: 0 5px 9px rgba(0,0,0,0.28); }
+.ts-cake-body { position: absolute; left: 12%; right: 12%; bottom: 8px; height: 62px; background: linear-gradient(180deg, #ffd9a8 0%, #f6b877 60%, #e79a52 100%); border-radius: 12px 12px 6px 6px; box-shadow: inset 0 3px 0 rgba(255,255,255,0.45); }
+.ts-cake-top { position: absolute; left: 20%; right: 20%; bottom: 60px; height: 22px; background: linear-gradient(180deg, #fff3f6, #ffd3e0); border-radius: 10px 10px 4px 4px; box-shadow: inset 0 3px 0 rgba(255,255,255,0.6); }
+.ts-candle { position: absolute; bottom: 74px; width: 7px; height: 30px; margin-left: -3.5px; border-radius: 2px; background: repeating-linear-gradient(180deg, #e85b6b 0 7px, #fff6f2 7px 14px); }
+.ts-flame { position: absolute; top: -15px; left: 50%; margin-left: -5px; width: 10px; height: 17px; border-radius: 50% 50% 50% 50% / 62% 62% 40% 40%; background: radial-gradient(circle at 50% 72%, #fff2a8, #ffb03a 58%, #ff7a1a); box-shadow: 0 0 11px #ffb84a; transform-origin: center bottom; animation: ts-flicker 1.1s ease-in-out infinite; }
+
+/* light-switch = Settings (top-right in-stage) */
+.ts-switch {
+  padding: 0; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, #fbf6ea, #ece0c6);
+  border: 3px solid #b9a377; border-radius: 9px; cursor: pointer;
+  box-shadow: 0 5px 11px rgba(0,0,0,0.32);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.ts-switch-plate { width: 22px; height: 40px; border-radius: 6px; background: #d8cba8; box-shadow: inset 0 0 0 2px #b9a377; position: relative; }
+.ts-switch-nub { position: absolute; left: 3px; right: 3px; top: 4px; height: 15px; border-radius: 4px; background: linear-gradient(180deg, #f2e6c8, #cbb98e); box-shadow: 0 2px 3px rgba(0,0,0,0.3); }
+.ts-switch:hover { transform: translateY(-1px); box-shadow: 0 8px 13px rgba(0,0,0,0.34); }
+
+/* fridge-poetry board (small door prop → opens the magnets overlay) */
+.ts-board {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 10px 8px;
+  background: linear-gradient(165deg, #fffdf4, #efe6cf);
+  border: 3px solid #cbb98e; border-radius: 12px; cursor: pointer; color: #5a4632;
+  box-shadow: 0 7px 15px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.7);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.ts-board-cap { font-family: var(--font-label); font-weight: bold; font-size: 15px; }
+.ts-board-dots { display: flex; gap: 6px; margin-top: 6px; }
+.ts-board-dots i { width: 36px; height: 22px; border-radius: 4px; background: linear-gradient(165deg, #fffef8, #f2e9d0); border: 2px solid #cfc09a; box-shadow: 0 2px 4px rgba(0,0,0,0.22); }
+.ts-board-hint { font-size: 12px; color: #8a6e2c; margin-top: auto; }
+.ts-board:hover { transform: translateY(-2px); box-shadow: 0 10px 19px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.7); }
+
+/* status ribbon — pinned top-center of the stage */
+.ts-ribbon { position: absolute; z-index: 20; left: 50%; top: 16px; transform: translateX(-50%); }
+
+@keyframes ts-sun { 0%,100% { box-shadow: 0 0 20px #ffdf7a; } 50% { box-shadow: 0 0 34px #ffe89a; } }
+@keyframes ts-peek {
+  0%, 58%, 100% { transform: translateY(40px); }   /* tucked behind the toaster */
+  70%, 86%      { transform: translateY(-10px); }   /* head pokes up, then ducks */
+}
+@keyframes ts-flicker {
+  0%, 100% { transform: scale(1) rotate(-1deg); opacity: 1; }
+  40%      { transform: scale(1.12) rotate(2deg); opacity: 0.92; }
+  70%      { transform: scale(0.94) rotate(-2deg); opacity: 1; }
 }
 
 /* status ribbon bar wrapper (fixed top on the title; inline on sub-screens) */
@@ -385,98 +432,70 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
 .t2-ribbonbar > * { pointer-events: auto; }
 .t2-ribbonbar.inline { position: static; padding: 0 0 10px; }
 
-/* Settings: a wall light-switch, top corner */
-.t2-settings {
-  position: absolute; z-index: 21;
-  top: calc(max(7px, env(safe-area-inset-top)) + 2px);
-  right: max(12px, env(safe-area-inset-right));
-  width: 42px; height: 52px; padding: 6px 0;
-  display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(180deg, #fbf6ea, #ece0c6);
-  border: 2.5px solid #b9a377; border-radius: 8px;
-  box-shadow: 0 4px 9px rgba(0,0,0,0.35);
+/* wordmark (magnet letters) + subtitle */
+.ts-wordmark { position: absolute; z-index: 15; display: flex; flex-direction: column; align-items: center; text-align: center; pointer-events: none; }
+.ts-wordmark .magnet-title { margin: 0; gap: 6px 16px; }
+.ts-wordmark .magnet-title span { font-size: 56px; padding: 4px 12px; }
+.ts-subtitle {
+  position: absolute; z-index: 15; text-align: center; white-space: nowrap; pointer-events: none;
+  font-size: 21px; color: #5a4632; text-shadow: 0 1px 0 rgba(255,255,255,0.45);
 }
-.t2-switch { width: 18px; height: 30px; border-radius: 5px; background: #d8cba8; box-shadow: inset 0 0 0 2px #b9a377; position: relative; }
-.t2-switch-nub { position: absolute; left: 2px; right: 2px; top: 3px; height: 12px; border-radius: 3px; background: linear-gradient(180deg, #f2e6c8, #cbb98e); box-shadow: 0 2px 3px rgba(0,0,0,0.3); }
 
-/* brand wordmark */
-.title2-brand {
-  position: absolute; z-index: 5; left: 0; right: 0;
-  top: calc(max(7px, env(safe-area-inset-top)) + 46px);
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  pointer-events: none; text-align: center;
-}
-.title2-brand .magnet-title { margin-bottom: 0; }
-.title2-brand .magnet-title span { font-size: clamp(21px, 4.6vw, 34px); }
-.title2-brand .subtitle { margin-bottom: 0; font-size: clamp(11px, 2.6vw, 14px); color: #5a4632; text-shadow: 0 1px 0 rgba(255,255,255,0.4); }
-
-/* fridge-poetry egg on the diorama fridge — top-anchored below the brand so it clears the bottom
-   menu tiles on short landscape phones (centred instead on tall/desktop, see media queries). */
-.t2-fridge-egg {
-  position: absolute; z-index: 15;
-  left: max(12px, env(safe-area-inset-left));
-  top: calc(max(7px, env(safe-area-inset-top)) + 116px);
-  width: min(432px, 54vw);
-  padding: 8px 14px 12px;
-  background: linear-gradient(165deg, #eef1f4 0%, #dde1e6 46%, #c4c9d0 100%);
-  border: 4px solid #a8aeb6; border-radius: 18px;
-  box-shadow: inset 0 2px 12px rgba(255,255,255,0.6), 0 14px 30px rgba(0,0,0,0.38);
-  pointer-events: auto;
-}
-.t2-fridge-handle { position: absolute; right: -10px; top: 30px; width: 11px; height: 92px; background: linear-gradient(90deg, #c8ccd2, #9aa0a8); border-radius: 0 8px 8px 0; box-shadow: 2px 3px 6px rgba(0,0,0,0.3); }
-.t2-fridge-cap { font-size: 12.5px; font-weight: bold; color: #6a7078; text-align: center; margin-bottom: 2px; opacity: 0.85; }
-.t2-magnet-host { position: relative; }
-.t2-fridge-egg .magnet-board { margin-top: 8px; height: 108px; }
-
-/* bottom menu: dominant CTA (thumb band) + compact secondary tiles */
-.title2-menu {
-  position: absolute; z-index: 15; left: 0; right: 0;
-  bottom: calc(12px + env(safe-area-inset-bottom));
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  padding: 0 16px; pointer-events: none;
-}
-.title2-menu > * { pointer-events: auto; }
-.t2-cta {
-  position: relative;
-  display: inline-flex; align-items: center; justify-content: center; gap: 12px;
-  min-width: 260px; min-height: 66px; padding: 14px 40px;
+/* dominant CTA (rect-positioned; hover/spring transforms stay free) */
+.ts-cta {
+  position: absolute; z-index: 16;
+  display: inline-flex; align-items: center; justify-content: center; gap: 14px;
   background: linear-gradient(180deg, #ff6f60 0%, #ea443f 100%);
-  border: 4px solid #a52a26; border-radius: 18px;
-  color: #fff8ec; font-weight: bold; font-size: clamp(22px, 4.6vw, 31px);
-  letter-spacing: 0.5px; text-shadow: 1px 2px 0 rgba(0,0,0,0.32);
-  box-shadow: 0 6px 0 #a52a26, 0 13px 24px rgba(0,0,0,0.42);
+  border: 5px solid #a52a26; border-radius: 20px; cursor: pointer;
+  color: #fff8ec; font-weight: bold; font-size: 35px; letter-spacing: 0.5px;
+  text-shadow: 1px 2px 0 rgba(0,0,0,0.32);
+  box-shadow: 0 7px 0 #a52a26, 0 15px 26px rgba(0,0,0,0.42);
   transition: transform 0.09s, box-shadow 0.09s;
 }
-.t2-cta::before {
-  content: ''; position: absolute; inset: -9px -15px;
-  border: 3.5px solid #ffd98a; border-radius: 42% 44% 46% 42% / 62% 58% 62% 58%;
+.ts-cta::before {
+  content: ''; position: absolute; inset: -11px -17px;
+  border: 4px solid #ffd98a; border-radius: 42% 44% 46% 42% / 62% 58% 62% 58%;
   transform: rotate(-1.5deg); opacity: 0.9; pointer-events: none;
+  animation: ts-ctawobble 5s ease-in-out infinite;
 }
-.t2-cta-ico { font-size: 1.3em; }
-.t2-cta:hover { transform: translateY(-2px); box-shadow: 0 8px 0 #a52a26, 0 16px 26px rgba(0,0,0,0.42); }
-.t2-cta:active { transform: translateY(3px); box-shadow: 0 2px 0 #a52a26, 0 6px 12px rgba(0,0,0,0.42); }
-.t2-tiles { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 700px; }
-.t2-tile {
-  display: flex; flex-direction: column; align-items: center; gap: 1px;
-  width: 110px; min-height: 62px; padding: 7px 8px;
-  background: var(--paper); border: 2.5px solid #cbb98e; border-radius: 12px;
-  box-shadow: 0 3px 7px rgba(0,0,0,0.28);
-  color: var(--ink); text-align: center;
-  transition: transform 0.1s;
+.ts-cta-ico { font-size: 1.25em; }
+.ts-cta:hover { transform: translateY(-2px); box-shadow: 0 9px 0 #a52a26, 0 18px 30px rgba(0,0,0,0.42); }
+.ts-cta:active { transform: translateY(3px); box-shadow: 0 3px 0 #a52a26, 0 7px 13px rgba(0,0,0,0.42); }
+@keyframes ts-ctawobble { 0%,100% { transform: rotate(-1.5deg) scale(1); } 50% { transform: rotate(1deg) scale(1.015); } }
+
+/* one tidy row of compact secondary tiles */
+.ts-tiles { position: absolute; z-index: 15; display: flex; align-items: stretch; }
+.ts-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 8px 10px;
+  background: var(--paper); border: 3px solid #cbb98e; border-radius: 14px;
+  box-shadow: 0 4px 9px rgba(0,0,0,0.28);
+  color: var(--ink); text-align: center; cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
 }
-.t2-tile:hover { transform: translateY(-2px); box-shadow: 0 6px 11px rgba(0,0,0,0.3); }
-.t2-tile-ico { font-size: 22px; line-height: 1; }
-.t2-tile-label { font-size: 13px; font-weight: bold; line-height: 1.05; }
-.t2-tile-sub { font-size: 10px; color: #8a6e2c; line-height: 1.05; }
-/* locked tiles stay OPAQUE (muted paper, not see-through) so they cleanly cover the fridge egg
-   behind them in the bottom band — only the content dims to read as locked. */
-.t2-tile.locked { background: #e8dfca; border-color: #c2b48c; filter: grayscale(0.5); }
-.t2-tile.locked .t2-tile-ico, .t2-tile.locked .t2-tile-label, .t2-tile.locked .t2-tile-sub { opacity: 0.6; }
-.title2-foot {
-  display: none; /* shown on tall/desktop only — landscape phone hides it to save the thumb band */
-  text-align: center; font-size: 11.5px; color: #6a5a44; font-family: var(--font-label);
-  pointer-events: none;
+.ts-tile:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(0,0,0,0.3); }
+.ts-tile-ico { font-size: 30px; line-height: 1; }
+.ts-tile-label { font-size: 18px; font-weight: bold; line-height: 1.06; }
+.ts-tile-sub { font-size: 13px; color: #8a6e2c; line-height: 1.06; }
+.ts-tile.locked { background: #e8dfca; border-color: #c2b48c; filter: grayscale(0.5); cursor: default; }
+.ts-tile.locked .ts-tile-ico, .ts-tile.locked .ts-tile-label, .ts-tile.locked .ts-tile-sub { opacity: 0.6; }
+
+/* footnote */
+.ts-footnote {
+  position: absolute; z-index: 15; text-align: center; white-space: nowrap; pointer-events: none;
+  font-size: 16px; color: #6a5a44; font-family: var(--font-label);
 }
+
+/* fridge-poetry magnets — centered overlay modal (rehosts FridgeMagnets + the OPEN SESAME note).
+   Qualified with .modal-wrap so this beats the base `.modal-wrap { display:flex }` (defined later
+   in the file) on specificity rather than source order — otherwise the overlay shows open on load. */
+.modal-wrap.ts-magnets-modal { display: none; z-index: 30; }
+.modal-wrap.ts-magnets-modal.open { display: flex; }
+.ts-magnets-paper { width: min(560px, 92vw); }
+.ts-magnets-head { font-family: var(--font-hand); font-size: 26px; font-weight: bold; text-align: center; margin-bottom: 4px; }
+.ts-magnets-sub { text-align: center; font-size: 14px; color: #7a6a55; margin-bottom: 12px; }
+.ts-magnet-host { position: relative; }
+.ts-magnets-foot { text-align: center; margin-top: 14px; }
 
 /* ---------- global menu juice (§A3): button spring + screen/modal transitions ----------
    Spring uses the CSS `scale` property (independent of `transform`) so it composes with buttons
@@ -495,41 +514,19 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
 .modal-enter .paper-modal { transform: scale(0.93); }
 
 @media (prefers-reduced-motion: reduce) {
-  .t2-back, .t2-counter, .t2-fore, .t2-mote, .t2-critter, .t2-sun,
-  .status-chip.chore.ready .chore-dot, .t2-cta::before { animation: none !important; }
-  .t2-critter { transform: translateY(-6px); } /* frozen mid-peek, still charming */
+  .ts-sun, .ts-critter, .ts-flame, .ts-cta::before,
+  .status-chip.chore.ready .chore-dot { animation: none !important; }
+  .ts-critter { transform: translateY(6px); } /* frozen mid-peek, still charming */
   .spring, .spring-pop, .screen, .modal-wrap, .pause-veil, .paper-modal {
     transition: none !important; animation: none !important; scale: none !important; transform: none !important;
   }
   .screen.screen-enter { opacity: 1; transform: none; }
 }
 
-/* landscape phone (the design target) — tighten the title so nothing crowds the 390px height */
-@media (max-height: 500px) {
-  .title2-brand { top: calc(max(6px, env(safe-area-inset-top)) + 38px); }
-  .title2-brand .magnet-title span { font-size: clamp(18px, 4vw, 26px); }
-  .title2-brand .subtitle { display: none; } /* flavor — dropped on the tight landscape band; shown on desktop */
-  /* fridge-poetry egg reads as a small PROP, not a form: dropped below the logo's air and scaled
-     down so its right edge no longer crowds the centred wordmark (known-fix 1). */
-  .t2-fridge-egg {
-    top: calc(max(6px, env(safe-area-inset-top)) + 92px); width: min(410px, 52vw); padding-bottom: 8px;
-    transform: scale(0.72); transform-origin: top left;
-  }
-  .t2-fridge-egg .magnet-board { height: 78px; margin-top: 6px; }
-  .t2-fridge-cap { margin-bottom: 0; }
-  /* toaster: seated firmly on the counter and pushed to the right edge, clear of the rightmost
-     menu tile ("How to Play") it used to clip (known-fix 2). The peek critter rides with it. */
-  .t2-toaster { right: 6%; bottom: 42%; width: min(104px, 13%); height: min(70px, 17%); }
-  .t2-critter { right: 9%; bottom: 42%; }
-  .t2-cta { min-height: 54px; padding: 10px 28px; }
-  .t2-tile { width: 98px; min-height: 52px; padding: 6px 8px; }
-  .title2-menu { gap: 8px; }
-}
-/* tall / desktop — roomier: centre the fridge egg and let the 7:42pm foot flavor breathe */
-@media (min-height: 620px) {
-  .title2-foot { display: block; }
-  .t2-fridge-egg { top: 46%; transform: translateY(-50%); }
-}
+/* TITLE v3 needs NO per-resolution title media queries: the single 1600×900 stage scales uniformly
+   (contain) to every viewport (720p → 4K, 21:9, and 844×390 mobile landscape), so the composition
+   is identical everywhere. CTA (112px) and tiles (104px) stay ≥44px effective touch at the tightest
+   mobile scale (×0.433). Only the reduced-motion rule above touches the title now. */
 
 /* ---------- level select: the corkboard ---------- */
 .corkboard-screen {

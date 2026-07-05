@@ -18,6 +18,7 @@ import { buildHouseMap } from './houseMap';
 import { buildStatusRibbon } from './statusRibbon';
 import { getSprite } from '../render2d/spriteCache';
 import { autoUiScale, isFullscreen, toggleFullscreen, isFinePointer } from '../core/device';
+import { STAGE, PROPS, MENU } from './titleSceneData';
 
 const dayNumberLocal = (): number => dayNumber(Date.now());
 
@@ -31,43 +32,48 @@ const el = (tag: string, cls = '', html = ''): HTMLElement => {
 const TITLE_COLORS = ['#e8504f', '#3f5d7d', '#d8a020', '#3c8a5e', '#8a4a9c', '#d87f2e'];
 
 /** A tiny canvas painted with a real critter sprite (via the render2d cache — read-only) for the
- *  title diorama's peek-a-boo bug. Falls back to an emoji if the painter isn't registered yet. */
+ *  title stage's peek-a-boo bug. The canvas fills its prop box (placed by the caller); falls back to
+ *  an emoji if the painter isn't registered yet. */
 function buildCritterPeek(): HTMLElement {
-  const wrap = el('div', 't2-critter');
-  const size = 74;
+  const wrap = el('div', 'ts-critter');
+  const size = 80;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const spr = getSprite('critter', 'ant-worker', size, 0, {}) ?? getSprite('critter', 'housefly', size, 0, {});
   if (spr) {
     const cv = document.createElement('canvas');
     cv.width = Math.round(size * dpr);
     cv.height = Math.round(size * dpr);
-    cv.style.width = `${size}px`;
-    cv.style.height = `${size}px`;
+    cv.style.width = '100%';
+    cv.style.height = '100%';
     const ctx = cv.getContext('2d');
     if (ctx) { ctx.scale(dpr, dpr); ctx.drawImage(spr, 0, 0, size, size); }
     wrap.append(cv);
   } else {
-    wrap.append(el('div', 't2-critter-emoji', '🐜'));
+    wrap.append(el('div', 'ts-critter-emoji', '🐜'));
   }
   return wrap;
 }
 
-/** One compact secondary destination tile for the title menu grid. */
+/** One compact secondary destination tile for the title menu row. */
 function titleTile(icon: string, label: string, sub: string, locked = false): HTMLButtonElement {
   return el(
     'button',
-    `t2-tile${locked ? ' locked' : ''}`,
-    `<span class="t2-tile-ico">${icon}</span><span class="t2-tile-label">${label}</span><span class="t2-tile-sub">${sub}</span>`,
+    `ts-tile${locked ? ' locked' : ''}`,
+    `<span class="ts-tile-ico">${icon}</span><span class="ts-tile-label">${label}</span><span class="ts-tile-sub">${sub}</span>`,
   ) as HTMLButtonElement;
 }
 
-/** TITLE — the LIVING DIORAMA (mobile-store revamp §A2). A shallow-parallax kitchen scene (back
- *  wall+window / counter+toaster+fridge / drifting motes) with a critter that peeks from behind
- *  the toaster, a dominant "DEFEND THE CAKE!" crayon CTA in the bottom thumb-band, a compact row
- *  of secondary tiles, a light-switch Settings control, and the shared status ribbon up top. The
- *  fridge-poetry magnets egg + OPEN SESAME note are relocated onto the diorama's fridge. Parallax
- *  and the peek freeze under prefers-reduced-motion (handled in CSS). All callbacks / unlock states
- *  / kid-voice casing are preserved verbatim from the old fridge menu. */
+/** TITLE v3 — THE COMPOSED STAGE (plan 2026-07-05 §Addendum). The whole title is ONE fixed
+ *  1600×900 stage (geometry in src/ui/titleSceneData.ts) scaled uniformly to fit the viewport
+ *  (contain) and centered; a subtly darker wall tone fills the letterbox beyond it — so the kitchen
+ *  composition is IDENTICAL at every resolution/aspect. Props (wall / window+sun+beam / full-width
+ *  counter / tall fridge / birthday cake with lit candles / toaster with the peeking critter /
+ *  light-switch = Settings) all live in stage coords. The fridge's poetry-magnet board is a small
+ *  door prop that opens the magnets mini-game in a centered overlay modal (rehosting FridgeMagnets
+ *  + the OPEN SESAME note — every egg behavior preserved). The menu column (wordmark → subtitle →
+ *  DEFEND THE CAKE! CTA → row of 5 tiles → footnote) and the status ribbon are placed in stage
+ *  coords too. Idle animation (sun glow, candle flicker, critter peek) freezes under
+ *  prefers-reduced-motion (CSS). All callbacks / unlock states / Title Case preserved from v2. */
 export function buildTitle(
   save: SaveData,
   onPlay: () => void,
@@ -80,41 +86,123 @@ export function buildTitle(
   onHowToPlay: () => void,
 ): HTMLElement {
   const screen = el('div', 'screen title2');
+  const stage = el('div', 'title-stage');
+  stage.style.width = `${STAGE.w}px`;
+  stage.style.height = `${STAGE.h}px`;
 
-  // ---- shared persistent status ribbon (top, safe-area aware) ----
-  const ribbonBar = el('div', 't2-ribbonbar');
-  ribbonBar.append(buildStatusRibbon(save));
-  screen.append(ribbonBar);
+  // Place a prop absolutely from its stage rect (top-left origin, px) + paint order.
+  const placeRect = (node: HTMLElement, x: number, y: number, w: number, h: number, z: number): void => {
+    node.style.left = `${x}px`;
+    node.style.top = `${y}px`;
+    node.style.width = `${w}px`;
+    node.style.height = `${h}px`;
+    node.style.zIndex = String(z);
+  };
+  // Center a (non-hovered) element on a stage point via transform.
+  const centerAt = (node: HTMLElement, cx: number, cy: number): void => {
+    node.style.left = `${cx}px`;
+    node.style.top = `${cy}px`;
+    node.style.transform = 'translate(-50%, -50%)';
+  };
 
-  // ---- Settings: a diegetic wall light-switch in the top corner ----
-  const settings = el('button', 't2-settings', '<span class="t2-switch"><span class="t2-switch-nub"></span></span>');
-  settings.title = 'Settings — the thermostat';
-  settings.setAttribute('aria-label', 'Settings');
-  settings.onclick = onSettings;
-  screen.append(settings);
+  // ---- fridge-poetry magnets: a centered overlay modal opened by the fridge-door board prop.
+  //      Rehosts the existing FridgeMagnets component + the OPEN SESAME note; egg behavior intact. ----
+  const magnetsModal = el('div', 'modal-wrap ts-magnets-modal');
+  const magnetsPaper = el('div', 'paper-modal ts-magnets-paper');
+  magnetsPaper.append(el('div', 'ts-magnets-head', '✎ Fridge Poetry'));
+  magnetsPaper.append(el('div', 'ts-magnets-sub', 'drag the word tiles around — can you spell something the fridge wants to hear?'));
+  const doorNote = el('div', `fridge-door-note${save.eggs.fridgeMagnetsSolved ? ' open' : ''}`, `
+    🔓 the magnets spelled it out... <b>OPEN SESAME</b><br>a rare relic tumbles out. <b>+50 🧁 BP!</b>
+  `);
+  const magnetsCb: MagnetsCallbacks = {
+    onSolved: () => {
+      doorNote.classList.add('open');
+      onMagnetsSolved();
+    },
+  };
+  const magnets = new FridgeMagnets(magnetsCb, save.eggs.fridgeMagnetsSolved);
+  const magnetHost = el('div', 'ts-magnet-host');
+  magnetHost.append(magnets.root);
+  magnetsPaper.append(magnetHost, doorNote);
+  const magnetsFoot = el('div', 'ts-magnets-foot');
+  const magnetsClose = el('button', 'wood-btn small', 'Close') as HTMLButtonElement;
+  const closeMagnets = (): void => magnetsModal.classList.remove('open');
+  const openMagnets = (): void => {
+    magnetsModal.classList.add('open', 'modal-enter');
+    requestAnimationFrame(() => requestAnimationFrame(() => magnetsModal.classList.remove('modal-enter')));
+  };
+  magnetsClose.onclick = closeMagnets;
+  magnetsFoot.append(magnetsClose);
+  magnetsPaper.append(magnetsFoot);
+  magnetsModal.append(magnetsPaper);
+  // Backdrop click (the scrim, not the paper) closes the overlay.
+  magnetsModal.addEventListener('pointerdown', (e) => { if (e.target === magnetsModal) closeMagnets(); });
 
-  // ---- living diorama: 3 drifting parallax layers + the peek-a-boo critter ----
-  const scene = el('div', 'title2-scene');
-  const back = el('div', 't2-layer t2-back',
-    '<div class="t2-window"><span class="t2-sun"></span><span class="t2-mull t2-mull-v"></span><span class="t2-mull t2-mull-h"></span></div>');
-  const counter = el('div', 't2-layer t2-counter',
-    '<div class="t2-counter-top"></div><div class="t2-toaster"><span class="t2-slot"></span><span class="t2-slot"></span><span class="t2-lever"></span></div>');
-  counter.append(buildCritterPeek()); // sits BEHIND the toaster (lower z within the layer) so it peeks up and ducks
-  const fore = el('div', 't2-layer t2-fore');
-  for (let i = 0; i < 7; i++) {
-    const m = el('span', 't2-mote');
-    m.style.left = `${8 + ((i * 137) % 86)}%`;
-    m.style.top = `${20 + ((i * 71) % 60)}%`;
-    m.style.setProperty('--sz', `${5 + (i % 3) * 3}px`);
-    m.style.setProperty('--d', `${8 + (i % 4) * 1.7}s`);
-    m.style.animationDelay = `${-(i * 1.3).toFixed(1)}s`;
-    fore.append(m);
+  // ---- scene props, back→front (stage coords from titleSceneData) ----
+  for (const p of PROPS) {
+    let node: HTMLElement;
+    switch (p.kind) {
+      case 'wall':
+        node = el('div', 'ts-prop ts-wall');
+        break;
+      case 'window':
+        node = el('div', 'ts-prop ts-window', '<span class="ts-mull ts-mull-v"></span><span class="ts-mull ts-mull-h"></span>');
+        break;
+      case 'sun':
+        node = el('div', 'ts-prop ts-sun');
+        break;
+      case 'daylightBeam':
+        node = el('div', 'ts-prop ts-beam');
+        break;
+      case 'counter':
+        node = el('div', 'ts-prop ts-counter');
+        break;
+      case 'fridge':
+        node = el('div', 'ts-prop ts-fridge', '<span class="ts-fridge-seam"></span><span class="ts-fridge-handle"></span>');
+        break;
+      case 'critterPeek':
+        node = buildCritterPeek();
+        node.classList.add('ts-prop');
+        break;
+      case 'lightSwitch': {
+        const b = el('button', 'ts-prop ts-switch', '<span class="ts-switch-plate"><span class="ts-switch-nub"></span></span>') as HTMLButtonElement;
+        b.title = 'Settings — the light-switch';
+        b.setAttribute('aria-label', 'Settings');
+        b.onclick = onSettings;
+        node = b;
+        break;
+      }
+      case 'magnetBoard': {
+        const b = el('button', 'ts-prop ts-board', '<span class="ts-board-cap">✎ fridge poetry</span><span class="ts-board-dots"><i></i><i></i><i></i></span><span class="ts-board-hint">tap to play</span>') as HTMLButtonElement;
+        b.setAttribute('aria-label', 'Open the fridge-poetry magnets');
+        b.onclick = openMagnets;
+        node = b;
+        break;
+      }
+      case 'cake':
+        node = el('div', 'ts-prop ts-cake',
+          '<span class="ts-cake-plate"></span><span class="ts-cake-body"></span><span class="ts-cake-top"></span>'
+          + '<span class="ts-candle" style="left:30%"><i class="ts-flame"></i></span>'
+          + '<span class="ts-candle" style="left:50%"><i class="ts-flame"></i></span>'
+          + '<span class="ts-candle" style="left:70%"><i class="ts-flame"></i></span>');
+        break;
+      case 'toaster':
+        node = el('div', 'ts-prop ts-toaster', '<span class="ts-slot"></span><span class="ts-slot"></span><span class="ts-lever"></span>');
+        break;
+      default:
+        continue;
+    }
+    placeRect(node, p.x, p.y, p.w, p.h, p.z);
+    stage.append(node);
   }
-  scene.append(back, counter, fore);
-  screen.append(scene);
 
-  // ---- brand wordmark (kept: the magnet letters) ----
-  const brand = el('div', 'title2-brand');
+  // ---- status ribbon (top-center of the stage) ----
+  const ribbon = el('div', 'ts-ribbon');
+  ribbon.append(buildStatusRibbon(save));
+  stage.append(ribbon);
+
+  // ---- wordmark (the magnet letters) + subtitle ----
+  const wordmark = el('div', 'ts-wordmark');
   const title = el('div', 'magnet-title');
   let letterIdx = 0;
   for (const word of 'COUNTER ATTACK!'.split(' ')) {
@@ -128,35 +216,27 @@ export function buildTitle(
     }
     title.append(wordWrap);
   }
-  brand.append(title, el('div', 'subtitle', 'critters vs. housewares — a tower defense of household proportions'));
-  screen.append(brand);
+  wordmark.append(title);
+  centerAt(wordmark, MENU.colX, MENU.wordmarkY);
+  stage.append(wordmark);
 
-  // ---- fridge-poetry magnets egg + OPEN SESAME note, relocated ONTO the diorama's fridge ----
-  const fridge = el('div', 't2-fridge-egg');
-  fridge.append(el('div', 't2-fridge-handle'));
-  fridge.append(el('div', 't2-fridge-cap', '✎ fridge poetry'));
-  const magnetsCb: MagnetsCallbacks = {
-    onSolved: () => {
-      doorNote.classList.add('open');
-      onMagnetsSolved();
-    },
-  };
-  const magnets = new FridgeMagnets(magnetsCb, save.eggs.fridgeMagnetsSolved);
-  const magnetHost = el('div', 't2-magnet-host');
-  magnetHost.append(magnets.root);
-  fridge.append(magnetHost);
-  const doorNote = el('div', `fridge-door-note${save.eggs.fridgeMagnetsSolved ? ' open' : ''}`, `
-    🔓 the magnets spelled it out... <b>OPEN SESAME</b><br>a rare relic tumbles out. <b>+50 🧁 BP!</b>
-  `);
-  fridge.append(doorNote);
-  screen.append(fridge);
+  const subtitle = el('div', 'ts-subtitle', 'critters vs. housewares — a tower defense of household proportions');
+  centerAt(subtitle, MENU.colX, MENU.subtitleY);
+  stage.append(subtitle);
 
-  // ---- bottom menu: one dominant CTA + a compact row of equal secondary tiles ----
-  const menu = el('div', 'title2-menu');
-  const cta = el('button', 't2-cta', '<span class="t2-cta-ico">🎂</span><span class="t2-cta-label">DEFEND THE CAKE!</span>');
+  // ---- dominant CTA (rect-positioned so hover/spring transforms stay free) ----
+  const cta = el('button', 'ts-cta', '<span class="ts-cta-ico">🎂</span><span class="ts-cta-label">DEFEND THE CAKE!</span>') as HTMLButtonElement;
+  cta.style.left = `${MENU.colX - MENU.ctaW / 2}px`;
+  cta.style.top = `${MENU.ctaY - MENU.ctaH / 2}px`;
+  cta.style.width = `${MENU.ctaW}px`;
+  cta.style.height = `${MENU.ctaH}px`;
   cta.onclick = onPlay;
+  stage.append(cta);
 
-  const tiles = el('div', 't2-tiles');
+  // ---- one tidy row of compact secondary tiles ----
+  const tiles = el('div', 'ts-tiles');
+  tiles.style.gap = `${MENU.tileGap}px`;
+
   const infestUnlocked = (save.stars['kitchen-5'] ?? 0) > 0;
   const inRun = !!save.infestation && !save.infestation.over;
   const infest = titleTile(
@@ -179,11 +259,33 @@ export function buildTitle(
   const howto = titleTile('🎓', 'How to Play', 'the house rules');
   howto.onclick = onHowToPlay;
 
-  tiles.append(infest, journal, drawer, chore, howto);
-  // menu flows top→bottom: tiles, then the dominant CTA in the thumb band, then the foot flavor.
-  menu.append(tiles, cta);
-  menu.append(el('div', 'title2-foot', 'the wish came true at 7:42pm. defend the birthday cake.'));
-  screen.append(menu);
+  for (const tile of [infest, journal, drawer, chore, howto]) {
+    tile.style.width = `${MENU.tileW}px`;
+    tile.style.minHeight = `${MENU.tileH}px`;
+    tiles.append(tile);
+  }
+  centerAt(tiles, MENU.colX, MENU.tilesY);
+  stage.append(tiles);
+
+  // ---- footnote ----
+  const foot = el('div', 'ts-footnote', 'the wish came true at 7:42pm. defend the birthday cake.');
+  centerAt(foot, MENU.colX, MENU.footY);
+  stage.append(foot);
+
+  screen.append(stage, magnetsModal);
+
+  // ---- uniform fit-scale (contain). Measured on the screen's OWN content box, which lives in the
+  //      #ui logical coordinate space (already zoomed by the auto-UI-scale), so min(w/1600,h/900)
+  //      composes correctly with that zoom and yields an identical composition at every resolution.
+  //      Self-cleaning: the observer disconnects once the screen leaves the DOM. ----
+  const ro = new ResizeObserver((entries) => {
+    if (!screen.isConnected) { ro.disconnect(); return; }
+    const cr = entries[entries.length - 1].contentRect;
+    if (cr.width <= 0 || cr.height <= 0) return;
+    stage.style.setProperty('--stage-scale', String(Math.min(cr.width / STAGE.w, cr.height / STAGE.h)));
+    stage.classList.add('ready');
+  });
+  ro.observe(screen);
 
   return screen;
 }
