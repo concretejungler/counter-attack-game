@@ -2,6 +2,15 @@
 
 > Living status doc. Updated after every task. After context compaction: read this + CLAUDE.md + the plan, then continue.
 
+## ✅ STEAM PC PIVOT — DESKTOP APP + INSTALLER (2026-07-05) — plan: `docs/superpowers/plans/2026-07-05-steam-pc-pivot.md`
+
+User pivot: the game targets a STEAM PC launch (mobile no longer primary; responsive work retained). Delivered:
+- **S-A resolution pass:** `autoUiScale = clamp(min(vh/900, vw/1600), 0.85, 2.0)` applied via `#ui zoom` (`--ui-auto-scale` × user `--ui-scale`; phones pinned 1.0); verified proportional at 720p/900p/1080p/1440p/3440×1440/4K. `dprCap()` 2.5 on desktop ≥1440p (canvas long-edge ceiling 7680px), sprite cache sharpens automatically; perf unchanged at the 720p probe (+memoized MQLs). Display settings section (fullscreen toggle + F11, prefers `window.gameShell`), pointer-aware tutorial/photo wording, hover polish.
+- **S-B Electron shell (`app/`):** main+preload (contextIsolation, sandbox), borderless-fullscreen default, windowed toggle, min 960×600, persisted window-state; `gameShell` bridge {setFullscreen/isFullscreen/toggleFullscreen/quit/version}; menu stripped; external nav denied. electron-builder → **NSIS installer + portable exe in `release/`** (gitignored). `app:pack` routes through `app/pack.cjs` temp-staging (Windows Defender EPERM on in-place rename — documented). Steam-overlay flags gated behind `STEAM_OVERLAY=1`; steamworks.js drop-in documented in `app/README.md` (R3: achievements/cloud saves; Electron chosen over Tauri for overlay compatibility). Packed app boot-verified headfully (title → house map, 0 console errors).
+- **S-C tools:** `tools/gen-icon.mjs` (procedural crumb-king .ico — 6 sizes, pure-node ICO writer, zero assets) + `tools/shot-res.mjs` (PC resolution sweep; use JPEG or raised timeouts at 2160p — SwiftShader PNG-encode flake).
+- Gates at pivot close: tsc clean · 351/351 · build · smoke · strict painters 45/45+29/29. Known-miss carried: perf stress ~7-8ms median vs aspirational 4ms (Canvas-2D floor; real-device arbiter).
+- **R3 backlog (not built):** Steamworks (achievements map to the existing 43+), Steam Cloud file saves (export codes are the bridge), key remapping, depot/build scripts.
+
 ## ✅ MOBILE-STORE REVAMP COMPLETE + DEPLOYED (2026-07-05) — plan: `docs/superpowers/plans/2026-07-05-mobile-store-revamp.md`
 
 User directives: store-quality menus/level-select for eventual Android/iOS (web-only for now), much more detailed graphics, bigger crumb pickup, board never under the HUD bars, labeled bar sections. Two research agents (TD menu/level-select patterns; TD art-detail techniques) fed the plan.

@@ -103,7 +103,16 @@ docs/superpowers/plans/2026-06-12-counter-attack.md   implementation plan
 
 ---
 
-## 4. LATEST session (2026-07-05 — MOBILE-STORE REVAMP; read BUILDLOG top entry for detail)
+## 3b. TARGET PLATFORM (2026-07-05 pivot): STEAM PC
+
+The game now targets a Steam PC launch. `app/` holds the Electron shell; `npm run app:dev` runs it
+against vite, `npm run app:pack` builds the NSIS installer + portable exe into `release/`
+(temp-staged — Defender EPERM workaround, see app/README.md). Icon via `node tools/gen-icon.mjs`;
+resolution sweep via `node tools/shot-res.mjs`. Auto UI-scale + Display settings landed (BUILDLOG
+top entry). Steamworks is NOT integrated — drop-in point + overlay flags documented in
+app/README.md. The web build/Pages deploy still works and stays the quick-share channel.
+
+## 4. Prior session (2026-07-05 — MOBILE-STORE REVAMP; read BUILDLOG entry for detail)
 
 Store-quality menu/level-select rebuild + full art re-light, per user directives. Key state:
 - Level select = the crayon house-map (`src/ui/houseMap.ts` + `houseMapData.ts`); title = parallax
