@@ -26,6 +26,10 @@
      so layout AND hit-testing scale together; every absolutely-positioned HUD/menu rule in this
      file keeps working unmodified because zoom rescales the whole box model, not just paint. */
   --ui-scale: 1;
+  /* AUTO UI-SCALE (Steam PC pivot, decision 3): resolution-driven base zoom, set from main.ts
+     (clamp(min(vh/900, vw/1600), 0.85, 2.0)). Multiplied by the user's --ui-scale on #ui so the
+     overlay is right-sized from 720p→4K; the slider stays a preference on top of the auto base. */
+  --ui-auto-scale: 1;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -56,7 +60,7 @@ html, body {
   touch-action: none;
   -webkit-user-select: none;
 }
-#ui { position: absolute; inset: 0; pointer-events: none; overflow: hidden; touch-action: none; zoom: var(--ui-scale); }
+#ui { position: absolute; inset: 0; pointer-events: none; overflow: hidden; touch-action: none; zoom: calc(var(--ui-auto-scale) * var(--ui-scale)); }
 #ui > * { pointer-events: auto; }
 #ui button, #ui .card, #ui .polaroid, #ui .fridge-note, #ui .spell-btn, #ui .speed-btn, #ui .choice-btn {
   touch-action: manipulation;
@@ -933,7 +937,11 @@ button { font-family: var(--font-hand); cursor: pointer; border: none; backgroun
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%; padding: 0; cursor: pointer; z-index: 4;
 }
+.house2-secret { transition: transform 0.12s; }
+.house2-secret:hover { transform: translate(-50%, -50%) scale(1.14); z-index: 7; }
 .house2-secret .hn-face { font-size: 48cqw; line-height: 1; }
+/* zoomed whole-house overview: give the fast-travel room hit-rects a mouse affordance */
+.house2-viewport.zoomed .house2-roomhit:hover { background: rgba(255,244,214,0.14); outline: 2px dashed rgba(255,240,200,0.5); outline-offset: -6px; }
 .house2-secret.locked {
   background: radial-gradient(circle, rgba(138,74,156,0.28), rgba(138,74,156,0.04));
   border: 2px dashed rgba(190,130,210,0.55); color: #7a4a8c; opacity: 0.5;
@@ -1412,8 +1420,14 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
   border-radius: 10px;
   font-size: 16px; font-weight: bold;
   box-shadow: 0 3px 7px var(--shadow);
+  transition: transform 0.1s, box-shadow 0.1s, background 0.1s;
 }
 .speed-btn.active { background: var(--butter); }
+/* PC hover feedback on the desktop gameplay cluster (decision 4) — these controls carry no
+   pointer-spring juice, so give the mouse a clear affordance without changing the active tint. */
+.speed-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 11px var(--shadow); background: #fffaf0; }
+.speed-btn.active:hover { background: var(--butter); }
+.speed-btn:active { transform: translateY(1px); box-shadow: 0 2px 5px var(--shadow); }
 .speed-btn.photo-btn { font-size: 18px; }
 .speed-btn.topdown-btn { font-size: 21px; line-height: 1; }
 
@@ -1667,8 +1681,9 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
   border-radius: 15px;
   border: 2.5px solid var(--ink);
   position: relative;
-  transition: background 0.15s;
+  transition: background 0.15s, box-shadow 0.15s;
 }
+.toggle:hover { box-shadow: 0 0 0 3px rgba(232,80,79,0.25); }
 .toggle.on { background: var(--mint); }
 .toggle::after {
   content: '';
@@ -2408,6 +2423,11 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
     position: relative;
   }
   .dock-btn.active { background: var(--butter); }
+  /* hover feedback for a mouse on a small window / Steam Deck docked-with-mouse (decision 4) */
+  .dock-btn { transition: transform 0.1s, box-shadow 0.1s, background 0.1s; }
+  .dock-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 10px var(--shadow); background: #fffaf0; }
+  .dock-btn.active:hover { background: var(--butter); }
+  .dock-btn:active { transform: translateY(1px); box-shadow: 0 2px 5px var(--shadow); }
   .dock-btn.build-toggle { font-size: 22px; }
   .dock-btn-icon { pointer-events: none; }
   .dock-badge {
@@ -2420,7 +2440,8 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
     border: 2px solid #fff;
     box-shadow: 0 2px 4px rgba(0,0,0,0.4);
   }
-  .quick-slot { width: 46px; height: 46px; flex-shrink: 0; }
+  .quick-slot { width: 46px; height: 46px; flex-shrink: 0; transition: transform 0.1s; }
+  .quick-slot:not(.empty):hover { transform: translateY(-2px) scale(1.05); }
   .quick-slot.empty { opacity: 0.35; }
 
   .sticky-note {

@@ -6,7 +6,7 @@ import {
   buildInfestationMap, buildInfestationDraft, buildGarageSale, buildRunOver, type RunOverInfo,
 } from './screens';
 import { MUTATION_ICONS } from './icons';
-import { isMobileViewport, isPortrait } from '../core/device';
+import { isMobileViewport, isPortrait, isFinePointer } from '../core/device';
 import { ChoicePanel, type ChoicePanelCallbacks } from './choicePanel';
 import { Fly } from './fly';
 import { DECK_MAX, type RunState } from '../meta/infestation';
@@ -366,6 +366,13 @@ export class UI {
       <div class="photo-row"><button class="wood-btn small" data-act="close">✕ Done</button></div>
       <div class="photo-hint">drag to pan · scroll to zoom · Esc to exit</div>
     `;
+    // pointer-adapted controls hint (decision 4): mouse = drag/scroll; touch = two-finger/pinch.
+    const hintEl = panel.querySelector('.photo-hint');
+    if (hintEl) {
+      hintEl.textContent = isFinePointer()
+        ? 'drag to pan · scroll to zoom · Esc to exit'
+        : 'drag with two fingers to pan · pinch to zoom · Esc to exit';
+    }
     const focusEl = panel.querySelector('[data-k=focus]') as HTMLInputElement | null;
     if (focusEl) focusEl.oninput = (e) => cb.onFocusY(parseFloat((e.target as HTMLInputElement).value));
     const blurEl = panel.querySelector('[data-k=blur]') as HTMLInputElement | null;

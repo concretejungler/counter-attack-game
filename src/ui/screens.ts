@@ -17,6 +17,7 @@ import { levelById } from '../content';
 import { buildHouseMap } from './houseMap';
 import { buildStatusRibbon } from './statusRibbon';
 import { getSprite } from '../render2d/spriteCache';
+import { autoUiScale, isFullscreen, toggleFullscreen, isFinePointer } from '../core/device';
 
 const dayNumberLocal = (): number => dayNumber(Date.now());
 
@@ -260,11 +261,30 @@ const TUTORIAL_PAGES: { icon: string; title: string; lines: string[] }[] = [
     title: 'buttons & view',
     lines: [
       '<b>⏸</b> pause &nbsp; <b>1× 2× 3×</b> speed &nbsp; <b>📸</b> photo mode',
-      '<b>⛶ see everything</b> fits the whole board on screen in one tap (or press <b>V</b>).',
-      'drag with two fingers to pan, scroll or pinch to zoom. survive every wave to win — fewer bites + the level challenge earn more ⭐!',
+      // second + third lines are pointer-adapted at build time — see viewControlLines().
+      '{{VIEW_ACTIVATE}}',
+      '{{VIEW_CONTROLS}}',
     ],
   },
 ];
+
+/** Pointer-adapted copy for the tutorial "buttons & view" page (decision 4): mouse says
+ *  "drag to pan, scroll to zoom" / "click"; touch keeps the two-finger / pinch / tap wording. */
+function viewControlLine(token: string): string {
+  const fine = isFinePointer();
+  switch (token) {
+    case '{{VIEW_ACTIVATE}}':
+      return fine
+        ? '<b>⛶ see everything</b> fits the whole board on screen in one click (or press <b>V</b>).'
+        : '<b>⛶ see everything</b> fits the whole board on screen in one tap (or press <b>V</b>).';
+    case '{{VIEW_CONTROLS}}':
+      return fine
+        ? '<b>drag</b> to pan, <b>scroll</b> to zoom. survive every wave to win — fewer bites + the level challenge earn more ⭐!'
+        : 'drag with two fingers to pan, scroll or pinch to zoom. survive every wave to win — fewer bites + the level challenge earn more ⭐!';
+    default:
+      return token;
+  }
+}
 
 export function buildTutorial(onClose: () => void, finishLabel = 'Got it!'): HTMLElement {
   const wrap = el('div', 'modal-wrap');
@@ -278,7 +298,7 @@ export function buildTutorial(onClose: () => void, finishLabel = 'Got it!'): HTM
     page.append(el('div', 'tutorial-ico', p.icon));
     page.append(el('div', 'tutorial-title', p.title));
     const body = el('div', 'tutorial-lines');
-    p.lines.forEach((line) => body.append(el('p', '', line)));
+    p.lines.forEach((line) => body.append(el('p', '', viewControlLine(line))));
     page.append(body);
     stage.append(page);
   });
@@ -672,7 +692,10 @@ export function buildSettings(
     <div class="thermo-section"><h3>💥 Feel</h3></div>
     ${rangeRow('📳', 'Screen shake', 'shakeIntensity', 0, 1, 0.05, save.settings.shakeIntensity)}
     ${rangeRow('⚡', 'Flash intensity', 'flashIntensity', 0, 1, 0.05, save.settings.flashIntensity)}
-    ${rangeRow('🔍', 'UI scale', 'uiScale', 0.85, 1.3, 0.05, save.settings.uiScale)}
+
+    <div class="thermo-section"><h3>🖥️ Display</h3></div>
+    <div class="thermo-row"><label>⛶ Fullscreen<small class="thermo-hint">or press F11 anytime</small></label><button class="toggle ${isFullscreen() ? 'on' : ''}" data-k="fullscreen"></button></div>
+    <div class="thermo-row"><label>🔍 UI scale<small class="thermo-hint">auto base ×${autoUiScale().toFixed(2)} for this screen — slider fine-tunes on top</small></label><input type="range" min="0.85" max="1.3" step="0.05" data-k="uiScale" value="${save.settings.uiScale}"><span class="thermo-val" data-val="uiScale">${save.settings.uiScale.toFixed(2)}</span></div>
 
     <div class="thermo-section"><h3>♿ Accessibility</h3></div>
     ${toggleRow('🎨', 'Colorblind-safe patterns', 'colorblind', save.settings.colorblind)}
@@ -709,11 +732,26 @@ export function buildSettings(
       onChange(save.settings);
     };
   });
+  // Fullscreen is a live display action, not a persisted save setting — toggle the browser/shell
+  // fullscreen state and reflect it back on the switch. Kept in sync with F11/Esc via a
+  // fullscreenchange listener scoped to the modal's lifetime (removed when Done closes it).
+  const fsToggle = modal.querySelector('[data-k=fullscreen]') as HTMLElement | null;
+  if (fsToggle) {
+    const syncFs = (): void => { fsToggle.classList.toggle('on', isFullscreen()); };
+    fsToggle.onclick = () => { toggleFullscreen(); requestAnimationFrame(syncFs); };
+    document.addEventListener('fullscreenchange', syncFs);
+    // stash the remover on the element so the Done handler can detach it (see below)
+    (fsToggle as HTMLElement & { _detachFs?: () => void })._detachFs =
+      () => document.removeEventListener('fullscreenchange', syncFs);
+  }
   (modal.querySelector('[data-k=difficulty]') as HTMLSelectElement).onchange = (e) => {
     save.settings.difficulty = (e.target as HTMLSelectElement).value as SaveData['settings']['difficulty'];
     onChange(save.settings);
   };
-  (modal.querySelector('[data-act=close]') as HTMLElement).onclick = onClose;
+  (modal.querySelector('[data-act=close]') as HTMLElement).onclick = () => {
+    (fsToggle as (HTMLElement & { _detachFs?: () => void }) | null)?._detachFs?.();
+    onClose();
+  };
   return wrap;
 }
 
