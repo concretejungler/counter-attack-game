@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "description": "COUNTER ATTACK! Critters vs. Housewares — a tower defense of household proportions",
+  "author": "COUNTER ATTACK!",
+  "main": "app/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -14,7 +16,10 @@
     "smoke": "node tools/smoke.mjs",
     "shot": "node tools/shot.mjs",
     "shot:mobile": "node tools/shot-mobile.mjs",
-    "balance": "vitest run tests/balance.test.ts"
+    "balance": "vitest run tests/balance.test.ts",
+    "app:dev": "node app/dev.cjs",
+    "app:pack": "npm run build && node app/pack.cjs",
+    "app:dir": "npm run build && node app/pack.cjs --dir"
   },
   "dependencies": {
     "three": "^0.165.0"
@@ -22,9 +27,54 @@
   "devDependencies": {
     "@types/node": "^25.9.3",
     "@types/three": "^0.165.0",
+    "electron": "^43.0.0",
+    "electron-builder": "^26.0.0",
     "playwright": "^1.45.0",
     "typescript": "^5.5.4",
     "vite": "^5.4.0",
     "vitest": "^1.6.0"
+  },
+  "build": {
+    "appId": "com.counterattack.game",
+    "productName": "COUNTER ATTACK!",
+    "copyright": "Copyright © 2026 COUNTER ATTACK!",
+    "directories": {
+      "output": "release",
+      "buildResources": "app/build"
+    },
+    "files": [
+      "app/main.cjs",
+      "app/preload.cjs",
+      "app/build/icon.ico",
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "icon": "app/build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "COUNTER ATTACK!",
+      "artifactName": "CounterAttack-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "CounterAttack-${version}-portable.${ext}"
+    }
   }
 }
