@@ -189,3 +189,39 @@ fill colors** and a visible **cocoa outline pass**, and must still read as itsel
 at gameplay zoom (~24–40px critters, ~44px towers, ~96px bosses). `npx tsc
 --noEmit` must be clean. Eyeball it on both a light and a dark background — the
 outline has to hold on both.
+
+---
+
+# V2 STYLE LAW — the mobile-store detail revamp (2026-07-05)
+
+Plan: `docs/superpowers/plans/2026-07-05-mobile-store-revamp.md` §B. The v1 rules above still hold
+(template, proportions, opts contracts, 2 frames, nothing baked that entities.ts stamps). V2 adds
+the shading doctrine. Toolkit: `src/render2d/paint.ts` — USE IT, don't hand-roll gradients.
+
+## The one light
+Upper-left, always (`LIGHT` in paint.ts). Every shadow lens, highlight, rim band and AO pocket
+derives from it. If your sprite's shading disagrees with its neighbors, it's wrong.
+
+## Tone rules
+- 3-tone ramp per material via `ramp(base)` → hue-shifted shadow (toward blue-violet) + warm light.
+  NEVER use plain `darken()` for a shadow tone again.
+- Exterior silhouette: chunky COCOA (unchanged brand line). Interior lines: `innerInk(fill)` at
+  ~55% of exterior width, and ONLY where they carry identity (mouth, limb seam, panel edge).
+- One `belly()` gradient max per sprite (its dominant round mass). Everything else `celCrescent()`
+  (hard cel survives downscale; gradients wash out under ~28px on-screen).
+- Turning edge: celCrescent leaves a base sliver at the rim automatically — do not paint shadow
+  flush to the outline yourself.
+
+## Detail tiers (match spend to on-screen pixels)
+- **Fodder critters (~24-28px):** weighted outline + celCrescent per body segment + belly on the
+  main mass + the face. STOP THERE.
+- **Elite critters / all towers (~34-44px):** + `rim()` on the main form, 3-6 material marks
+  (`woodGrain`/`specStreak`/`rivets`/`glossDot`/`fabricTicks`), one complementary accent at the
+  read-target, `aoUnder()` where parts stack.
+- **Bosses (128 box):** full treatment + per-material spec, `haloBehind()` (subtle, in-body only —
+  the entity layer owns big glows), trim props. One focal detail region; leave resting zones.
+
+## Hard limits
+≤6-8 texture marks per sprite · every mark ≥1.5 display px (≈≥4px in the 64 box, ≥6px in 96) ·
+fur = `furEdgePath()` scalloped silhouettes, never interior hatching · deterministic only
+(`jit(seed,i)`, no Math.random).

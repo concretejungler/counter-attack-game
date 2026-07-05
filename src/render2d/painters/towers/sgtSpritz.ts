@@ -22,6 +22,7 @@ import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
 import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { ramp, celCrescent, rim, specStreak, glossDot, aoUnder, rivets, innerInk } from '../../paint';
 
 registerTowerPainter('sgt-spritz', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -57,12 +58,23 @@ registerTowerPainter('sgt-spritz', (ctx, size, _frame, opts) => {
   const bodyW = size * 0.42;
   const bodyH = size * 0.42;
 
+  const r3 = ramp(spray);
+  const metalR = ramp(metal);
+
   // --- sprayer head + trigger (drawn behind the body top) ---
-  // head block
+  // head block (V2: cel-shaded metal + rivet + spec streak = "hard shiny")
   roundRect(cx - size * 0.13, size * 0.14, size * 0.22, size * 0.14, size * 0.05);
   ctx.fillStyle = hex(metal);
   ctx.fill();
   strokeInk(size * 0.035);
+  ctx.save();
+  roundRect(cx - size * 0.13, size * 0.14, size * 0.22, size * 0.14, size * 0.05);
+  ctx.clip();
+  ctx.fillStyle = rgba(metalR.shadow, 0.5);
+  ctx.fillRect(cx - size * 0.13, size * 0.22, size * 0.22, size * 0.07);
+  specStreak(ctx, cx - size * 0.04, size * 0.18, size * 0.16, size * 0.035, 0.5);
+  ctx.restore();
+  rivets(ctx, [{ x: cx - size * 0.09, y: size * 0.185 }], size * 0.016, innerInk(metal));
   // nozzle barrel pointing EAST
   roundRect(cx + size * 0.06, size * 0.17, size * 0.22, size * 0.08, size * 0.03);
   ctx.fillStyle = hex(darken(PAL.metal, 0.05));
@@ -95,11 +107,13 @@ registerTowerPainter('sgt-spritz', (ctx, size, _frame, opts) => {
   ctx.fill();
   strokeInk(size * 0.03);
 
-  // --- bottle body (translucent plastic + liquid fill) ---
+  // --- bottle body (translucent plastic + liquid fill, V2 shading) ---
+  // ground the bottle where it meets the tile first
+  aoUnder(ctx, cx, bodyY + bodyH + size * 0.015, bodyW * 0.5, size * 0.035, 0.2);
   roundRect(bodyX, bodyY, bodyW, bodyH, size * 0.11);
   ctx.fillStyle = rgba(spray, 0.55);
   ctx.fill();
-  // liquid inside (lower ~60%)
+  // liquid inside (lower ~60%) with its own tone depth
   ctx.save();
   roundRect(bodyX, bodyY, bodyW, bodyH, size * 0.11);
   ctx.clip();
@@ -111,15 +125,30 @@ registerTowerPainter('sgt-spritz', (ctx, size, _frame, opts) => {
   ctx.closePath();
   ctx.fillStyle = hex(liquid);
   ctx.fill();
+  // liquid depth: hue-shifted shadow pooled at the away-from-light side
+  ctx.fillStyle = rgba(r3.shadow, 0.35);
+  ctx.fillRect(cx + bodyW * 0.08, bodyY + bodyH * 0.42, bodyW * 0.42, bodyH * 0.6);
+  // meniscus light line
+  ctx.strokeStyle = rgba(r3.light, 0.7);
+  ctx.lineWidth = size * 0.014;
+  ctx.beginPath();
+  ctx.moveTo(bodyX + bodyW * 0.06, bodyY + bodyH * 0.415);
+  ctx.quadraticCurveTo(cx, bodyY + bodyH * 0.36, bodyX + bodyW * 0.94, bodyY + bodyH * 0.415);
+  ctx.stroke();
   ctx.restore();
   // body outline over the top
   roundRect(bodyX, bodyY, bodyW, bodyH, size * 0.11);
   strokeInk();
-  // glossy vertical highlight
+  // plastic gloss: one vertical highlight + a hard gloss dot at the shoulder
   ctx.beginPath();
   ctx.ellipse(bodyX + bodyW * 0.22, bodyY + bodyH * 0.5, size * 0.03, bodyH * 0.34, 0, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(255,255,255,0.45)';
   ctx.fill();
+  glossDot(ctx, bodyX + bodyW * 0.24, bodyY + bodyH * 0.14, size * 0.022, 0.75);
+  // warm rim on the toward-light edge (elite/tower tier treatment)
+  rim(ctx, cx, bodyY + bodyH * 0.5, bodyW * 0.52, bodyH * 0.52, r3.light, size * 0.03, 0.5);
+  // cel shadow lens on the away side of the whole bottle
+  celCrescent(ctx, cx, bodyY + bodyH * 0.5, bodyW * 0.52, bodyH * 0.52, r3.shadow, 0.5, 0.3);
 
   // --- face on the body (eyes + determined sergeant brows) ---
   const eyeY = bodyY + bodyH * 0.42;

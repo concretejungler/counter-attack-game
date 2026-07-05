@@ -14,6 +14,7 @@ import {
   dayNumber, type RunState, type NodeDef, type NodeKind,
 } from '../meta/infestation';
 import { levelById } from '../content';
+import { buildHouseMap } from './houseMap';
 
 const dayNumberLocal = (): number => dayNumber(Date.now());
 
@@ -256,107 +257,10 @@ export function buildTutorial(onClose: () => void, finishLabel = 'Got it!'): HTM
   return wrap;
 }
 
-/** Fallback room icon when a level has no bespoke LEVEL_ICONS entry. */
-const ROOM_ICON: Record<RoomTheme, string> = {
-  kitchen: '🍰', living: '🛋️', bathroom: '🚿', bedroom: '🛏️', garage: '🚗',
-  basement: '🕸️', attic: '📦', backyard: '🌳', sewer: '🚽', secret: '❓',
-};
-
-/** Cross-section grid position for each room, laid out like a kid's dollhouse
- *  drawing: attic on top, ground-floor rooms in a row, basement/sewer below,
- *  garage + backyard flanking the house like lean-tos. Grid is 4 cols, and rows
- *  are auto-sized (`grid-auto-flow: row` + `align-items: start`) so a room's
- *  height always matches how many sticky-note levels it holds — no fixed row
- *  tracks to overflow when a world's level count differs. */
-const ROOM_LAYOUT: Record<RoomTheme, { col: string; row: string }> = {
-  attic: { col: '2 / 4', row: '1' },
-  bedroom: { col: '1 / 3', row: '2' },
-  bathroom: { col: '3 / 4', row: '2' },
-  garage: { col: '4 / 5', row: '2 / 4' },
-  living: { col: '1 / 3', row: '3' },
-  kitchen: { col: '3 / 4', row: '3' },
-  basement: { col: '1 / 4', row: '4' },
-  backyard: { col: '4 / 5', row: '4' },
-  sewer: { col: '1 / 4', row: '5' },
-  secret: { col: '4 / 5', row: '5' },
-};
-
-/** who's coming? — pet-bed corner picker (GAME-PROMPT §9). Selection persists to
- *  save.settings.pet and drives SimOptions.pet on the next startLevel. */
-const PET_OPTIONS: { id: 'cat' | 'dog' | 'goldfish' | null; icon: string; name: string; desc: string }[] = [
-  { id: null, icon: '🚫', name: 'none', desc: 'just you and the towers.' },
-  { id: 'cat', icon: '🐱', name: 'Princess Destructo', desc: 'might swat your towers. might delete a wave. no promises.' },
-  { id: 'dog', icon: '🐶', name: 'Sir Barksalot', desc: 'barks critters silly. eats your crumbs.' },
-  { id: 'goldfish', icon: '🐟', name: 'The Oracle', desc: 'does nothing. knows everything.' },
-];
-
-function buildPetPicker(save: SaveData, onPetChange: (pet: 'cat' | 'dog' | 'goldfish' | null) => void): HTMLElement {
-  const bed = el('div', 'pet-bed');
-  bed.append(el('div', 'pet-bed-label', "🛏️ who's coming?"));
-  const row = el('div', 'pet-bed-row');
-  PET_OPTIONS.forEach((opt) => {
-    const btn = el('button', `pet-opt${save.settings.pet === opt.id ? ' picked' : ''}`, `
-      <div class="pet-opt-ico">${opt.icon}</div>
-      <div class="pet-opt-name">${opt.name}</div>
-    `);
-    btn.title = opt.desc;
-    btn.onclick = () => {
-      save.settings.pet = opt.id;
-      onPetChange(opt.id);
-      row.querySelectorAll('.pet-opt').forEach((b) => b.classList.remove('picked'));
-      btn.classList.add('picked');
-    };
-    row.append(btn);
-  });
-  bed.append(row);
-  return bed;
-}
-
-/** The "???" attic-corner panel (GAME-PROMPT §14 secret levels + §20.16 playable credits).
- *  Sits in the house-map grid opposite the real Attic room (col 1, row 1 — the real attic
- *  occupies col 2/4 row 1, so this tucks into the empty top-left corner like a kid drew one more
- *  room nobody asked about). Unlocked secret levels are clickable sticky notes exactly like a
- *  normal room's level notes; locked ones show their own kid-voice hint text
- *  (progress.ts secretLockHint) instead of stars. Secret levels are never gated behind a "room
- *  unlock" the way campaign worlds are — each level has its own independent predicate — so this
- *  renders every entry every time and lets isSecretUnlocked() decide per-card state. */
-function buildSecretRoom(save: SaveData, onPickSecret?: (id: string) => void): HTMLElement {
-  const room = el('div', 'room secret-room');
-  room.style.gridColumn = '1 / 2';
-  room.style.gridRow = '1';
-  room.style.setProperty('--room-color', ROOM_COLOR.secret);
-
-  const label = el('div', 'room-label', '❓ ???');
-  room.append(label);
-
-  const notes = el('div', 'room-notes');
-  SECRET_LEVELS.forEach((lvl, i) => {
-    const id = lvl.id as SecretLevelId;
-    const unlocked = isSecretUnlocked(save, id);
-    const note = el(
-      'div',
-      `sticky-lvl secret-lvl${unlocked ? '' : ' locked'}`,
-      unlocked
-        ? `
-          <div class="sticky-ico">${LEVEL_ICONS[lvl.id] ?? '❓'}</div>
-          <div class="sticky-name">${lvl.name}</div>
-        `
-        : `
-          <div class="sticky-ico">🔒</div>
-          <div class="sticky-name">???</div>
-          <div class="secret-hint">${secretLockHint(id)}</div>
-        `,
-    );
-    note.style.setProperty('--tilt', `${((i * 19) % 7) - 3}deg`);
-    note.title = unlocked ? lvl.blurb : secretLockHint(id);
-    if (unlocked && onPickSecret) note.onclick = () => onPickSecret(lvl.id);
-    notes.append(note);
-  });
-  room.append(notes);
-
-  return room;
-}
-
+/** LEVEL SELECT — the CRAYON HOUSE CUTAWAY (mobile-store revamp §A1). The whole screen is now
+ *  built by src/ui/houseMap.ts; this thin wrapper preserves the historical buildLevelSelect
+ *  signature so ui.ts's showLevelSelect() (and its callback contracts) stay untouched. Pet picker,
+ *  journal/junk-drawer/endless entries, and secret levels all live inside the house-map engine. */
 export function buildLevelSelect(
   save: SaveData,
   onPick: (id: string) => void,
@@ -367,94 +271,15 @@ export function buildLevelSelect(
   onEndless?: () => void,
   onPickSecret?: (id: string) => void,
 ): HTMLElement {
-  const screen = el('div', 'screen house-screen');
-  const wrap = el('div', 'house-wrap');
-  const titleRow = el('div', 'house-title-row');
-  titleRow.append(el('div', 'house-title', '🏠 The Whole House'));
-  titleRow.append(el('div', 'drawer-bp-chip', `🧁 ${currentBP(save)} BP`));
-  const drawerBtn = el('button', 'wood-btn small journal-btn', '🗄️ Junk Drawer');
-  drawerBtn.onclick = onJunkDrawer;
-  titleRow.append(drawerBtn);
-  const journalBtn = el('button', 'wood-btn small journal-btn', `📔 Journal <small>${critterdexCompletionPct(save)}%</small>`);
-  journalBtn.onclick = onJournal;
-  titleRow.append(journalBtn);
-  if (onEndless && (save.stars['kitchen-5'] ?? 0) > 0) {
-    const best = save.stats.endlessBest ?? 0;
-    const endlessBtn = el('button', 'wood-btn small journal-btn', `🥫 Pantry Panic${best > 0 ? ` <small>best ${best}</small>` : ''}`);
-    endlessBtn.onclick = onEndless;
-    titleRow.append(endlessBtn);
-  }
-  wrap.append(titleRow);
-  wrap.append(buildPetPicker(save, onPetChange));
-
-  const scroller = el('div', 'house-scroller');
-  const house = el('div', 'house-map');
-  const worlds = worldsGrouped();
-  const focusId = furthestUnlockedLevel(save).id;
-
-  worlds.forEach((worldLevels, worldIdx) => {
-    const theme = worldLevels[0].theme;
-    const unlocked = isWorldUnlocked(save, worldLevels);
-    const layout = ROOM_LAYOUT[theme] ?? { col: 'auto', row: 'auto' };
-    const room = el('div', `room${unlocked ? '' : ' locked'}`);
-    room.style.gridColumn = layout.col;
-    room.style.gridRow = layout.row;
-    room.style.setProperty('--room-color', ROOM_COLOR[theme]);
-
-    const label = el('div', 'room-label', `<span class="room-num">${worldLevels[0].world}</span>${ROOM_ICON[theme]} ${ROOM_LABEL[theme]}`);
-    room.append(label);
-
-    if (!unlocked) {
-      const prereq = prerequisiteRoomLabel(worldIdx);
-      room.append(el('div', 'room-padlock', '🔒'));
-      room.append(el('div', 'room-scribble', `beat ${prereq ?? 'the last room'} first!!`));
-    } else {
-      const notes = el('div', 'room-notes');
-      worldLevels.slice().sort((a, b) => a.index - b.index).forEach((lvl: LevelDef, i: number) => {
-        const stars = starsFor(save, lvl.id);
-        const levelUnlocked = isLevelUnlocked(save, lvl);
-        const isBoss = i === worldLevels.length - 1 && worldLevels.length > 1;
-        const note = el(
-          'div',
-          `sticky-lvl${levelUnlocked ? '' : ' locked'}${isBoss ? ' boss' : ''}${lvl.id === focusId ? ' focus' : ''}`,
-          `
-          <div class="sticky-ico">${levelUnlocked ? (LEVEL_ICONS[lvl.id] ?? ROOM_ICON[theme]) : '🔒'}</div>
-          <div class="sticky-num">${lvl.index}${isBoss ? ' 👑' : ''}</div>
-          <div class="sticky-name">${lvl.name}</div>
-          <div class="sticky-stars">${'★'.repeat(stars)}<span class="off">${'★'.repeat(Math.max(0, 3 - stars))}</span></div>
-        `,
-        );
-        note.style.setProperty('--tilt', `${((i * 23 + worldIdx * 11) % 7) - 3}deg`);
-        note.title = levelUnlocked
-          ? `${lvl.blurb}\n⭐ Beat it  ⭐ ≤2 bites  ⭐ ${lvl.challenge?.text ?? ''}`
-          : 'Win the previous level first!';
-        if (levelUnlocked) note.onclick = () => onPick(lvl.id);
-        notes.append(note);
-      });
-      room.append(notes);
-    }
-
-    house.append(room);
+  return buildHouseMap(save, {
+    onPick,
+    onPickSecret,
+    onPetChange,
+    onBack,
+    onJournal,
+    onJunkDrawer,
+    onEndless,
   });
-
-  house.append(buildSecretRoom(save, onPickSecret));
-
-  scroller.append(house);
-  wrap.append(scroller);
-
-  const back = el('button', 'wood-btn small', '← Fridge');
-  back.style.marginTop = '14px';
-  back.onclick = onBack;
-  wrap.append(back);
-  screen.append(wrap);
-
-  // default focus/scroll to the furthest-unlocked level
-  requestAnimationFrame(() => {
-    const focusEl = house.querySelector('.sticky-lvl.focus');
-    focusEl?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
-  });
-
-  return screen;
 }
 
 /** The Critterdex — "a kid's field journal" (GAME-PROMPT §18/§2.5). Lined notebook paper,

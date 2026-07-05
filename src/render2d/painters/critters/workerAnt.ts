@@ -22,7 +22,8 @@
 
 import { registerCritterPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, celCrescent, belly, aoUnder } from '../../paint';
 
 registerCritterPainter('ant-worker', (ctx, size, frame, opts) => {
   const cx = size / 2;
@@ -31,13 +32,14 @@ registerCritterPainter('ant-worker', (ctx, size, frame, opts) => {
   const shiny = !!opts.shiny;
 
   // --- palette (species color from PAL; warm-tinted when shiny) ---
+  // V2: tones come from ramp() — hue-shifted shadow, warm light (GUIDE v2).
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.4) : c);
   const base = warm(PAL.antWorker);       // 0xc05838 reddish worker
+  const r3 = ramp(base);
   const abdomenCol = base;
-  const thoraxCol = warm(darken(PAL.antWorker, 0.08));
-  const headCol = warm(darken(PAL.antWorker, 0.04));
-  const sheen = lighten(base, 0.32);
-  const legCol = darken(PAL.antWorker, 0.34);
+  const thoraxCol = warm(mix(PAL.antWorker, r3.shadow, 0.3)); // a step darker, same family
+  const headCol = base;
+  const legCol = mix(r3.shadow, 0x000000, 0.12);
 
   const stroke = () => {
     ctx.lineWidth = ink;
@@ -97,21 +99,23 @@ registerCritterPainter('ant-worker', (ctx, size, frame, opts) => {
     ctx.fill();
   }
 
-  // --- body: abdomen → thorax → head, back to front ---
-  ellipse(cx, cy + size * 0.19, size * 0.165, size * 0.19, abdomenCol);
-  // abdomen sheen (flat highlight, up-left)
-  ctx.beginPath();
-  ctx.ellipse(cx - size * 0.04, cy + size * 0.12, size * 0.09, size * 0.1, 0, 0, Math.PI * 2);
-  ctx.fillStyle = rgba(sheen, 0.55);
-  ctx.fill();
+  // --- body: abdomen → thorax → head, back to front (V2 cel shading) ---
+  const abY = cy + size * 0.19;
+  ellipse(cx, abY, size * 0.165, size * 0.19, abdomenCol);
+  // the ONE belly gradient (dominant mass), then the cel shadow lens over it
+  belly(ctx, cx, abY, size * 0.155, size * 0.18, r3, 0.55);
+  celCrescent(ctx, cx, abY, size * 0.165, size * 0.19, r3.shadow, 0.45, 0.55);
 
   ellipse(cx, thoraxY, size * 0.095, size * 0.11, thoraxCol);
+  celCrescent(ctx, cx, thoraxY, size * 0.095, size * 0.11, ramp(thoraxCol).shadow, 0.5, 0.6);
+  // ground the head over the thorax before drawing it (subtle AO pocket)
+  aoUnder(ctx, cx, headY + size * 0.1, size * 0.1, size * 0.045, 0.16);
   ellipse(cx, headY, size * 0.125, size * 0.125, headCol);
-
-  // head sheen
+  celCrescent(ctx, cx, headY, size * 0.125, size * 0.125, r3.shadow, 0.42, 0.5);
+  // hard cel keeps a crisp toward-light highlight wedge on the head
   ctx.beginPath();
-  ctx.ellipse(cx - size * 0.04, headY - size * 0.03, size * 0.06, size * 0.055, 0, 0, Math.PI * 2);
-  ctx.fillStyle = rgba(lighten(headCol, 0.3), 0.5);
+  ctx.ellipse(cx - size * 0.045, headY - size * 0.045, size * 0.05, size * 0.04, -0.6, 0, Math.PI * 2);
+  ctx.fillStyle = rgba(r3.light, 0.6);
   ctx.fill();
 
   // mandibles (two little cocoa nubs at the north tip of the head)
