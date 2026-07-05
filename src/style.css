@@ -1403,13 +1403,37 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
 .speed-btn.topdown-btn { font-size: 21px; line-height: 1; }
 
 /* ---------- mobile bottom dock + expandable build sheet ----------
-   Desktop keeps today's always-visible build bar + speed cluster exactly as-is; these are
-   only ever shown inside the mobile media query further down. `display: contents` on the two
-   wrapper classes means they add zero box-model presence on desktop — their children (a hidden
-   label, or a hidden pin) simply don't render, so the flex layout above is untouched. */
-.dock, .sheet-scrim, .bar-section-label, .sheet-footer { display: none; }
+   Desktop keeps today's always-visible build bar + speed cluster; the dock/scrim/footer are
+   only ever shown inside the mobile media query further down. `display: contents` on
+   .spell-slot-wrap means the pin wrapper adds zero box-model presence on desktop (its hidden
+   pin simply doesn't render), so the spell shelf layout is untouched. */
+.dock, .sheet-scrim, .sheet-footer { display: none; }
 .spell-pin { display: none; }
-.bar-group, .spell-slot-wrap { display: contents; }
+.spell-slot-wrap { display: contents; }
+
+/* Section labels above each build-bar area (desktop strip). Each group stacks a compact
+   handwriting label over its cards; groups are bottom-aligned (see .build-bar-scroll
+   align-items:flex-end) so the three card rows keep a shared baseline. The label is ≤14px and
+   tucks into the bar's existing top padding — it adds ~14px, kept small so it doesn't eat back
+   the board space the view insets just reclaimed. The mobile media query restyles it below. */
+.bar-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 3px;
+}
+.bar-section-label {
+  font-family: var(--font-hand);
+  font-size: 13px;
+  line-height: 1;
+  font-weight: bold;
+  color: var(--ink);
+  opacity: 0.72;
+  margin: 0 0 0 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+}
 
 /* ---------- Photo Mode (GAME-PROMPT §18) ---------- */
 .photo-panel {

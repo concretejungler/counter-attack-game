@@ -162,12 +162,15 @@ export class Hud {
       spellSec.append(wrap);
     }
 
+    // Section labels above each build-bar area. Shown on BOTH surfaces now: the desktop strip
+    // (see .bar-section-label in style.css) and the mobile slide-up sheet. Title Case matches the
+    // fridge-menu wording convention.
     const towerGroup = el('div', 'bar-group');
-    towerGroup.append(el('div', 'bar-section-label', 'the defense force'), towerSec);
+    towerGroup.append(el('div', 'bar-section-label', 'Towers'), towerSec);
     const clutterGroup = el('div', 'bar-group');
-    clutterGroup.append(el('div', 'bar-section-label', 'junk to place'), this.clutterRow);
+    clutterGroup.append(el('div', 'bar-section-label', 'Building Blocks'), this.clutterRow);
     const spellGroup = el('div', 'bar-group');
-    spellGroup.append(el('div', 'bar-section-label', 'sorcery'), spellSec);
+    spellGroup.append(el('div', 'bar-section-label', 'Power-Ups'), spellSec);
 
     scroll.append(towerGroup, el('div', 'bar-divider'), clutterGroup, el('div', 'bar-divider'), spellGroup);
 

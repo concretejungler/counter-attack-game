@@ -110,11 +110,26 @@ export class Renderer2D implements GameView {
   /** Fired for full-screen flash moments (cake bites, big hits); UI owns the DOM overlay. */
   onFlashPulse: ((strength: number) => void) | null = null;
 
+  // Self-driven viewport upkeep. The 3D renderer wires its own window listeners (renderer.ts);
+  // the 2D renderer is the DEFAULT and game.ts never calls resize() for it, so we own that here —
+  // this is what re-measures the HUD-bar insets and re-fits the board on resize/rotate.
+  private readonly onWindowResize = (): void => this.resize();
+  private readonly onOrientationChange = (): void => {
+    this.resize();
+    // iOS reports stale metrics right at the orientationchange edge; re-settle a beat later.
+    setTimeout(() => this.resize(), 120);
+  };
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('render2d: 2D context unavailable');
     this.ctx = ctx;
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', this.onWindowResize);
+      window.addEventListener('orientationchange', this.onOrientationChange);
+      window.visualViewport?.addEventListener('resize', this.onWindowResize);
+    }
   }
 
   // ---- lifecycle ---------------------------------------------------------
@@ -142,6 +157,9 @@ export class Renderer2D implements GameView {
 
     this.resize();
     this.cam.fit();
+    // ui.showHud() mounts the HUD bars AFTER game.ts calls loadLevel(), so the measurement inside
+    // resize() above sees no bars yet. Re-measure once they're laid out on the next frame(s).
+    this.scheduleInsetRemeasure();
   }
 
   resize(): void {
@@ -152,7 +170,63 @@ export class Renderer2D implements GameView {
     this.canvas.height = Math.max(1, Math.round(cssH * this.dpr));
     this.cam.setViewport(cssW, cssH);
     this.board.resize(cssW, cssH);
+    this.measureViewInsets();
     if (!this.manualMoved) this.cam.fit();
+  }
+
+  /** Re-measure the HUD-bar insets on the next animation frame(s). The bars are appended just after
+   *  loadLevel() returns; two rAFs let their (font-dependent) layout settle before we read it. */
+  private scheduleInsetRemeasure(): void {
+    if (typeof requestAnimationFrame !== 'function') return;
+    requestAnimationFrame(() => {
+      this.resize();
+      requestAnimationFrame(() => this.resize());
+    });
+  }
+
+  /**
+   * DOCUMENTED DOM READ (kept off the per-frame path — only load/resize/orientation): the Canvas
+   * board must never sit under the always-visible HUD bars. We measure the real bars relative to
+   * the canvas and hand their footprints to the camera as fit insets.
+   *   top    = bottom edge of the `.hud-top` chip strip
+   *   bottom = the persistent bottom bar: the `.dock` on mobile (the `.build-bar` there is a
+   *            transient slide-up SHEET we deliberately never reserve for), else the desktop
+   *            `.build-bar` strip. getBoundingClientRect() reflects the bar's real on-screen box
+   *            including its scale(0.8) transform and safe-area padding.
+   * Insets are clamped so they can never swallow more than ~40% of an edge (defensive).
+   */
+  private measureViewInsets(): void {
+    if (typeof document === 'undefined') { this.cam.setViewInsets(0, 0, 0, 0); return; }
+    const cRect = this.canvas.getBoundingClientRect();
+    const ch = cRect.height || this.cam.viewH;
+    let top = 0;
+    let bottom = 0;
+
+    const shown = (elm: Element | null): elm is HTMLElement =>
+      !!elm && getComputedStyle(elm).display !== 'none' && (elm as HTMLElement).getBoundingClientRect().height > 0;
+
+    const hudTop = document.querySelector('.hud-top');
+    if (shown(hudTop)) {
+      const r = hudTop.getBoundingClientRect();
+      if (r.bottom > cRect.top) top = r.bottom - cRect.top;
+    }
+
+    const dock = document.querySelector('.dock');
+    const bottomBar = shown(dock) ? dock : document.querySelector('.build-bar');
+    if (shown(bottomBar)) {
+      const r = bottomBar.getBoundingClientRect();
+      // Only reserve the part that actually overlaps the canvas bottom (guards a sheet parked
+      // off-screen via translateY, though the dock branch above already handles the mobile case).
+      if (r.top < cRect.bottom && r.height > 0) bottom = cRect.bottom - r.top;
+    }
+
+    const cap = 0.4;
+    this.cam.setViewInsets(
+      Math.min(Math.max(0, top), ch * cap),
+      Math.min(Math.max(0, bottom), ch * cap),
+      0,
+      0,
+    );
   }
 
   /** Feed one sim tick: store state, forward events to the VFX layer, fire event-driven juice. */
@@ -220,6 +294,11 @@ export class Renderer2D implements GameView {
   }
 
   dispose(): void {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', this.onWindowResize);
+      window.removeEventListener('orientationchange', this.onOrientationChange);
+      window.visualViewport?.removeEventListener('resize', this.onWindowResize);
+    }
     this.lastState = null;
     this.level = null;
     this.content = null;

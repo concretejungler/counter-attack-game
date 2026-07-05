@@ -11,6 +11,14 @@
  * multiplier of the fit scale, clamped 1.0x .. 2.5x. Panning is a world-space offset
  * added to the fit center and clamped so the board can't be lost off-screen.
  *
+ * VIEW INSETS: the always-visible DOM HUD bars (top chip strip, bottom build-bar/dock)
+ * overlay the canvas. `setViewInsets()` reserves those px so fit/zoom/pan target the
+ * UNOBSTRUCTED viewport rect instead of the full canvas — the board (and its bottom
+ * row + path chevrons) then lives in the clear area, never under a bar. The insets
+ * shift the projection's screen-space center (`centerPxX/Y`) to the middle of the clear
+ * rect and shrink the usable fit box; everything downstream (board, entities, picking,
+ * culling) reads the projection through the same getters, so they stay consistent.
+ *
  * All public coordinates are CSS pixels; the renderer bakes `dpr` into its draw
  * transforms separately (so this math stays resolution-independent).
  */
@@ -31,6 +39,13 @@ export class Camera2D {
   viewH = 1;
   /** Margin (CSS px) kept around the board at fit. */
   margin = 24;
+
+  /** Obstructed edges (CSS px) reserved for the DOM HUD bars; default 0 = full canvas.
+   *  Set from renderer2d after measuring the real bars (see setViewInsets). */
+  insetTop = 0;
+  insetBottom = 0;
+  insetLeft = 0;
+  insetRight = 0;
 
   /** px-per-world-unit at zoom 1 (recomputed by fit()). */
   fitScale = 64;
@@ -59,21 +74,36 @@ export class Camera2D {
   get eyeX(): number { return this.centerX + this.panX + this.shakeWX; }
   get eyeZ(): number { return this.centerZ + this.panZ + this.shakeWZ; }
 
+  /** Screen-px point the eye projects onto = centre of the UNOBSTRUCTED viewport rect.
+   *  With zero insets this is just the viewport centre; insets slide it toward the clear area. */
+  get centerPxX(): number { return this.viewW / 2 + (this.insetLeft - this.insetRight) / 2; }
+  get centerPxY(): number { return this.viewH / 2 + (this.insetTop - this.insetBottom) / 2; }
+
   setViewport(cssW: number, cssH: number): void {
     this.viewW = Math.max(1, cssW);
     this.viewH = Math.max(1, cssH);
+  }
+
+  /** Reserve HUD-bar footprints (CSS px) so fit/zoom/pan target the clear viewport rect. */
+  setViewInsets(top: number, bottom: number, left = 0, right = 0): void {
+    this.insetTop = Math.max(0, top);
+    this.insetBottom = Math.max(0, bottom);
+    this.insetLeft = Math.max(0, left);
+    this.insetRight = Math.max(0, right);
   }
 
   setBoard(box: WorldBox): void {
     this.box = box;
   }
 
-  /** Fit the whole board with `margin` px of breathing room; recenter, reset zoom+pan. */
+  /** Fit the whole board into the UNOBSTRUCTED viewport rect with `margin` px of breathing
+   *  room; recenter, reset zoom+pan. The board centre projects onto centerPxX/Y (the clear
+   *  rect's middle), so no board tile is left under a HUD bar. */
   fit(): void {
     const worldW = Math.max(0.001, this.box.maxX - this.box.minX);
     const worldH = Math.max(0.001, this.box.maxZ - this.box.minZ);
-    const usableW = Math.max(1, this.viewW - this.margin * 2);
-    const usableH = Math.max(1, this.viewH - this.margin * 2);
+    const usableW = Math.max(1, this.viewW - this.insetLeft - this.insetRight - this.margin * 2);
+    const usableH = Math.max(1, this.viewH - this.insetTop - this.insetBottom - this.margin * 2);
     this.fitScale = Math.min(usableW / worldW, usableH / worldH);
     this.centerX = (this.box.minX + this.box.maxX) / 2;
     this.centerZ = (this.box.minZ + this.box.maxZ) / 2;
@@ -83,17 +113,17 @@ export class Camera2D {
   }
 
   worldToScreenX(wx: number): number {
-    return (wx - this.eyeX) * this.scale + this.viewW / 2;
+    return (wx - this.eyeX) * this.scale + this.centerPxX;
   }
   worldToScreenY(wz: number): number {
-    return (wz - this.eyeZ) * this.scale + this.viewH / 2;
+    return (wz - this.eyeZ) * this.scale + this.centerPxY;
   }
 
   screenToWorldX(sx: number): number {
-    return (sx - this.viewW / 2) / this.scale + this.eyeX;
+    return (sx - this.centerPxX) / this.scale + this.eyeX;
   }
   screenToWorldZ(sy: number): number {
-    return (sy - this.viewH / 2) / this.scale + this.eyeZ;
+    return (sy - this.centerPxY) / this.scale + this.eyeZ;
   }
 
   /**
@@ -102,13 +132,14 @@ export class Camera2D {
    * Written into the caller's out object (no per-frame allocation in the hot loop).
    */
   visibleWorldRect(marginPx: number, out: WorldBox): WorldBox {
-    const halfW = this.viewW / 2 / this.scale;
-    const halfH = this.viewH / 2 / this.scale;
-    const mx = marginPx / this.scale;
-    out.minX = this.eyeX - halfW - mx;
-    out.maxX = this.eyeX + halfW + mx;
-    out.minZ = this.eyeZ - halfH - mx;
-    out.maxZ = this.eyeZ + halfH + mx;
+    const s = this.scale;
+    const mx = marginPx / s;
+    // Screen x in [0, viewW] maps around the inset-shifted centre, so the visible world span is
+    // asymmetric about the eye — compute both edges from centerPx (matters once insets are non-zero).
+    out.minX = this.eyeX - this.centerPxX / s - mx;
+    out.maxX = this.eyeX + (this.viewW - this.centerPxX) / s + mx;
+    out.minZ = this.eyeZ - this.centerPxY / s - mx;
+    out.maxZ = this.eyeZ + (this.viewH - this.centerPxY) / s + mx;
     return out;
   }
 
@@ -124,8 +155,10 @@ export class Camera2D {
    * fixed on screen. If no anchor is given, zooms about the viewport center.
    */
   zoomBy(factor: number, centerXpx?: number, centerYpx?: number): void {
-    const cx = centerXpx ?? this.viewW / 2;
-    const cy = centerYpx ?? this.viewH / 2;
+    // No anchor (e.g. the top-down toggle's 1.8x step) zooms about the clear-rect centre, so the
+    // board stays framed above the bars; pinch/wheel pass an explicit cursor anchor as before.
+    const cx = centerXpx ?? this.centerPxX;
+    const cy = centerYpx ?? this.centerPxY;
     const beforeX = this.screenToWorldX(cx);
     const beforeZ = this.screenToWorldZ(cy);
     this.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, this.zoom * factor));
