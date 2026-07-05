@@ -172,14 +172,20 @@ placement fix, overhead button, tutorial, path preview, swarm-alarm fix) is chro
 - **To ship:** `node tools/deploy-pages.mjs` (builds + publishes dist/ to gh-pages via a scratch
   worktree; `--dry-run` supported), then `git push origin master` (triggers the workflow). Confirm
   with the user before pushing/deploying — outward-facing action.
-- **Deploy gotchas (cost 30 min on 2026-07-03):** (1) If deploy-pages fails with the generic
-  "Deployment failed, try again later", do NOT `gh run rerun` — a rerun keeps the old artifact and
-  dies on "Multiple artifacts named github-pages" — dispatch a FRESH run (`gh workflow run pages.yml`).
-  (2) If deployments hang/insta-fail repeatedly, the Pages backend queue is wedged: re-save the
-  config (`gh api -X PUT repos/<r>/pages -f build_type=workflow`) and dispatch fresh — that cleared
-  it. (3) Legacy branch-mode builds for this repo wedge at "building" forever; stay on workflow mode.
-  (4) `gh api -X DELETE .../pages` is rejected (422) for this repo — deleting/recreating is not an
-  available fix.
+- **Deploy gotchas (refined 2026-07-05 after a second wedge):** (1) Never `gh run rerun` a failed
+  pages run — the kept artifact dies on "Multiple artifacts named github-pages"; always dispatch
+  FRESH (`gh workflow run pages.yml`). (2) Pages deployments are KEYED BY COMMIT SHA
+  (`pages_build_version`). A stuck deployment blocks successors ("Deployment failed, try again
+  later" instantly); cancelling it (`gh api -X POST .../pages/deployments/<full-sha>/cancel`)
+  unblocks the queue BUT **poisons that sha** — the next run reuses the same deployment id, polls a
+  `deployment_cancelled` record for 10 minutes, and fails. After any cancel, **push a new commit
+  (new sha) before redeploying.** (3) Legacy branch-mode builds wedge at "building" forever for this
+  repo; stay on workflow mode. (4) `DELETE /pages` is rejected (422); not an available fix.
+  (5) Multiple GitHub accounts live on this machine (`concretejungler` owns this repo;
+  `MedAssistant-ux` may be gh's active account) — if pushes 403, scope auth per-command:
+  `GH_TOKEN=$(gh auth token -u concretejungler)` for gh calls, and for git pushes use the
+  base64 extraheader pattern (see git log for the exact invocation) rather than flipping the
+  machine-wide active account.
 
 ---
 
