@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { aoUnder, belly, celCrescent, celCrescentPath, glossDot, ramp, rim } from '../../paint';
 
 registerTowerPainter('audrey-the-third', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -96,35 +97,42 @@ registerTowerPainter('audrey-the-third', (ctx, size, _frame, opts) => {
 
   const leaf = warm(PAL.stinkbug);
   const pot = warm(0xc67654);
+  const leafR = ramp(leaf);
+  const potR = ramp(pot);
+  const accentR = ramp(accent);
   const potX = cx - size * 0.24;
   const potY = size * 0.5;
   const potW = size * 0.48;
   const potH = size * 0.25;
 
+  aoUnder(ctx, cx, potY + potH + size * 0.02, potW * 0.46, size * 0.035, 0.22);
   for (const [dx, dy, rx, ry, rot] of [[-0.2, 0.42, 0.16, 0.07, -0.75], [0.2, 0.43, 0.16, 0.07, 0.75], [0, 0.48, 0.14, 0.06, 0]] as [number, number, number, number, number][]) {
     ctx.beginPath();
     ctx.ellipse(cx + size * dx, size * dy, size * rx, size * ry, rot, 0, Math.PI * 2);
-    ctx.fillStyle = hex(dx < 0 ? darken(leaf, 0.05) : lighten(leaf, 0.04));
+    ctx.fillStyle = hex(dx < 0 ? mix(leaf, leafR.shadow, 0.18) : leafR.light);
     ctx.fill();
     strokeInk(size * 0.026);
+    celCrescent(ctx, cx + size * dx, size * dy, size * rx, size * ry, leafR.shadow, 0.45, 0.45);
   }
   ctx.beginPath();
   ctx.moveTo(cx, potY + size * 0.03);
   ctx.quadraticCurveTo(cx - size * 0.04, size * 0.39, cx + size * 0.02, size * 0.29);
   ctx.lineWidth = size * 0.055;
-  ctx.strokeStyle = hex(darken(leaf, 0.12));
+  ctx.strokeStyle = hex(leafR.shadow);
   ctx.stroke();
+  aoUnder(ctx, cx, potY + size * 0.015, potW * 0.32, size * 0.035, 0.18);
 
   ctx.beginPath();
   ctx.ellipse(cx + size * 0.03, size * 0.27, size * 0.2, size * 0.14, 0.08, 0, Math.PI * 2);
-  ctx.fillStyle = hex(lighten(accent, 0.08));
+  ctx.fillStyle = hex(accentR.light);
   ctx.fill();
   strokeInk();
+  celCrescent(ctx, cx + size * 0.03, size * 0.27, size * 0.2, size * 0.14, accentR.shadow, 0.44, 0.42);
   ctx.beginPath();
   ctx.moveTo(cx - size * 0.11, size * 0.27);
   ctx.quadraticCurveTo(cx + size * 0.04, size * 0.19, cx + size * 0.18, size * 0.26);
   ctx.quadraticCurveTo(cx + size * 0.03, size * 0.32, cx - size * 0.11, size * 0.27);
-  ctx.fillStyle = hex(darken(accent, 0.16));
+  ctx.fillStyle = hex(mix(accent, accentR.shadow, 0.5));
   ctx.fill();
   strokeInk(size * 0.026);
 
@@ -132,14 +140,18 @@ registerTowerPainter('audrey-the-third', (ctx, size, _frame, opts) => {
   ctx.fillStyle = hex(pot);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  roundRect(potX, potY, potW, potH, size * 0.055);
+  ctx.clip();
+  belly(ctx, cx, potY + potH * 0.52, potW * 0.5, potH * 0.58, potR, 0.55);
+  celCrescentPath(ctx, () => roundRect(potX, potY, potW, potH, size * 0.055), cx, potY + potH * 0.52, potW * 0.5, potH * 0.58, potR.shadow, 0.48, 0.34);
+  rim(ctx, cx, potY + potH * 0.52, potW * 0.5, potH * 0.58, potR.light, size * 0.024, 0.48);
+  ctx.restore();
   roundRect(potX - size * 0.035, potY - size * 0.055, potW + size * 0.07, size * 0.09, size * 0.04);
-  ctx.fillStyle = hex(lighten(pot, 0.12));
+  ctx.fillStyle = hex(potR.light);
   ctx.fill();
   strokeInk(size * 0.03);
-  ctx.beginPath();
-  ctx.ellipse(cx - size * 0.1, potY + size * 0.13, size * 0.06, size * 0.12, 0, 0, Math.PI * 2);
-  ctx.fillStyle = rgba(lighten(pot, 0.28), 0.45);
-  ctx.fill();
+  glossDot(ctx, cx - size * 0.1, potY + size * 0.08, size * 0.022, 0.62);
 
   drawFace(cx, potY + size * 0.105, size * 0.095, size * 0.045, 0.35);
   drawPips(potY + potH + size * 0.055);

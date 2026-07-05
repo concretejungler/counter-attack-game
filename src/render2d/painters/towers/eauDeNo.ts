@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix, lighten } from '../../colors';
+import { aoUnder, belly, celCrescent, celCrescentPath, glossDot, ramp, rim, rivets, specStreak } from '../../paint';
 
 registerTowerPainter('eau-de-no', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -95,6 +96,9 @@ registerTowerPainter('eau-de-no', (ctx, size, _frame, opts) => {
   };
 
   const glass = warm(0xe8c7dc);
+  const glassR = ramp(glass);
+  const accentR = ramp(accent);
+  const metalR = ramp(PAL.metal);
   const vapor = warm(lighten(accent, 0.1));
   const x = cx - size * 0.22;
   const y = size * 0.31;
@@ -106,29 +110,39 @@ registerTowerPainter('eau-de-no', (ctx, size, _frame, opts) => {
   ctx.lineWidth = size * 0.04;
   ctx.strokeStyle = hex(PAL.metalDark);
   ctx.stroke();
+  specStreak(ctx, cx + size * 0.19, size * 0.225, size * 0.18, size * 0.016, 0.4);
   ctx.beginPath();
   ctx.ellipse(cx - size * 0.18, size * 0.25, size * 0.09, size * 0.06, -0.25, 0, Math.PI * 2);
-  ctx.fillStyle = hex(lighten(accent, 0.18));
+  ctx.fillStyle = hex(accentR.light);
   ctx.fill();
   strokeInk(size * 0.025);
+  celCrescent(ctx, cx - size * 0.18, size * 0.25, size * 0.09, size * 0.06, accentR.shadow, 0.42, 0.45);
   roundRect(cx - size * 0.06, size * 0.2, size * 0.16, size * 0.1, size * 0.03);
   ctx.fillStyle = hex(PAL.metal);
   ctx.fill();
   strokeInk(size * 0.024);
+  celCrescentPath(ctx, () => roundRect(cx - size * 0.06, size * 0.2, size * 0.16, size * 0.1, size * 0.03), cx + size * 0.02, size * 0.25, size * 0.09, size * 0.06, metalR.shadow, 0.5, 0.4);
+  rivets(ctx, [{ x: cx - size * 0.025, y: size * 0.235 }], size * 0.011, COCOA_CSS);
   for (const [dx, dy, r] of [[0.34, 0.2, 0.02], [0.39, 0.16, 0.016], [0.42, 0.25, 0.014]] as [number, number, number][]) {
     ctx.beginPath();
     ctx.arc(cx + size * dx, size * dy, size * r, 0, Math.PI * 2);
     ctx.fillStyle = rgba(vapor, 0.55);
     ctx.fill();
   }
+  aoUnder(ctx, cx, y + h + size * 0.025, w * 0.45, size * 0.035, 0.22);
   roundRect(x, y, w, h, size * 0.11);
   ctx.fillStyle = rgba(glass, 0.78);
   ctx.fill();
   strokeInk();
-  ctx.beginPath();
-  ctx.ellipse(cx - size * 0.1, y + h * 0.5, size * 0.045, h * 0.32, 0, 0, Math.PI * 2);
-  ctx.fillStyle = rgba(0xffffff, 0.42);
-  ctx.fill();
+  ctx.save();
+  roundRect(x, y, w, h, size * 0.11);
+  ctx.clip();
+  belly(ctx, cx, y + h * 0.52, w * 0.5, h * 0.5, glassR, 0.3);
+  celCrescentPath(ctx, () => roundRect(x, y, w, h, size * 0.11), cx, y + h * 0.52, w * 0.5, h * 0.5, glassR.shadow, 0.5, 0.32);
+  rim(ctx, cx, y + h * 0.52, w * 0.5, h * 0.5, glassR.light, size * 0.024, 0.5);
+  specStreak(ctx, cx - size * 0.06, y + h * 0.18, size * 0.23, size * 0.024, 0.45);
+  ctx.restore();
+  glossDot(ctx, cx - size * 0.11, y + h * 0.25, size * 0.022, 0.65);
   drawFace(cx, y + h * 0.48, size * 0.09, size * 0.043, 0.35);
   drawPips(y + h + size * 0.065);
   if (ascended) {

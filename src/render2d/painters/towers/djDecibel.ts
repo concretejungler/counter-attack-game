@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { aoUnder, belly, celCrescent, celCrescentPath, ramp, rim, rivets, specStreak } from '../../paint';
 
 registerTowerPainter('dj-decibel', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -95,6 +96,8 @@ registerTowerPainter('dj-decibel', (ctx, size, _frame, opts) => {
   };
 
   const shell = warm(0x55616f);
+  const shellR = ramp(shell);
+  const accentR = ramp(accent);
   const x = cx - size * 0.33;
   const y = size * 0.31;
   const w = size * 0.66;
@@ -104,14 +107,23 @@ registerTowerPainter('dj-decibel', (ctx, size, _frame, opts) => {
   ctx.lineWidth = size * 0.055;
   ctx.strokeStyle = hex(PAL.metalDark);
   ctx.stroke();
+  aoUnder(ctx, cx, y + h + size * 0.03, w * 0.46, size * 0.035, 0.22);
   roundRect(x, y, w, h, size * 0.06);
   ctx.fillStyle = hex(shell);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  roundRect(x, y, w, h, size * 0.06);
+  ctx.clip();
+  belly(ctx, cx, y + h * 0.5, w * 0.48, h * 0.58, shellR, 0.38);
+  celCrescentPath(ctx, () => roundRect(x, y, w, h, size * 0.06), cx, y + h * 0.5, w * 0.5, h * 0.6, shellR.shadow, 0.5, 0.42);
+  rim(ctx, cx, y + h * 0.5, w * 0.5, h * 0.6, shellR.light, size * 0.024, 0.5);
+  ctx.restore();
+  specStreak(ctx, cx - size * 0.04, y + size * 0.06, size * 0.32, size * 0.022, 0.4);
   for (const sgn of [-1, 1]) {
     ctx.beginPath();
     ctx.arc(cx + sgn * size * 0.21, y + h * 0.55, size * 0.105, 0, Math.PI * 2);
-    ctx.fillStyle = hex(darken(shell, 0.22));
+    ctx.fillStyle = hex(shellR.shadow);
     ctx.fill();
     strokeInk(size * 0.026);
     ctx.beginPath();
@@ -119,12 +131,14 @@ registerTowerPainter('dj-decibel', (ctx, size, _frame, opts) => {
     ctx.fillStyle = hex(accent);
     ctx.fill();
     strokeInk(size * 0.016);
+    celCrescent(ctx, cx + sgn * size * 0.21, y + h * 0.55, size * 0.05, size * 0.05, accentR.shadow, 0.42, 0.5);
   }
   for (let i = 0; i < 5; i++) {
     roundRect(cx - size * 0.1 + i * size * 0.05, y + size * (0.08 + (i % 2) * 0.035), size * 0.026, size * (0.08 + (i % 3) * 0.018), size * 0.01);
-    ctx.fillStyle = hex(lighten(accent, 0.1));
+    ctx.fillStyle = hex(accentR.light);
     ctx.fill();
   }
+  rivets(ctx, [{ x: x + size * 0.04, y: y + size * 0.05 }, { x: x + w - size * 0.04, y: y + size * 0.05 }], size * 0.012, COCOA_CSS);
   drawFace(cx, y + h * 0.52, size * 0.065, size * 0.035, 0.45);
   drawPips(y + h + size * 0.08);
   if (ascended) {

@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { aoUnder, belly, celCrescent, celCrescentPath, glossDot, ramp, rim, specStreak } from '../../paint';
 
 registerTowerPainter('jar-firefly', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -96,22 +97,35 @@ registerTowerPainter('jar-firefly', (ctx, size, _frame, opts) => {
 
   const glass = warm(0xbfe3f7);
   const glow = warm(dmgTypeColor('light'));
+  const glassR = ramp(glass);
+  const glowR = ramp(glow);
+  const capR = ramp(PAL.metalDark);
   const x = cx - size * 0.23;
   const y = size * 0.23;
   const w = size * 0.46;
   const h = size * 0.5;
+  aoUnder(ctx, cx, y + h + size * 0.025, w * 0.45, size * 0.035, 0.22);
   roundRect(cx - size * 0.2, y - size * 0.06, size * 0.4, size * 0.09, size * 0.025);
   ctx.fillStyle = hex(PAL.metalDark);
   ctx.fill();
   strokeInk(size * 0.026);
+  celCrescentPath(ctx, () => roundRect(cx - size * 0.2, y - size * 0.06, size * 0.4, size * 0.09, size * 0.025), cx, y - size * 0.015, size * 0.2, size * 0.05, capR.shadow, 0.5, 0.45);
   roundRect(x, y, w, h, size * 0.1);
   ctx.fillStyle = rgba(glass, 0.55);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  roundRect(x, y, w, h, size * 0.1);
+  ctx.clip();
+  belly(ctx, cx, y + h * 0.5, w * 0.5, h * 0.5, glassR, 0.2);
+  specStreak(ctx, cx - size * 0.07, y + h * 0.2, size * 0.22, size * 0.024, 0.42);
+  rim(ctx, cx, y + h * 0.5, w * 0.5, h * 0.5, glassR.light, size * 0.024, 0.5);
+  ctx.restore();
   ctx.beginPath();
   ctx.arc(cx, y + h * 0.46, size * 0.16, 0, Math.PI * 2);
   ctx.fillStyle = rgba(glow, 0.72);
   ctx.fill();
+  celCrescent(ctx, cx, y + h * 0.46, size * 0.16, size * 0.16, glowR.shadow, 0.42, 0.35);
   ctx.beginPath();
   ctx.ellipse(cx - size * 0.055, y + h * 0.41, size * 0.06, size * 0.035, -0.5, 0, Math.PI * 2);
   ctx.ellipse(cx + size * 0.055, y + h * 0.41, size * 0.06, size * 0.035, 0.5, 0, Math.PI * 2);
@@ -121,6 +135,7 @@ registerTowerPainter('jar-firefly', (ctx, size, _frame, opts) => {
   ctx.ellipse(cx - size * 0.1, y + h * 0.46, size * 0.035, h * 0.34, 0, 0, Math.PI * 2);
   ctx.fillStyle = rgba(0xffffff, 0.42);
   ctx.fill();
+  glossDot(ctx, cx - size * 0.1, y + h * 0.22, size * 0.018, 0.6);
   drawFace(cx, y + h * 0.63, size * 0.085, size * 0.04, 0.25);
   drawPips(y + h + size * 0.065);
   if (ascended) {

@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { aoUnder, belly, celCrescentPath, glossDot, ramp, rim, rivets, specStreak } from '../../paint';
 
 registerTowerPainter('count-blendula', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -96,7 +97,12 @@ registerTowerPainter('count-blendula', (ctx, size, _frame, opts) => {
 
   const glass = warm(0xbfe3f7);
   const base = warm(PAL.metal);
+  const glassR = ramp(glass);
+  const baseR = ramp(base);
+  const accentR = ramp(accent);
+  const lid = mix(PAL.metal, ramp(PAL.metal).shadow, 0.2);
 
+  aoUnder(ctx, cx, size * 0.77, size * 0.25, size * 0.035, 0.24);
   ctx.beginPath();
   ctx.moveTo(cx - size * 0.18, size * 0.18);
   ctx.lineTo(cx + size * 0.17, size * 0.18);
@@ -107,6 +113,17 @@ registerTowerPainter('count-blendula', (ctx, size, _frame, opts) => {
   ctx.fill();
   strokeInk();
   ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx - size * 0.18, size * 0.18);
+  ctx.lineTo(cx + size * 0.17, size * 0.18);
+  ctx.lineTo(cx + size * 0.22, size * 0.5);
+  ctx.quadraticCurveTo(cx, size * 0.56, cx - size * 0.22, size * 0.5);
+  ctx.closePath();
+  ctx.clip();
+  belly(ctx, cx, size * 0.36, size * 0.22, size * 0.23, glassR, 0.2);
+  specStreak(ctx, cx - size * 0.07, size * 0.24, size * 0.22, size * 0.025, 0.42);
+  ctx.restore();
+  ctx.save();
   ctx.clip();
   ctx.beginPath();
   ctx.moveTo(cx - size * 0.22, size * 0.38);
@@ -114,13 +131,14 @@ registerTowerPainter('count-blendula', (ctx, size, _frame, opts) => {
   ctx.lineTo(cx + size * 0.22, size * 0.55);
   ctx.lineTo(cx - size * 0.22, size * 0.55);
   ctx.closePath();
-  ctx.fillStyle = rgba(lighten(accent, 0.08), 0.78);
+  ctx.fillStyle = rgba(accentR.light, 0.78);
   ctx.fill();
   ctx.restore();
   roundRect(cx - size * 0.2, size * 0.13, size * 0.38, size * 0.075, size * 0.025);
-  ctx.fillStyle = hex(darken(PAL.metal, 0.08));
+  ctx.fillStyle = hex(lid);
   ctx.fill();
   strokeInk(size * 0.026);
+  specStreak(ctx, cx - size * 0.02, size * 0.155, size * 0.25, size * 0.018, 0.45);
   for (let i = 0; i < 4; i++) {
     const a = i * Math.PI / 2;
     ctx.beginPath();
@@ -140,9 +158,17 @@ registerTowerPainter('count-blendula', (ctx, size, _frame, opts) => {
   ctx.fillStyle = hex(base);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  roundRect(x, y, w, h, size * 0.06);
+  ctx.clip();
+  celCrescentPath(ctx, () => roundRect(x, y, w, h, size * 0.06), cx, y + h * 0.5, w * 0.5, h * 0.65, baseR.shadow, 0.5, 0.48);
+  rim(ctx, cx, y + h * 0.5, w * 0.5, h * 0.65, baseR.light, size * 0.022, 0.45);
+  ctx.restore();
+  rivets(ctx, [{ x: x + w * 0.13, y: y + h * 0.24 }, { x: x + w * 0.87, y: y + h * 0.24 }], size * 0.013, COCOA_CSS);
   roundRect(x + size * 0.05, y + size * 0.045, w - size * 0.1, size * 0.07, size * 0.03);
-  ctx.fillStyle = hex(darken(base, 0.12));
+  ctx.fillStyle = hex(baseR.shadow);
   ctx.fill();
+  glossDot(ctx, cx - size * 0.1, size * 0.29, size * 0.018, 0.6);
   drawFace(cx, y + size * 0.07, size * 0.085, size * 0.038, -0.35);
   ctx.fillStyle = '#fff7dd';
   for (const dx of [-0.035, 0.035]) {

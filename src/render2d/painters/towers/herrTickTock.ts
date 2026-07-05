@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, mix } from '../../colors';
+import { aoUnder, belly, celCrescent, celCrescentPath, ramp, rim, woodGrain } from '../../paint';
 
 registerTowerPainter('herr-tick-tock', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -95,6 +96,9 @@ registerTowerPainter('herr-tick-tock', (ctx, size, _frame, opts) => {
   };
 
   const wood = warm(PAL.wood);
+  const woodR = ramp(wood);
+  const faceR = ramp(PAL.butter);
+  const accentR = ramp(accent);
   const x = cx - size * 0.25;
   const y = size * 0.27;
   const w = size * 0.5;
@@ -104,22 +108,33 @@ registerTowerPainter('herr-tick-tock', (ctx, size, _frame, opts) => {
   ctx.lineTo(x - size * 0.04, y + size * 0.05);
   ctx.lineTo(x + w + size * 0.04, y + size * 0.05);
   ctx.closePath();
-  ctx.fillStyle = hex(darken(wood, 0.12));
+  ctx.fillStyle = hex(mix(wood, woodR.shadow, 0.35));
   ctx.fill();
   strokeInk();
+  celCrescentPath(ctx, () => { ctx.moveTo(cx, size * 0.13); ctx.lineTo(x - size * 0.04, y + size * 0.05); ctx.lineTo(x + w + size * 0.04, y + size * 0.05); ctx.closePath(); }, cx, size * 0.22, w * 0.52, size * 0.12, woodR.shadow, 0.45, 0.38);
+  aoUnder(ctx, cx, y + h + size * 0.2, w * 0.42, size * 0.035, 0.2);
   roundRect(x, y, w, h, size * 0.04);
   ctx.fillStyle = hex(wood);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  roundRect(x, y, w, h, size * 0.04);
+  ctx.clip();
+  belly(ctx, cx, y + h * 0.52, w * 0.5, h * 0.52, woodR, 0.34);
+  celCrescentPath(ctx, () => roundRect(x, y, w, h, size * 0.04), cx, y + h * 0.52, w * 0.5, h * 0.52, woodR.shadow, 0.5, 0.38);
+  rim(ctx, cx, y + h * 0.52, w * 0.5, h * 0.52, woodR.light, size * 0.023, 0.48);
+  woodGrain(ctx, x + size * 0.05, y + size * 0.07, w - size * 0.1, h * 0.28, woodR.shadow, 41, 3);
+  ctx.restore();
   roundRect(cx - size * 0.09, y - size * 0.01, size * 0.18, size * 0.11, size * 0.025);
-  ctx.fillStyle = hex(darken(wood, 0.24));
+  ctx.fillStyle = hex(mix(wood, woodR.shadow, 0.6));
   ctx.fill();
   strokeInk(size * 0.02);
   ctx.beginPath();
   ctx.arc(cx, y + h * 0.55, size * 0.15, 0, Math.PI * 2);
-  ctx.fillStyle = hex(lighten(PAL.butter, 0.1));
+  ctx.fillStyle = hex(faceR.light);
   ctx.fill();
   strokeInk(size * 0.028);
+  celCrescent(ctx, cx, y + h * 0.55, size * 0.15, size * 0.15, faceR.shadow, 0.42, 0.32);
   ctx.beginPath();
   ctx.moveTo(cx, y + h + size * 0.02);
   ctx.lineTo(cx, y + h + size * 0.16);
@@ -131,6 +146,7 @@ registerTowerPainter('herr-tick-tock', (ctx, size, _frame, opts) => {
   ctx.fillStyle = hex(accent);
   ctx.fill();
   strokeInk(size * 0.02);
+  celCrescent(ctx, cx, y + h + size * 0.18, size * 0.055, size * 0.035, accentR.shadow, 0.42, 0.45);
   drawFace(cx, y + h * 0.5, size * 0.06, size * 0.034, -0.45);
   drawPips(size * 0.88);
   if (ascended) {

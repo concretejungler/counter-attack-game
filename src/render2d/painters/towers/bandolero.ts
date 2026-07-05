@@ -8,7 +8,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix, lighten } from '../../colors';
+import { aoUnder, belly, celCrescent, celCrescentPath, ramp, rim, rivets, woodGrain } from '../../paint';
 
 registerTowerPainter('bandolero', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -19,7 +20,9 @@ registerTowerPainter('bandolero', (ctx, size, _frame, opts) => {
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('swat'));
   const wood = warm(PAL.wood);
-  const band = warm(darken(dmgTypeColor('swat'), 0.14)); // taut red rubber band
+  const woodR = ramp(wood);
+  const accentR = ramp(accent);
+  const band = mix(accent, accentR.shadow, 0.34); // taut red rubber band
 
   const strokeInk = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
   const roundRect = (x: number, y: number, w: number, h: number, r: number) => {
@@ -73,12 +76,35 @@ registerTowerPainter('bandolero', (ctx, size, _frame, opts) => {
       ctx.closePath(); ctx.fill();
     }
   };
+  const drawLimb = (a: [number, number], b: [number, number], seed: number) => {
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const mx = (a[0] + b[0]) / 2;
+    const my = (a[1] + b[1]) / 2;
+    const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
+    ctx.strokeStyle = hex(mix(wood, woodR.shadow, 0.18)); ctx.lineWidth = size * 0.075; ctx.stroke();
+    ctx.strokeStyle = rgba(woodR.light, 0.55); ctx.lineWidth = size * 0.02; ctx.stroke();
+    ctx.save();
+    ctx.translate(mx, my);
+    ctx.rotate(angle);
+    woodGrain(ctx, -len * 0.45, -size * 0.032, len * 0.9, size * 0.064, woodR.shadow, seed, 2);
+    ctx.restore();
+  };
 
   // --- peg-board junk-drawer body (behind the mechanism) ---
   const bx = cx - size * 0.32, by = size * 0.56, bw = size * 0.64, bh = size * 0.24;
+  aoUnder(ctx, cx, by + bh + size * 0.02, bw * 0.46, size * 0.035, 0.22);
   roundRect(bx, by, bw, bh, size * 0.05);
   ctx.fillStyle = hex(wood); ctx.fill(); strokeInk();
-  ctx.fillStyle = rgba(darken(wood, 0.4), 0.5);
+  ctx.save();
+  roundRect(bx, by, bw, bh, size * 0.05);
+  ctx.clip();
+  belly(ctx, cx, by + bh * 0.5, bw * 0.44, bh * 0.7, woodR, 0.32);
+  celCrescentPath(ctx, () => roundRect(bx, by, bw, bh, size * 0.05), cx, by + bh * 0.5, bw * 0.5, bh * 0.7, woodR.shadow, 0.5, 0.38);
+  rim(ctx, cx, by + bh * 0.5, bw * 0.5, bh * 0.7, woodR.light, size * 0.02, 0.4);
+  woodGrain(ctx, bx + size * 0.05, by + size * 0.035, bw - size * 0.1, bh * 0.5, woodR.shadow, 15, 2);
+  ctx.restore();
+  ctx.fillStyle = rgba(woodR.shadow, 0.5);
   for (let r = 0; r < 2; r++) for (let c = 0; c < 5; c++) {
     ctx.beginPath();
     ctx.arc(bx + size * 0.08 + c * size * 0.12, by + size * 0.08 + r * size * 0.09, size * 0.017, 0, Math.PI * 2);
@@ -91,15 +117,12 @@ registerTowerPainter('bandolero', (ctx, size, _frame, opts) => {
   const tipNW: [number, number] = [cx - 0.30 * size, size * 0.24];
   const tipSW: [number, number] = [cx - 0.30 * size, size * 0.56];
   ctx.lineCap = 'round';
-  for (const [a, b] of [[tipSW, tipNE], [tipNW, tipSE]] as [number, number][][]) {
-    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
-    ctx.strokeStyle = hex(darken(wood, 0.06)); ctx.lineWidth = size * 0.075; ctx.stroke();
-    ctx.strokeStyle = rgba(lighten(wood, 0.3), 0.55); ctx.lineWidth = size * 0.02; ctx.stroke();
-  }
+  for (const [i, pair] of ([[tipSW, tipNE], [tipNW, tipSE]] as [[number, number], [number, number]][]).entries()) drawLimb(pair[0], pair[1], 31 + i);
   // limb-tip notch caps (where the band hooks) on the east fork
   for (const [tx, ty] of [tipNE, tipSE]) {
     ctx.beginPath(); ctx.arc(tx, ty, size * 0.032, 0, Math.PI * 2);
-    ctx.fillStyle = hex(darken(wood, 0.2)); ctx.fill(); strokeInk(size * 0.02);
+    ctx.fillStyle = hex(mix(wood, woodR.shadow, 0.55)); ctx.fill(); strokeInk(size * 0.02);
+    celCrescent(ctx, tx, ty, size * 0.032, size * 0.032, woodR.shadow, 0.45, 0.45);
   }
 
   // --- drawn elastic band: a V pulled back to a pocket WEST of the pivot ---
@@ -112,6 +135,7 @@ registerTowerPainter('bandolero', (ctx, size, _frame, opts) => {
   // --- central pivot bolt ---
   ctx.beginPath(); ctx.arc(cx + size * 0.005, size * 0.4, size * 0.045, 0, Math.PI * 2);
   ctx.fillStyle = hex(PAL.metalDark); ctx.fill(); strokeInk(size * 0.022);
+  rivets(ctx, [{ x: cx + size * 0.005, y: size * 0.4 }], size * 0.017, COCOA_CSS);
 
   // --- projectile pellet nocked in the pocket ---
   ctx.beginPath(); ctx.arc(pocket[0], pocket[1], size * 0.045, 0, Math.PI * 2);

@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, mix } from '../../colors';
+import { aoUnder, belly, celCrescent, celCrescentPath, glossDot, ramp, rim } from '../../paint';
 
 registerTowerPainter('gnomeo', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -97,6 +98,11 @@ registerTowerPainter('gnomeo', (ctx, size, _frame, opts) => {
   const robe = warm(PAL.denim);
   const hat = warm(dmgTypeColor('heat'));
   const beard = warm(0xf3efe4);
+  const robeR = ramp(robe);
+  const hatR = ramp(hat);
+  const beardR = ramp(beard);
+  const skin = warm(0xf0c29c);
+  const skinR = ramp(skin);
   ctx.beginPath();
   ctx.moveTo(cx, size * 0.13);
   ctx.lineTo(cx - size * 0.22, size * 0.38);
@@ -105,11 +111,13 @@ registerTowerPainter('gnomeo', (ctx, size, _frame, opts) => {
   ctx.fillStyle = hex(hat);
   ctx.fill();
   strokeInk();
+  celCrescentPath(ctx, () => { ctx.moveTo(cx, size * 0.13); ctx.lineTo(cx - size * 0.22, size * 0.38); ctx.quadraticCurveTo(cx, size * 0.47, cx + size * 0.22, size * 0.38); ctx.closePath(); }, cx, size * 0.3, size * 0.22, size * 0.18, hatR.shadow, 0.45, 0.45);
   ctx.beginPath();
   ctx.arc(cx, size * 0.42, size * 0.16, 0, Math.PI * 2);
-  ctx.fillStyle = hex(0xf0c29c);
+  ctx.fillStyle = hex(skin);
   ctx.fill();
   strokeInk(size * 0.028);
+  celCrescent(ctx, cx, size * 0.42, size * 0.16, size * 0.16, skinR.shadow, 0.42, 0.4);
   ctx.beginPath();
   ctx.moveTo(cx - size * 0.2, size * 0.45);
   ctx.quadraticCurveTo(cx, size * 0.73, cx + size * 0.2, size * 0.45);
@@ -117,18 +125,33 @@ registerTowerPainter('gnomeo', (ctx, size, _frame, opts) => {
   ctx.fillStyle = hex(beard);
   ctx.fill();
   strokeInk(size * 0.028);
+  celCrescentPath(ctx, () => { ctx.moveTo(cx - size * 0.2, size * 0.45); ctx.quadraticCurveTo(cx, size * 0.73, cx + size * 0.2, size * 0.45); ctx.quadraticCurveTo(cx, size * 0.58, cx - size * 0.2, size * 0.45); ctx.closePath(); }, cx, size * 0.56, size * 0.2, size * 0.18, beardR.shadow, 0.5, 0.32);
   ctx.beginPath();
   ctx.moveTo(cx - size * 0.18, size * 0.6);
   ctx.lineTo(cx - size * 0.24, size * 0.75);
   ctx.lineTo(cx + size * 0.24, size * 0.75);
   ctx.lineTo(cx + size * 0.18, size * 0.6);
   ctx.closePath();
+  aoUnder(ctx, cx, size * 0.76, size * 0.24, size * 0.035, 0.22);
   ctx.fillStyle = hex(robe);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx - size * 0.18, size * 0.6);
+  ctx.lineTo(cx - size * 0.24, size * 0.75);
+  ctx.lineTo(cx + size * 0.24, size * 0.75);
+  ctx.lineTo(cx + size * 0.18, size * 0.6);
+  ctx.closePath();
+  ctx.clip();
+  belly(ctx, cx, size * 0.68, size * 0.24, size * 0.12, robeR, 0.45);
+  celCrescentPath(ctx, () => { ctx.moveTo(cx - size * 0.18, size * 0.6); ctx.lineTo(cx - size * 0.24, size * 0.75); ctx.lineTo(cx + size * 0.24, size * 0.75); ctx.lineTo(cx + size * 0.18, size * 0.6); ctx.closePath(); }, cx, size * 0.68, size * 0.24, size * 0.12, robeR.shadow, 0.5, 0.38);
+  rim(ctx, cx, size * 0.68, size * 0.24, size * 0.12, robeR.light, size * 0.02, 0.48);
+  ctx.restore();
+  glossDot(ctx, cx - size * 0.08, size * 0.62, size * 0.018, 0.62);
   for (const sgn of [-1, 1]) {
     roundRect(cx + sgn * size * 0.05 - size * 0.09, size * 0.72, size * 0.18, size * 0.06, size * 0.025);
-    ctx.fillStyle = hex(PAL.woodDark);
+    ctx.fillStyle = hex(ramp(PAL.woodDark).base);
     ctx.fill();
     strokeInk(size * 0.02);
   }

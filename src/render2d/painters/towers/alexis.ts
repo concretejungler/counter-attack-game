@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix, lighten } from '../../colors';
+import { aoUnder, belly, celCrescentPath, fabricTicks, innerInk, ramp, rim, rivets, specStreak, woodGrain } from '../../paint';
 
 registerTowerPainter('alexis', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -95,33 +96,56 @@ registerTowerPainter('alexis', (ctx, size, _frame, opts) => {
   };
 
   const body = warm(0x5e6b75);
-  const fabric = warm(darken(PAL.denim, 0.18));
+  const bodyR = ramp(body);
+  const denimR = ramp(warm(PAL.denim));
+  const fabric = mix(denimR.base, denimR.shadow, 0.36);
+  const fabricR = ramp(fabric);
+  const box = warm(0xcaa36d);
+  const boxR = ramp(box);
   const x = cx - size * 0.25;
   const y = size * 0.2;
   const w = size * 0.5;
   const h = size * 0.56;
 
+  aoUnder(ctx, cx, y + h + size * 0.02, w * 0.5, size * 0.04, 0.22);
   for (const sgn of [-1, 1]) {
     roundRect(cx + sgn * size * 0.2 - size * 0.09, y + size * 0.32, size * 0.18, size * 0.16, size * 0.025);
-    ctx.fillStyle = hex(warm(0xcaa36d));
+    ctx.fillStyle = hex(box);
     ctx.fill();
     strokeInk(size * 0.024);
+    celCrescentPath(ctx, () => roundRect(cx + sgn * size * 0.2 - size * 0.09, y + size * 0.32, size * 0.18, size * 0.16, size * 0.025), cx + sgn * size * 0.2, y + size * 0.4, size * 0.09, size * 0.08, boxR.shadow, 0.48, 0.45);
+    ctx.save();
+    roundRect(cx + sgn * size * 0.2 - size * 0.09, y + size * 0.32, size * 0.18, size * 0.16, size * 0.025);
+    ctx.clip();
+    woodGrain(ctx, cx + sgn * size * 0.2 - size * 0.08, y + size * 0.35, size * 0.16, size * 0.08, boxR.shadow, 24 + sgn, 2);
+    ctx.restore();
   }
   roundRect(x, y, w, h, size * 0.16);
   ctx.fillStyle = hex(body);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  roundRect(x, y, w, h, size * 0.16);
+  ctx.clip();
+  belly(ctx, cx, y + h * 0.5, w * 0.5, h * 0.5, bodyR, 0.42);
+  celCrescentPath(ctx, () => roundRect(x, y, w, h, size * 0.16), cx, y + h * 0.5, w * 0.5, h * 0.5, bodyR.shadow, 0.48, 0.34);
+  rim(ctx, cx, y + h * 0.5, w * 0.5, h * 0.5, bodyR.light, size * 0.026, 0.5);
+  ctx.restore();
   roundRect(x + size * 0.045, y + size * 0.1, w - size * 0.09, h - size * 0.16, size * 0.11);
   ctx.fillStyle = hex(fabric);
   ctx.fill();
   strokeInk(size * 0.026);
+  celCrescentPath(ctx, () => roundRect(x + size * 0.045, y + size * 0.1, w - size * 0.09, h - size * 0.16, size * 0.11), cx, y + h * 0.47, w * 0.38, h * 0.35, fabricR.shadow, 0.48, 0.42);
+  fabricTicks(ctx, x + size * 0.09, y + size * 0.18, x + size * 0.09, y + h * 0.58, fabricR.light, 4, size * 0.035);
 
   ctx.beginPath();
   ctx.ellipse(cx, y + size * 0.12, size * 0.17, size * 0.045, 0, 0, Math.PI * 2);
   ctx.fillStyle = rgba(lighten(accent, 0.2), 0.86);
   ctx.fill();
   strokeInk(size * 0.018);
-  ctx.fillStyle = rgba(lighten(PAL.metal, 0.1), 0.65);
+  specStreak(ctx, cx - size * 0.015, y + size * 0.105, size * 0.24, size * 0.02, 0.45);
+  rivets(ctx, [{ x: cx - size * 0.14, y: y + size * 0.12 }, { x: cx + size * 0.14, y: y + size * 0.12 }], size * 0.012, innerInk(body));
+  ctx.fillStyle = rgba(ramp(PAL.metal).light, 0.65);
   for (let row = 0; row < 3; row++) {
     for (let col = -2; col <= 2; col++) {
       ctx.beginPath();

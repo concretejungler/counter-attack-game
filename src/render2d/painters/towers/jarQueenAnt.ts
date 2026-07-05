@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { aoUnder, belly, celCrescent, celCrescentPath, glossDot, ramp, rim, specStreak } from '../../paint';
 
 registerTowerPainter('jar-queen-ant', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -106,21 +107,31 @@ registerTowerPainter('jar-queen-ant', (ctx, size, _frame, opts) => {
     ctx.stroke();
     drawSparkles(cy);
   };
-  const masonJar = (x: number, y: number, w: number, h: number, glass: number) => {
+  const masonJar = (x: number, y: number, w: number, h: number, glass: number, glassR: ReturnType<typeof ramp>, capR: ReturnType<typeof ramp>) => {
+    aoUnder(ctx, cx, y + h + size * 0.025, w * 0.45, size * 0.035, 0.22);
     roundRect(cx - size * 0.2, y - size * 0.06, size * 0.4, size * 0.09, size * 0.025);
     ctx.fillStyle = hex(PAL.metalDark);
     ctx.fill();
     strokeInk(size * 0.026);
+    celCrescentPath(ctx, () => roundRect(cx - size * 0.2, y - size * 0.06, size * 0.4, size * 0.09, size * 0.025), cx, y - size * 0.015, size * 0.2, size * 0.05, capR.shadow, 0.5, 0.45);
     roundRect(x, y, w, h, size * 0.1);
     ctx.fillStyle = rgba(glass, 0.5);
     ctx.fill();
     strokeInk();
+    ctx.save();
+    roundRect(x, y, w, h, size * 0.1);
+    ctx.clip();
+    belly(ctx, cx, y + h * 0.5, w * 0.5, h * 0.5, glassR, 0.2);
+    specStreak(ctx, cx - size * 0.07, y + h * 0.2, size * 0.22, size * 0.024, 0.42);
+    rim(ctx, cx, y + h * 0.5, w * 0.5, h * 0.5, glassR.light, size * 0.024, 0.5);
+    ctx.restore();
   };
   const jarGlint = (x: number, y: number, h: number) => {
     ctx.beginPath();
     ctx.ellipse(x + size * 0.13, y + h * 0.46, size * 0.035, h * 0.34, 0, 0, Math.PI * 2);
     ctx.fillStyle = rgba(0xffffff, 0.42);
     ctx.fill();
+    glossDot(ctx, x + size * 0.13, y + h * 0.22, size * 0.018, 0.6);
   };
   const ascendJar = (x: number, y: number, w: number, h: number) => {
     ascendRect(x - ink, y - size * 0.08, w + ink * 2, h + size * 0.1, size * 0.14, y + h * 0.5);
@@ -128,18 +139,23 @@ registerTowerPainter('jar-queen-ant', (ctx, size, _frame, opts) => {
 
   const glass = warm(0xbfe3f7);
   const ant = warm(PAL.antSoldier);
+  const glassR = ramp(glass);
+  const antR = ramp(ant);
+  const capR = ramp(PAL.metalDark);
   const x = cx - size * 0.23, y = size * 0.23, w = size * 0.46, h = size * 0.5;
-  masonJar(x, y, w, h, glass);
+  masonJar(x, y, w, h, glass, glassR, capR);
   ctx.beginPath();
   ctx.ellipse(cx, y + h * 0.43, size * 0.13, size * 0.17, 0, 0, Math.PI * 2);
   ctx.fillStyle = hex(ant);
   ctx.fill();
   strokeInk(size * 0.026);
+  celCrescent(ctx, cx, y + h * 0.43, size * 0.13, size * 0.17, antR.shadow, 0.45, 0.5);
   ctx.beginPath();
   ctx.arc(cx, y + h * 0.24, size * 0.074, 0, Math.PI * 2);
-  ctx.fillStyle = hex(lighten(ant, 0.08));
+  ctx.fillStyle = hex(antR.light);
   ctx.fill();
   strokeInk(size * 0.02);
+  celCrescent(ctx, cx, y + h * 0.24, size * 0.074, size * 0.074, antR.shadow, 0.42, 0.42);
   ctx.beginPath();
   ctx.moveTo(cx - size * 0.09, y + h * 0.15);
   ctx.quadraticCurveTo(cx, y + h * 0.03, cx + size * 0.09, y + h * 0.15);
@@ -156,7 +172,7 @@ registerTowerPainter('jar-queen-ant', (ctx, size, _frame, opts) => {
     ctx.lineTo(cx + sx * size * 0.17, y + h * 0.34);
     ctx.moveTo(cx + sx * size * 0.08, y + h * 0.47);
     ctx.lineTo(cx + sx * size * 0.17, y + h * 0.49);
-    ctx.strokeStyle = hex(darken(ant, 0.35));
+    ctx.strokeStyle = hex(antR.shadow);
     ctx.lineWidth = size * 0.014;
     ctx.stroke();
   }
