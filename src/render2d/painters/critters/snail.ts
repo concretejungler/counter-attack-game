@@ -6,6 +6,7 @@
 import { registerCritterPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { ramp, celCrescent, belly as bellyGrad, specStreak } from '../../paint';
 
 registerCritterPainter('snail', (ctx, size, frame, opts) => {
   const cx = size / 2;
@@ -14,13 +15,15 @@ registerCritterPainter('snail', (ctx, size, frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (col: number) => (shiny ? mix(col, PAL.butter, 0.4) : col);
   const body = warm(PAL.slug);
+  const bodyR = ramp(body);
   const shell = warm(PAL.snailShell);
-  const shellHi = warm(lighten(PAL.snailShell, 0.25));
+  const shellR = ramp(shell);
+  const stalk = mix(bodyR.shadow, 0x000000, 0.05);
   const stroke = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
   const wobble = frame ? 1 : -1;
 
   ctx.lineCap = 'round';
-  ctx.strokeStyle = hex(darken(body, 0.3));
+  ctx.strokeStyle = hex(stalk);
   ctx.lineWidth = size * 0.028;
   for (const sgn of [-1, 1]) {
     ctx.beginPath();
@@ -29,11 +32,20 @@ registerCritterPainter('snail', (ctx, size, frame, opts) => {
     ctx.stroke();
   }
 
+  // foot + head (cel-shaded sub-forms under the shell)
   ctx.beginPath(); ctx.ellipse(cx, cy + size * 0.18, size * 0.2, size * 0.15, 0, 0, Math.PI * 2); ctx.fillStyle = hex(body); ctx.fill(); stroke();
+  celCrescent(ctx, cx, cy + size * 0.18, size * 0.2, size * 0.15, bodyR.shadow, 0.45, 0.5);
   ctx.beginPath(); ctx.ellipse(cx, cy - size * 0.11, size * 0.16, size * 0.13, 0, 0, Math.PI * 2); ctx.fillStyle = hex(lighten(body, 0.04)); ctx.fill(); stroke();
+  celCrescent(ctx, cx, cy - size * 0.11, size * 0.16, size * 0.13, bodyR.shadow, 0.42, 0.5);
 
+  // the shell IS the sprite — belly volume, cel lens, ONE spec streak (polish).
   ctx.beginPath(); ctx.ellipse(cx, cy + size * 0.06, size * 0.25, size * 0.27, 0, 0, Math.PI * 2); ctx.fillStyle = hex(shell); ctx.fill(); stroke();
-  ctx.beginPath(); ctx.ellipse(cx - size * 0.07, cy - size * 0.02, size * 0.11, size * 0.13, -0.25, 0, Math.PI * 2); ctx.fillStyle = rgba(shellHi, 0.65); ctx.fill();
+  bellyGrad(ctx, cx, cy + size * 0.06, size * 0.24, size * 0.26, shellR, 0.55);
+  celCrescent(ctx, cx, cy + size * 0.06, size * 0.25, size * 0.27, shellR.shadow, 0.45, 0.5);
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(cx, cy + size * 0.06, size * 0.24, size * 0.26, 0, 0, Math.PI * 2); ctx.clip();
+  specStreak(ctx, cx - size * 0.08, cy - size * 0.05, size * 0.22, size * 0.05, 0.32);
+  ctx.restore();
   ctx.strokeStyle = COCOA_CSS;
   ctx.lineWidth = size * 0.028;
   ctx.beginPath();

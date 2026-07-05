@@ -6,6 +6,7 @@
 import { registerCritterPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { ramp, celCrescentPath, belly as bellyGrad } from '../../paint';
 
 registerCritterPainter('stinkbug', (ctx, size, frame, opts) => {
   const cx = size / 2;
@@ -14,8 +15,9 @@ registerCritterPainter('stinkbug', (ctx, size, frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (col: number) => (shiny ? mix(col, PAL.butter, 0.4) : col);
   const body = warm(PAL.stinkbug);
+  const r3 = ramp(body);
   const plate = warm(lighten(PAL.stinkbug, 0.12));
-  const leg = darken(body, 0.34);
+  const leg = mix(r3.shadow, 0x000000, 0.1);
   const gas = warm(lighten(PAL.goo, 0.16));
   const stroke = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
 
@@ -30,19 +32,24 @@ registerCritterPainter('stinkbug', (ctx, size, frame, opts) => {
     }
   }
 
-  ctx.beginPath();
-  ctx.moveTo(cx, cy - size * 0.29);
-  ctx.lineTo(cx + size * 0.23, cy - size * 0.14);
-  ctx.lineTo(cx + size * 0.19, cy + size * 0.2);
-  ctx.lineTo(cx, cy + size * 0.36);
-  ctx.lineTo(cx - size * 0.19, cy + size * 0.2);
-  ctx.lineTo(cx - size * 0.23, cy - size * 0.14);
-  ctx.closePath();
-  ctx.fillStyle = hex(body);
-  ctx.fill();
-  stroke();
+  const tracer = () => {
+    ctx.moveTo(cx, cy - size * 0.29);
+    ctx.lineTo(cx + size * 0.23, cy - size * 0.14);
+    ctx.lineTo(cx + size * 0.19, cy + size * 0.2);
+    ctx.lineTo(cx, cy + size * 0.36);
+    ctx.lineTo(cx - size * 0.19, cy + size * 0.2);
+    ctx.lineTo(cx - size * 0.23, cy - size * 0.14);
+    ctx.closePath();
+  };
+  ctx.beginPath(); tracer(); ctx.fillStyle = hex(body); ctx.fill(); stroke();
+  // V2: belly + cel give the shield its domed scutum; the raised central plate is
+  // a hard-cel sub-form; the gas wisps stay as the species accent.
+  ctx.save(); ctx.beginPath(); tracer(); ctx.clip();
+  bellyGrad(ctx, cx, cy + size * 0.03, size * 0.22, size * 0.3, r3, 0.5);
+  ctx.restore();
+  celCrescentPath(ctx, tracer, cx, cy + size * 0.05, size * 0.22, size * 0.3, r3.shadow, 0.45, 0.5);
   ctx.beginPath(); ctx.moveTo(cx, cy - size * 0.22); ctx.lineTo(cx + size * 0.14, cy - size * 0.1); ctx.lineTo(cx, cy + size * 0.28); ctx.lineTo(cx - size * 0.14, cy - size * 0.1); ctx.closePath(); ctx.fillStyle = rgba(plate, 0.7); ctx.fill();
-  ctx.strokeStyle = rgba(darken(body, 0.3), 0.8); ctx.lineWidth = size * 0.022; ctx.beginPath(); ctx.moveTo(cx, cy - size * 0.24); ctx.lineTo(cx, cy + size * 0.29); ctx.stroke();
+  ctx.strokeStyle = rgba(r3.shadow, 0.8); ctx.lineWidth = size * 0.022; ctx.beginPath(); ctx.moveTo(cx, cy - size * 0.24); ctx.lineTo(cx, cy + size * 0.29); ctx.stroke();
   for (const sgn of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + sgn * size * 0.07, cy + size * 0.1); ctx.quadraticCurveTo(cx + sgn * size * 0.18, cy + size * 0.07, cx + sgn * size * 0.14, cy - size * 0.03); ctx.stroke(); }
   ctx.strokeStyle = rgba(gas, 0.62); ctx.lineWidth = size * 0.015;
   for (const x of [-0.1, 0.1]) { ctx.beginPath(); ctx.moveTo(cx + size * x, cy + size * 0.08); ctx.quadraticCurveTo(cx + size * (x + 0.04), cy, cx + size * x, cy - size * 0.07); ctx.stroke(); }

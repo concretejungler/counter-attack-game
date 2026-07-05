@@ -6,6 +6,7 @@
 import { registerCritterPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { ramp, belly as bellyGrad } from '../../paint';
 
 registerCritterPainter('fly-fruit', (ctx, size, frame, opts) => {
   const cx = size / 2;
@@ -14,10 +15,12 @@ registerCritterPainter('fly-fruit', (ctx, size, frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.4) : c);
   const body = warm(PAL.fruitFly);
-  const belly = warm(mix(PAL.fruitFly, PAL.butter, 0.32));
+  const bodyR = ramp(body);
+  const abdomenCol = warm(mix(PAL.fruitFly, PAL.butter, 0.32));
+  const abdomenR = ramp(abdomenCol);
   const eyeCol = warm(mix(PAL.cherry, PAL.antBullet, 0.18));
   const wing = PAL.flyWing;
-  const leg = darken(PAL.fruitFly, 0.36);
+  const leg = mix(bodyR.shadow, 0x000000, 0.1);
   const stroke = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
 
   const thoraxY = cy - size * 0.03;
@@ -35,10 +38,13 @@ registerCritterPainter('fly-fruit', (ctx, size, frame, opts) => {
   }
   ctx.lineCap = 'round'; ctx.lineWidth = size * 0.018; ctx.strokeStyle = hex(leg);
   for (let i = 0; i < 3; i++) { const ly = thoraxY + i * size * 0.065; const kick = (((i + frame) & 1) ? 1 : -1) * size * 0.025; for (const sgn of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + sgn * size * 0.06, ly); ctx.lineTo(cx + sgn * size * 0.15, ly + size * 0.04 + kick); ctx.stroke(); } }
-  ctx.beginPath(); ctx.ellipse(cx, cy + size * 0.14, size * 0.11, size * 0.16, 0, 0, Math.PI * 2); ctx.fillStyle = hex(belly); ctx.fill(); stroke();
-  ctx.strokeStyle = rgba(darken(belly, 0.28), 0.75); ctx.lineWidth = size * 0.018; for (const dy of [0.08, 0.16, 0.24]) { ctx.beginPath(); ctx.ellipse(cx, cy + size * dy, size * 0.09, size * 0.014, 0, 0, Math.PI * 2); ctx.stroke(); }
+  // V2: flier — NO baked shadow. ONE airy belly on the plump abdomen, ramp-toned
+  // segment rings for identity, warm hard-cel highlight on the thorax.
+  ctx.beginPath(); ctx.ellipse(cx, cy + size * 0.14, size * 0.11, size * 0.16, 0, 0, Math.PI * 2); ctx.fillStyle = hex(abdomenCol); ctx.fill(); stroke();
+  bellyGrad(ctx, cx, cy + size * 0.14, size * 0.105, size * 0.155, abdomenR, 0.55);
+  ctx.strokeStyle = rgba(abdomenR.shadow, 0.7); ctx.lineWidth = size * 0.018; for (const dy of [0.08, 0.16, 0.24]) { ctx.beginPath(); ctx.ellipse(cx, cy + size * dy, size * 0.09, size * 0.014, 0, 0, Math.PI * 2); ctx.stroke(); }
   ctx.beginPath(); ctx.ellipse(cx, thoraxY, size * 0.105, size * 0.105, 0, 0, Math.PI * 2); ctx.fillStyle = hex(body); ctx.fill(); stroke();
-  ctx.beginPath(); ctx.ellipse(cx - size * 0.035, thoraxY - size * 0.025, size * 0.045, size * 0.04, 0, 0, Math.PI * 2); ctx.fillStyle = rgba(lighten(body, 0.35), 0.45); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx - size * 0.035, thoraxY - size * 0.025, size * 0.045, size * 0.04, 0, 0, Math.PI * 2); ctx.fillStyle = rgba(bodyR.light, 0.5); ctx.fill();
   const eyeY = cy - size * 0.19;
   for (const sgn of [-1, 1]) {
     const ex = cx + sgn * size * 0.07;

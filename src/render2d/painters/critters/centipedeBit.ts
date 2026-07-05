@@ -8,6 +8,7 @@
 import { registerCritterPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { ramp, celCrescent, belly as bellyGrad } from '../../paint';
 
 registerCritterPainter('centipede-bit', (ctx, size, frame, opts) => {
   const cx = size / 2;
@@ -16,7 +17,8 @@ registerCritterPainter('centipede-bit', (ctx, size, frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.4) : c);
   const base = warm(mix(PAL.slug, PAL.stinkbug, 0.25));
-  const leg = darken(base, 0.4);
+  const r3 = ramp(base);
+  const leg = mix(r3.shadow, 0x000000, 0.1);
   const stroke = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
   const eye = (x: number, y: number, r: number, sgn: number) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = '#ffffff'; ctx.fill(); stroke(r * 0.34); ctx.beginPath(); ctx.arc(x + sgn * r * 0.16, y + r * 0.24, r * 0.52, 0, Math.PI * 2); ctx.fillStyle = COCOA_CSS; ctx.fill(); ctx.beginPath(); ctx.arc(x - r * 0.28, y - r * 0.28, r * 0.24, 0, Math.PI * 2); ctx.fillStyle = '#ffffff'; ctx.fill(); };
 
@@ -34,18 +36,19 @@ registerCritterPainter('centipede-bit', (ctx, size, frame, opts) => {
   }
 
   // --- three FAT beads (tail -> mid -> head), overlapping = segmentation ---
+  // V2: each bead is a sphere via celCrescent; ONE belly on the widest (mid) bead.
   const beads: [number, number, number, number, number][] = [
     [cx, cy + size * 0.24, size * 0.185, size * 0.175, 0.18],   // tail
     [cx, cy + size * 0.02, size * 0.205, size * 0.19, 0.0],     // mid (widest)
     [cx, cy - size * 0.22, size * 0.195, size * 0.185, -0.12],  // head
   ];
   beads.forEach(([bx, by, rx, ry, tint], i) => {
+    const beadCol = mix(base, i === 2 ? PAL.slug : PAL.stinkbug, Math.abs(tint) + 0.14);
     ctx.beginPath(); ctx.ellipse(bx, by, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fillStyle = hex(mix(base, i === 2 ? PAL.slug : PAL.stinkbug, Math.abs(tint) + 0.14));
+    ctx.fillStyle = hex(beadCol);
     ctx.fill(); stroke();
-    // flat top-left sheen on each bead
-    ctx.beginPath(); ctx.ellipse(bx - rx * 0.32, by - ry * 0.34, rx * 0.42, ry * 0.36, 0, 0, Math.PI * 2);
-    ctx.fillStyle = rgba(lighten(base, 0.34), 0.4); ctx.fill();
+    if (i === 1) bellyGrad(ctx, bx, by, rx, ry, ramp(beadCol), 0.5);
+    celCrescent(ctx, bx, by, rx, ry, ramp(beadCol).shadow, 0.45, 0.55);
   });
 
   // --- antennae off the head ---
