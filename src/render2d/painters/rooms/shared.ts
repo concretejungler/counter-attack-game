@@ -9,6 +9,7 @@
 
 import type { RoomCtx } from './registry';
 import { hex, rgba, lighten, darken, mix } from '../../colors';
+import { aoUnder } from '../../paint';
 
 // ---- deterministic per-cell noise (stable across redraws) -------------------
 /** 0..1 hash of two integer coords (+salt). No allocation, no Math.random. */
@@ -184,14 +185,15 @@ export function concreteFloor(rc: RoomCtx, base: number): void {
   fillFloor(rc, base);
   const { x, y, w, h } = rc.floorRect;
   const ctx = rc.ctx;
-  // speckle
-  ctx.fillStyle = rgba(darken(base, 0.3), 0.18);
+  // speckle — coarsened for texture-frequency separation (board marks stay big + soft, well clear of
+  // the sprite frequency): one sparse, larger fleck per ~third of the tiles instead of 3 sub-pixel dots.
+  ctx.fillStyle = rgba(darken(base, 0.3), 0.16);
   forFloorTiles(rc, (c, r, sx, sy, s) => {
-    for (let i = 0; i < 3; i++) {
-      const nx = noise2(c, r, i + 20);
-      const ny = noise2(c, r, i + 40);
-      ctx.fillRect(sx + nx * s, sy + ny * s, Math.max(1, s * 0.04), Math.max(1, s * 0.04));
-    }
+    if (noise2(c, r, 20) < 0.62) return;
+    const d = Math.max(2, s * 0.1);
+    const nx = noise2(c, r, 21);
+    const ny = noise2(c, r, 41);
+    ctx.fillRect(sx + nx * (s - d), sy + ny * (s - d), d, d);
   });
   // expansion joints every ~5 world units
   ctx.strokeStyle = rgba(darken(base, 0.5), 0.5);
@@ -211,13 +213,16 @@ export function concreteFloor(rc: RoomCtx, base: number): void {
 export function carpetFloor(rc: RoomCtx, base: number): void {
   fillFloor(rc, base);
   const ctx = rc.ctx;
+  // coarsened weave: 2 larger up/down flecks per tile (was 4 sub-pixel ones) — a soft mottle that
+  // reads as pile without shimmering against the sprites' finer frequency.
   forFloorTiles(rc, (c, r, sx, sy, s) => {
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 2; i++) {
       const nx = noise2(c, r, i + 60);
       const ny = noise2(c, r, i + 80);
       const up = noise2(c, r, i + 90) > 0.5;
-      ctx.fillStyle = up ? rgba(lighten(base, 0.14), 0.3) : rgba(darken(base, 0.18), 0.3);
-      ctx.fillRect(sx + nx * s, sy + ny * s, Math.max(1, s * 0.06), Math.max(1, s * 0.06));
+      const d = Math.max(2, s * 0.1);
+      ctx.fillStyle = up ? rgba(lighten(base, 0.14), 0.26) : rgba(darken(base, 0.18), 0.26);
+      ctx.fillRect(sx + nx * (s - d), sy + ny * (s - d), d, d);
     }
   });
 }
@@ -233,13 +238,13 @@ export function grassFloor(rc: RoomCtx, base: number, dark: number): void {
       ctx.fillStyle = rgba(n > 0.8 ? lighten(base, 0.12) : dark, 0.28);
       ctx.fillRect(sx, sy, s + 0.6, s + 0.6);
     }
-    // blade flecks
+    // blade flecks — thicker (never sub-1.5px) + fewer, so grass reads coarse rather than shimmery
     ctx.strokeStyle = rgba(darken(dark, 0.1), 0.4);
-    ctx.lineWidth = Math.max(1, s * 0.03);
-    for (let i = 0; i < 4; i++) {
+    ctx.lineWidth = Math.max(1.5, s * 0.05);
+    for (let i = 0; i < 3; i++) {
       const bx = sx + noise2(c, r, i + 50) * s;
       const by = sy + noise2(c, r, i + 70) * s;
-      const bl = s * (0.12 + noise2(c, r, i + 33) * 0.1);
+      const bl = s * (0.14 + noise2(c, r, i + 33) * 0.1);
       const lean = (noise2(c, r, i + 44) - 0.5) * s * 0.12;
       ctx.beginPath();
       ctx.moveTo(bx, by);
@@ -305,9 +310,12 @@ export function beamWedge(rc: RoomCtx, ox: number, oy: number, dx: number, dy: n
 }
 
 // ---- prop primitives ---------------------------------------------------------
-/** Outlined rounded slab prop (furniture silhouette). */
-export function slab(rc: RoomCtx, x: number, y: number, w: number, h: number, r: number, fill: number, outlineAlpha = 0.5): void {
+/** Outlined rounded slab prop (furniture silhouette). Bakes a soft AO under its base so every prop
+ *  sits on the floor rather than floating (pass ao=false for a sub-slab stacked ON another slab, where
+ *  a second ground shadow would just muddy the parent's). */
+export function slab(rc: RoomCtx, x: number, y: number, w: number, h: number, r: number, fill: number, outlineAlpha = 0.5, ao = true): void {
   const ctx = rc.ctx;
+  if (ao) aoUnder(ctx, x + w / 2, y + h * 0.97, w * 0.56, h * 0.3, 0.18);
   rc.roundRect(x, y, w, h, r);
   ctx.fillStyle = hex(fill);
   ctx.fill();

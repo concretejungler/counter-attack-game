@@ -36,8 +36,8 @@ const garage: RoomTreatment = {
     const carW = s * 5.5;
     const carH = s * 2.6;
     slab(rc, carX - carW * 0.5, carY - carH * 0.5, carW, carH, s * 0.7, 0x3a5f8a, 0.6);
-    // cabin
-    slab(rc, carX - carW * 0.18, carY - carH * 0.42, carW * 0.5, carH * 0.5, s * 0.35, lighten(0x3a5f8a, 0.18), 0.4);
+    // cabin (stacks on the body — no second ground AO)
+    slab(rc, carX - carW * 0.18, carY - carH * 0.42, carW * 0.5, carH * 0.5, s * 0.35, lighten(0x3a5f8a, 0.18), 0.4, false);
     // windshield glint
     ctx.fillStyle = rgba(0xcfe6f4, 0.4);
     rc.roundRect(carX - carW * 0.14, carY - carH * 0.36, carW * 0.42, carH * 0.36, s * 0.2);

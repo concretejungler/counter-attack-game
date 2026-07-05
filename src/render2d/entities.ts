@@ -62,7 +62,9 @@ interface CritterRS {
   faceSign: 1 | -1;
   hp: number;
   flash: number;          // hit-flash / squash amount, decays
-  scale: number;          // spawn pop 0->1
+  scale: number;          // spawn pop (overshoot 0->1.15->1), derived from spawnT
+  spawnT: number;         // spawn-pop progress 0->1 (drives the overshoot easing)
+  phase: number;          // per-instance phase offset (id hash) for idle bob / flier hover
   bob: number;            // walk-bob phase accumulator
   tumble: number;         // fall/flung rotation
   boss: boolean;
@@ -103,6 +105,9 @@ export class EntityLayer {
   // aura-field sprites: one cached radial disc + dashed rim per (dmgType, range-bucket). Painted once
   // (radial gradient baked in — never a per-frame gradient), stamped scaled + breathing per aura tower.
   private auraCache = new Map<string, HTMLCanvasElement>();
+  // one cached additive warm-glow disc, stamped (scaled) behind every boss — a per-frame gradient
+  // would cost a fresh allocation each boss; this is built once and reused for the life of the layer.
+  private bossHalo: HTMLCanvasElement | null = null;
   // reused sprite-opts objects — getSprite() reads their fields synchronously (and only calls the
   // painter on a cache miss), so a single mutable object per kind is safe and avoids 300+ allocs/frame.
   private _critterOpts: { variant: string; shiny: boolean } = { variant: '', shiny: false };
@@ -180,7 +185,7 @@ export class EntityLayer {
         rs = {
           id: c.id, def: c.def, c,
           x: c.pos.x, z: c.pos.z, lastX: c.pos.x, faceSign: 1,
-          hp: c.hp, flash: 0, scale: 0.4, bob: 0, tumble: 0,
+          hp: c.hp, flash: 0, scale: 0, spawnT: 0, phase: hashPhase(c.id), bob: 0, tumble: 0,
           boss: !!def?.boss || (def?.size ?? 0) >= 1, seen: true,
           spr: null, sprFrame: -1, sprShiny: false, sprBox: 0,
         };
@@ -199,7 +204,11 @@ export class EntityLayer {
       if (c.hp < rs.hp - 0.01) rs.flash = 1;
       rs.hp = c.hp;
       rs.flash = Math.max(0, rs.flash - dt * 4);
-      rs.scale = Math.min(1, rs.scale + dt * 4);
+      // spawn pop: overshoot 0 -> ~1.15 -> 1 over ~0.3s (was a flat clamp to 1)
+      if (rs.spawnT < 1) {
+        rs.spawnT = Math.min(1, rs.spawnT + dt * 3.2);
+        rs.scale = popScale(rs.spawnT);
+      } else rs.scale = 1;
       // walk-bob only while actually walking
       if (c.state === 'walk' || c.state === 'climb') rs.bob += dt * (5 + (this.content.critters[c.def]?.speed ?? 2));
       if (c.state === 'fall' || c.state === 'flung') rs.tumble += dt * 9; else rs.tumble = 0;
@@ -241,8 +250,15 @@ export class EntityLayer {
 
     const sx = cam.worldToScreenX(rs.x);
     const groundY = cam.worldToScreenY(rs.z);
-    const alt = flying ? Math.max(8, drawPx * 0.35) + Math.sin(this.time * 3 + rs.id) * drawPx * 0.05 : 0;
-    const bobY = (c.state === 'walk' ? Math.abs(Math.sin(rs.bob * Math.PI)) * drawPx * 0.04 : 0);
+    const walking = c.state === 'walk' || c.state === 'climb';
+    const alt = flying ? Math.max(8, drawPx * 0.35) + Math.sin(this.time * 3 + rs.phase) * drawPx * 0.05 : 0;
+    // bob: brisk walk bounce while moving; a gentle per-instance idle bob otherwise (skip while
+    // airborne / playing dead). Idle phase comes from the id hash so a crowd never breathes in lockstep.
+    const bobY = walking
+      ? Math.abs(Math.sin(rs.bob * Math.PI)) * drawPx * 0.04
+      : (c.state === 'fall' || c.state === 'flung' || c.state === 'playDead')
+        ? 0
+        : Math.sin(this.time * 2 + rs.phase) * drawPx * 0.02;
     const sy = groundY - alt - bobY;
 
     // squash: hit flash + play-dead flatten + status shrink
@@ -250,11 +266,28 @@ export class EntityLayer {
     if (rs.flash > 0) { sxs += rs.flash * 0.22; sys -= rs.flash * 0.2; }
     if (c.state === 'playDead') { sys *= 0.4; sxs *= 1.2; }
     if (c.statuses.shrunk) { sxs *= 0.6; sys *= 0.6; }
+    // area-preserving walk squash (~3%): x·y stays ≈1 so the critter keeps its mass while it jaunts.
+    if (walking) { const sq = Math.sin(rs.bob * Math.PI * 2) * 0.03; sxs *= 1 + sq; sys *= 1 - sq; }
     const half = drawPx / 2;
     const dpr = this.dpr;
 
     const hidden = c.hidden === true;
     if (hidden) ctx.globalAlpha = 0.35;
+
+    // boss glow-halo: an additive warm disc stamped BEHIND the boss (cached sprite, never a per-frame
+    // gradient) so a 128-box boss separates from the board at any zoom. Drawn in a clean screen-space
+    // transform (no mirror/squash) before the body.
+    if (rs.boss) {
+      const halo = this.getBossHalo();
+      if (halo) {
+        const hs = drawPx * 1.55;
+        const hh = hs / 2;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.setTransform(dpr, 0, 0, dpr, dpr * sx, dpr * sy);
+        ctx.drawImage(halo, -hh, -hh, hs, hs);
+        ctx.globalCompositeOperation = 'source-over';
+      }
+    }
 
     if (rs.tumble !== 0) {
       // airborne: full matrix with rotation
@@ -381,9 +414,12 @@ export class EntityLayer {
     const half = drawPx / 2;
     const dpr = this.dpr;
     const idleBob = Math.sin(this.time * 2 + t.id) * drawPx * 0.01;
+    // idle breathing: ~1.5% scale pulse about the tower centre, on a slower clock + per-tower phase
+    // so an appliance line-up never breathes in unison. Scaled transform keeps the recoil/bob intact.
+    const breath = 1 + Math.sin(this.time * 1.5 + t.id * 1.3) * 0.015;
     const down = t.downed || t.disabled > 0;
     if (down) ctx.globalAlpha = 0.55;
-    ctx.setTransform(dpr, 0, 0, dpr, dpr * sx, dpr * (sy + idleBob));
+    ctx.setTransform(dpr * breath, 0, 0, dpr * breath, dpr * sx, dpr * (sy + idleBob));
     ctx.drawImage(sprite, -half, -half, drawPx, drawPx);
     this.stamped++;
     if (down) ctx.globalAlpha = 1;
@@ -482,6 +518,29 @@ export class EntityLayer {
     return cv;
   }
 
+  /** Cached warm additive glow disc drawn behind bosses (built once; color-agnostic separation glow). */
+  private getBossHalo(): HTMLCanvasElement | null {
+    if (this.bossHalo) return this.bossHalo;
+    const tex = 128;
+    const cv = document.createElement('canvas');
+    cv.width = tex;
+    cv.height = tex;
+    const c = cv.getContext('2d');
+    if (!c) return null;
+    const cx = tex / 2;
+    const g = c.createRadialGradient(cx, cx, tex * 0.1, cx, cx, cx);
+    g.addColorStop(0, 'rgba(255,226,150,0.5)');
+    g.addColorStop(0.42, 'rgba(255,204,110,0.26)');
+    g.addColorStop(0.72, 'rgba(255,190,92,0.1)');
+    g.addColorStop(1, 'rgba(255,186,88,0)');
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(cx, cx, cx, 0, Math.PI * 2);
+    c.fill();
+    this.bossHalo = cv;
+    return cv;
+  }
+
   // ---- shadows -----------------------------------------------------------
   /**
    * Every blob shadow (critters + towers) accumulates into ONE path and lands in a SINGLE fill —
@@ -502,7 +561,13 @@ export class EntityLayer {
       const px = footprint * cam.scale * rs.scale;
       const sx = cam.worldToScreenX(rs.x);
       const sy = cam.worldToScreenY(rs.z) + px * 0.06;
-      const flyShrink = rs.c.flying ? 0.6 : 1;
+      // couple the flier's contact shadow to its hover height (same phase as its altitude in
+      // drawCritter): higher hover -> smaller, tighter shadow that reads as fainter/further.
+      let flyShrink = 1;
+      if (rs.c.flying) {
+        const hover = 0.5 + 0.5 * Math.sin(this.time * 3 + rs.phase); // 0..1, 1 = top of the hover
+        flyShrink = 0.66 - 0.16 * hover;
+      }
       const rx = px * 0.34 * flyShrink;
       const ry = px * 0.16 * flyShrink;
       ctx.moveTo(sx + rx, sy);            // start subpath at the ellipse's rightmost point (no join line)
@@ -632,6 +697,20 @@ export class EntityLayer {
 // ---- helpers --------------------------------------------------------------
 function byZ(a: CritterRS, b: CritterRS): number { return a.z - b.z; }
 function byPosZ(a: Tower, b: Tower): number { return a.pos.z - b.pos.z; }
+
+/** Stable per-entity phase in [0, 2π) from the id — used to desync idle bob / hover across a crowd. */
+function hashPhase(id: number): number {
+  const t = Math.sin(id * 12.9898 + 4.1) * 43758.5453;
+  return (t - Math.floor(t)) * Math.PI * 2;
+}
+
+/** Spawn-pop easing (back-ease-out): 0 -> ~1.14 -> 1 over t in [0,1] for a springy appearance. */
+function popScale(t: number): number {
+  const c1 = 2.1;
+  const c3 = c1 + 1;
+  const u = t - 1;
+  return 1 + c3 * u * u * u + c1 * u * u;
+}
 
 /** Effective aura range in tiles: tier range with the tower's branch `rangePct` applied (mirrors the
  *  sim's towerStats; Infestation runMods are omitted — this is a render-only field-presence ring). */

@@ -36,8 +36,8 @@ const bedroom: RoomTreatment = {
     const bx = wx(0.03);
     const by = wy(0.4);
     slab(rc, bx, by, s * 3.0, s * 4.2, s * 0.18, rc.pal.woodDark, 0.6);
-    slab(rc, bx + s * 0.25, by + s * 0.25, s * 2.5, s * 3.7, s * 0.14, lighten(rc.pal.cabinet, 0.05), 0.4);
-    slab(rc, bx + s * 0.5, by + s * 0.45, s * 2.0, s * 0.9, s * 0.16, lighten(rc.pal.counterTop, 0.22), 0.3);
+    slab(rc, bx + s * 0.25, by + s * 0.25, s * 2.5, s * 3.7, s * 0.14, lighten(rc.pal.cabinet, 0.05), 0.4, false);
+    slab(rc, bx + s * 0.5, by + s * 0.45, s * 2.0, s * 0.9, s * 0.16, lighten(rc.pal.counterTop, 0.22), 0.3, false);
     // little rug catching the moon
     ctx.beginPath();
     ctx.ellipse(wx(0.55), wy(0.6), s * 1.8, s * 1.2, 0, 0, Math.PI * 2);

@@ -43,7 +43,7 @@ const attic: RoomTreatment = {
     forFloorTiles(rc, (c, r, sx, sy, sc) => {
       if (noise2(c, r, 71) < 0.86) return;
       ctx.beginPath();
-      ctx.arc(sx + noise2(c, r, 72) * sc, sy + noise2(c, r, 73) * sc, Math.max(1, sc * 0.03), 0, Math.PI * 2);
+      ctx.arc(sx + noise2(c, r, 72) * sc, sy + noise2(c, r, 73) * sc, Math.max(1.5, sc * 0.045), 0, Math.PI * 2);
       ctx.fill();
     });
     // old steamer trunk in a corner

@@ -20,6 +20,7 @@ import { themePalette } from '../render/palette';
 import { dprCap } from '../core/device';
 import type { Camera2D } from './camera2d';
 import { COCOA_CSS, hex, rgba, lighten, darken, mix } from './colors';
+import { aoUnder } from './paint';
 import { getRoomTreatment, type RoomTreatment, type RoomCtx } from './painters/rooms/index';
 
 interface WorldRect { minX: number; minZ: number; maxX: number; maxZ: number; }
@@ -55,12 +56,18 @@ export class BoardLayer {
   private lastEyeZ = NaN;
   private lastSig = '';
 
+  /** Latest walk-route polylines (world space), captured from drawPathChevrons so the cached layer can
+   *  bake a subtle path-emphasis ground track from them. A new reference (route changed on a reroute)
+   *  flips `dirty` so the next sync() re-bakes the track — zero per-frame cost while the route holds. */
+  private pathPolylines: readonly (readonly Vec3[])[] = [];
+
   build(level: LevelDef, content: ContentDB): void {
     this.level = level;
     this.content = content;
     this.surfaces = level.surfaces;
     this.pal = themePalette(level.theme);
     this.treatment = getRoomTreatment(level.theme);
+    this.pathPolylines = [];
     this.dirty = true;
     this.lastSig = '';
   }
@@ -133,11 +140,11 @@ export class BoardLayer {
     const rc = (this.treatment && this.surfaces[0]) ? this.makeRoomCtx(ctx, cam, state) : null;
 
     this.drawFloor(ctx, cam, rc);
-    if (rc && this.treatment) {
-      const t = this.treatment;
-      if (t.tint) this.withFloorClip(ctx, cam, () => t.tint!(rc));
-      if (t.decor) this.withFloorClip(ctx, cam, () => t.decor!(rc));
-    }
+    if (rc && this.treatment?.tint) this.withFloorClip(ctx, cam, () => this.treatment!.tint!(rc));
+    // path emphasis sits ON the mood tint (re-brightens the walk route so it stays legible in dark
+    // rooms) but UNDER the decor props, so a rug/light-pool still layers over it naturally.
+    this.drawPathTrack(ctx, cam);
+    if (rc && this.treatment?.decor) this.withFloorClip(ctx, cam, () => this.treatment!.decor!(rc));
     this.drawPlatforms(ctx, cam, rc);
     this.drawSpawns(ctx, cam, rc);
     this.drawClutter(ctx, cam, state);
@@ -224,6 +231,19 @@ export class BoardLayer {
         ctx.fillRect(tx, ty, cam.scale + 0.6, cam.scale + 0.6);
       }
     }
+
+    // WALL-FOOT AO: two feathered multiply bands hugging the INSIDE of the floor edge (the clip keeps
+    // only their inner halves) — the floor reads as meeting room walls, grounding the whole board.
+    // Deepens edges only; the bright walk-route (path track) and interior stay readable on dark themes.
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.strokeStyle = 'rgba(34,22,16,0.16)';
+    ctx.lineWidth = Math.max(6, cam.scale * 0.7);
+    roundRectPath(ctx, x, y, w, h, rad);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(34,22,16,0.12)';
+    ctx.lineWidth = Math.max(3, cam.scale * 0.32);
+    roundRectPath(ctx, x, y, w, h, rad);
+    ctx.stroke();
     ctx.restore();
 
     // outer edge
@@ -251,7 +271,11 @@ export class BoardLayer {
       // elevation-scaled shadow offset (higher surfaces float more)
       const lift = Math.min(10, 3 + s.origin.y * 1.4);
 
-      // drop shadow
+      // soft baked AO penumbra pooling at the island's base — grounds the raised surface with a
+      // gentle spread the crisp offset drop shadow below can't give on its own.
+      aoUnder(ctx, x + w / 2 + lift * 0.5, y + h + lift * 0.4, w * 0.6, h * 0.34 + lift, 0.24);
+
+      // drop shadow (tighter contact edge, sits on top of the soft AO)
       roundRectPath(ctx, x + lift * 0.6, y + lift, w, h, rad);
       ctx.fillStyle = rgba(0x1a120c, 0.3);
       ctx.fill();
@@ -322,6 +346,20 @@ export class BoardLayer {
       const dark = darken(base, 0.28);
       const top = lighten(base, 0.18);
       const lift = Math.max(3, cam.scale * 0.14);
+
+      // soft baked AO under the whole footprint (grounds the block; the per-cell rects below keep the
+      // crisp contact edge). One soft pool over the piece's screen-space bounds.
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const cell of piece.cells) {
+        const x = cam.worldToScreenX(this.surfaces[cell.s].origin.x + cell.c);
+        const y = cam.worldToScreenY(this.surfaces[cell.s].origin.z + cell.r);
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x + cam.scale > maxX) maxX = x + cam.scale;
+        if (y + cam.scale > maxY) maxY = y + cam.scale;
+      }
+      aoUnder(ctx, (minX + maxX) / 2, (minY + maxY) / 2 + (maxY - minY) * 0.22 + lift * 0.5,
+        (maxX - minX) * 0.6, (maxY - minY) * 0.5, 0.2);
 
       // shadow (union of cell rects, offset)
       ctx.fillStyle = rgba(0x1a120c, 0.28);
@@ -537,10 +575,59 @@ export class BoardLayer {
     }
   }
 
+  // ---- path emphasis track (baked into the cached layer, under the live chevrons) ----
+  /**
+   * A subtle ground treatment beneath the walk route: a warm, slightly-lighter track centre with
+   * soft AO-darkened edges, derived from the same polylines the chevrons use. Baked into the cached
+   * board (zero per-frame cost) and clipped to the floor. Three feathered passes on ONE traced path:
+   * a wide multiply band (the scuffed trough / darkened edges) then two narrowing warm cores (the
+   * lit centre that keeps the route readable even on the dark themes).
+   */
+  private drawPathTrack(ctx: CanvasRenderingContext2D, cam: Camera2D): void {
+    const lines = this.pathPolylines;
+    if (!lines.length) return;
+    const s = cam.scale;
+    this.withFloorClip(ctx, cam, () => {
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      // trace every route once; the three passes re-stroke the same path at different widths
+      ctx.beginPath();
+      for (const line of lines) {
+        for (let i = 0; i < line.length; i++) {
+          const x = cam.worldToScreenX(line[i].x);
+          const y = cam.worldToScreenY(line[i].z);
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+      }
+      // darkened soft edges (multiply, widest band)
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.strokeStyle = 'rgba(46,30,22,0.14)';
+      ctx.lineWidth = Math.max(4, s * 1.02);
+      ctx.stroke();
+      ctx.restore();
+      // warm mid band
+      ctx.strokeStyle = 'rgba(255,226,170,0.08)';
+      ctx.lineWidth = Math.max(3, s * 0.62);
+      ctx.stroke();
+      // warm-light centre core (keeps the walk route the brightest ground in a dark room)
+      ctx.strokeStyle = 'rgba(255,238,200,0.1)';
+      ctx.lineWidth = Math.max(2, s * 0.32);
+      ctx.stroke();
+    });
+  }
+
   // ---- path preview chevrons (dynamic; called each frame by the renderer) ----
   // `polylines` are WORLD-space point sequences (game.ts pushes them via setPathPolylines from the
   // sim's own flow field) — the 2D board no longer traces the grid itself.
   drawPathChevrons(ctx: CanvasRenderingContext2D, cam: Camera2D, polylines: readonly (readonly Vec3[])[], timeSec: number): void {
+    // Capture the route so the cached layer can bake the path-emphasis ground track from it. game.ts
+    // hands us a fresh array only when the flow field reroutes, so a reference change is the signal to
+    // re-bake (dirty flips -> next sync() redraws). Static play never re-bakes.
+    if (polylines !== this.pathPolylines) {
+      this.pathPolylines = polylines;
+      this.dirty = true;
+    }
     if (!polylines.length) return;
     const s = cam.scale;
     // soft base line
