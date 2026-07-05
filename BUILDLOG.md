@@ -213,3 +213,12 @@ All six §2 twist systems ship: crumb economy, clutter mazing, mutation drafts, 
 
 ## Cuts
 (none yet — see CUTS.md if created)
+
+## ✅ GAMEPLAY BATCH: STORE/BELTS + MAGNET CRUMBS + PLACE-ANYWHERE + SHUTTLE + TITLE v3 (2026-07-05)
+User directives, all landed (365/365 tests incl. 14 new; balance 8/8 byte-identical):
+- Tower Store (BP) + 5/3/3 belts; HUD shows belt only (icon flood fixed); non-pausing in-level belt drawer; live stats from defs; starter-kit/veteran save backfill (src/ui/store.ts, storeData.ts).
+- Magnetic crumbs: handMove command (throttled, parked-pointer re-emit), v=clamp(5.5/max(d,.75),.5,7) t/s, .5 contact auto-bank via shared bankCrumbs; inert without input.
+- Place-anywhere towers: root cause of "can't place" = non-trap towers required clutter mounts; floor/surface mounts are non-blocking (pathing untouched). Rejects: occupied/cake/off-board/wall/spawn.
+- shuttle-drawer block (1x2, patrol 2 tiles @0.8t/s, .5s pauses, riders move, pathVersion bumps, chew kills patrol) + 3 static shapes (deck-neutral); ghost path preview (grid.previewPathWith + dashed cyan ribbon on clutter hover).
+- Title v3: fixed 1600x900 composed stage (contain-scaled, letterboxed) — identical composition 720p-4K/21:9/mobile; poetry = tap-to-play fridge prop overlay.
+Known agent-harness note: three subagent launches misfired instantly (0 tool calls, stray boilerplate echo as result) — relaunching the same prompt fresh worked every time.
