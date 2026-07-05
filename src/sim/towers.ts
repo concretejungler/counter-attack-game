@@ -59,20 +59,31 @@ export function tryPlaceTower(ctx: SimCtx, defId: string, at: TileRef): boolean 
   if (ctx.state.crumbs < cost) return false;
   if (!ctx.grid.inBounds(at)) return false;
 
+  // Addendum 2 §1: towers place on ANY standable tile. Clutter cells → mount ON the block (blocking,
+  // unchanged). Open floor/surface tiles → NON-BLOCKING floor mount (no grid occupancy change, so
+  // critter pathing is identical to the tower not being there — mazing keeps its value). Rejections
+  // only for: off-board (above), a wall/appliance (not standable), the cake, or an occupied cell.
+  const cid = ctx.grid.clutterIdAt(at);
   let mountClutter: number | null = null;
   if (def.attack === 'trap' || def.floorMount) {
-    if (ctx.grid.isStaticBlocked(at) || ctx.grid.isClutter(at)) return false;
+    // inherently floor-only items (traps, tape strips, decoys, roombas): open floor ONLY, never clutter
+    if (ctx.grid.isStaticBlocked(at) || cid !== null) return false;
     if (sameTile(at, ctx.level.cakeTile)) return false;
     if (ctx.level.spawns.some((sp) => sameTile(sp.tile, at))) return false;
     for (const tw of ctx.state.towers.values()) if (sameTile(tw.tile, at)) return false;
-  } else {
-    const cid = ctx.grid.clutterIdAt(at);
-    if (cid === null) return false;
+  } else if (cid !== null) {
     const piece = ctx.state.clutter.get(cid);
     if (!piece) return false;
     const shape = ctx.content.shapes[piece.shape];
     if (piece.mounted.length >= shape.mountSlots) return false;
     mountClutter = cid;
+  } else {
+    // open floor/surface → non-blocking floor mount. Rejections: a wall/appliance (not standable),
+    // the cake, an occupied cell, or a spawn door (critters emerge there — same rule as traps).
+    if (ctx.grid.isStaticBlocked(at)) return false;
+    if (sameTile(at, ctx.level.cakeTile)) return false;
+    if (ctx.level.spawns.some((sp) => sameTile(sp.tile, at))) return false;
+    for (const tw of ctx.state.towers.values()) if (sameTile(tw.tile, at)) return false;
   }
 
   const base = ctx.grid.worldOf(at);

@@ -72,18 +72,20 @@ describe('Clutter placement', () => {
 });
 
 describe('Towers', () => {
-  it('mounts on clutter, costs crumbs; bare-floor placement is rejected for non-traps', () => {
+  it('mounts on clutter, and (Addendum 2 §1) also floor-mounts on bare floor as a non-blocking tower', () => {
     const sim = new Sim(boxLevel(), opts());
     placeBox(sim);
     const before = sim.state.crumbs;
-    sim.command({ type: 'placeTower', def: 'test-gun', at: { s: 0, c: 3, r: 3 } });
-    sim.command({ type: 'placeTower', def: 'test-gun', at: { s: 0, c: 1, r: 5 } }); // bare floor → reject
+    sim.command({ type: 'placeTower', def: 'test-gun', at: { s: 0, c: 3, r: 3 } }); // on the box (clutter)
+    sim.command({ type: 'placeTower', def: 'test-gun', at: { s: 0, c: 1, r: 5 } }); // bare floor → now OK
     const ev = run(sim, 1);
-    expect(ev.filter((e) => e.t === 'towerPlace')).toHaveLength(1);
-    expect(sim.state.towers.size).toBe(1);
-    expect(sim.state.crumbs).toBe(before - 50);
-    const tower = [...sim.state.towers.values()][0];
-    expect(tower.mountClutter).not.toBe(null);
+    expect(ev.filter((e) => e.t === 'towerPlace')).toHaveLength(2);
+    expect(sim.state.towers.size).toBe(2);
+    expect(sim.state.crumbs).toBe(before - 100);
+    const clutterTw = [...sim.state.towers.values()].find((t) => t.tile.c === 3 && t.tile.r === 3)!;
+    expect(clutterTw.mountClutter).not.toBe(null);
+    const floorTw = [...sim.state.towers.values()].find((t) => t.tile.c === 1 && t.tile.r === 5)!;
+    expect(floorTw.mountClutter).toBe(null); // floor mount = no clutter under it
   });
 
   it('traps place directly on walkable floor and trigger once on contact', () => {

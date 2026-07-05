@@ -71,6 +71,10 @@ export interface GameView {
 
   // ---------- enemy-path preview ----------
   setPathPolylines(paths: readonly (readonly Vec3[])[]): void;
+  /** Addendum 2 §4: a SECOND, dashed alt-colour ghost ribbon = the hypothetical enemy route while a
+   *  clutter block is being placed (grid.previewPathWith). Optional — only the 2D renderer draws it;
+   *  pass [] to clear. */
+  setGhostPathPolylines?(paths: readonly (readonly Vec3[])[]): void;
 
   // ---------- camera intents (agnostic; 3D orbits, 2D pans/zooms) ----------
   /** Drag-move the camera by a screen-space delta (3D: orbit; 2D: pan). */

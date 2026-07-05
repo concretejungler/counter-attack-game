@@ -52,4 +52,27 @@ export const SHAPE_DEFS: Record<string, ClutterShape> = {
     cells: [[0, 0], [1, 0], [2, 0], [1, 1]],
     hp: 90, mountSlots: 2, look: 'backyard-flowerpots',
   },
+  // ---- Addendum 2 §3: extra static shapes (additive; inert until placed via the belt/store) ----
+  'napkin-i3': {
+    id: 'napkin-i3', name: 'Napkin Stack',
+    cells: [[0, 0], [1, 0], [2, 0]],
+    hp: 55, mountSlots: 1, look: 'kitchen-napkins',
+  },
+  'jars-o': {
+    id: 'jars-o', name: 'Mason Jars',
+    cells: [[0, 0], [1, 0], [0, 1], [1, 1]],
+    hp: 110, mountSlots: 2, look: 'pantry-jars',
+  },
+  'ladder-i': {
+    id: 'ladder-i', name: 'Step Ladder',
+    cells: [[0, 0], [0, 1], [0, 2], [0, 3]],
+    hp: 100, mountSlots: 1, look: 'garage-ladder',
+  },
+  // ---- Addendum 2 §3: the SHUTTLE — a 1x2 block that patrols its long axis (2 out, 2 back). ----
+  'shuttle-drawer': {
+    id: 'shuttle-drawer', name: 'Sliding Drawer',
+    cells: [[0, 0], [1, 0]],
+    hp: 90, mountSlots: 1, look: 'kitchen-drawer',
+    patrol: { range: 2, speed: 0.8, pause: 0.5 },
+  },
 };

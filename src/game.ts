@@ -131,6 +131,9 @@ export class Game {
   /** Last Grid.pathVersion pushed to the renderer's enemy-path preview — retrace only when the
    *  flow field actually changes (clutter placed/removed), not every frame. */
   private lastPathVersion = -1;
+  /** Dedup key for the pre-placement path preview (Addendum 2 §4) so previewPathWith only recomputes
+   *  when the hovered clutter spot (or the live grid via pathVersion) actually changes, not per frame. */
+  private lastPreviewKey: string | null = null;
   // ---------- PHOTO MODE (GAME-PROMPT §18) ----------
   photoMode = false;
   private photoWasPaused = false;
@@ -1414,6 +1417,7 @@ export class Game {
     this.mode = { kind: 'idle' };
     this.ui.hud?.setSelected(null);
     this.renderer.hideGhost();
+    this.clearGhostPathPreview();
     this.renderer.setHandPose('point');
   }
 
@@ -1593,19 +1597,39 @@ export class Game {
       for (const tw of this.sim.state.towers.values()) if (same(tw.tile, tile)) return false;
       return true;
     }
-    if (cid === null) return false;
-    const piece = this.sim.state.clutter.get(cid);
-    if (!piece) return false;
-    const shape = CONTENT.shapes[piece.shape];
-    return piece.mounted.length < (shape?.mountSlots ?? 1);
+    if (cid !== null) {
+      // clutter cell → blocking mount, if a slot is free
+      const piece = this.sim.state.clutter.get(cid);
+      if (!piece) return false;
+      const shape = CONTENT.shapes[piece.shape];
+      return piece.mounted.length < (shape?.mountSlots ?? 1);
+    }
+    // Addendum 2 §1: any standable open floor/surface tile → non-blocking floor mount.
+    if (g.isStaticBlocked(tile)) return false;
+    if (same(tile, this.level.cakeTile)) return false;
+    if (this.level.spawns.some((sp) => same(sp.tile, tile))) return false;
+    for (const tw of this.sim.state.towers.values()) if (same(tw.tile, tile)) return false;
+    return true;
+  }
+
+  /** Drop the pre-placement path preview (Addendum 2 §4) if one is showing. */
+  private clearGhostPathPreview(): void {
+    if (this.lastPreviewKey !== null) {
+      this.lastPreviewKey = null;
+      this.renderer.setGhostPathPolylines?.([]);
+    }
   }
 
   private updateGhost(): void {
     if (!this.sim || !this.level) return;
+    // the dashed hypothetical ribbon only ever shows while placing a clutter block — clear it the
+    // instant we're doing anything else (placing a tower, carrying, spell, idle, deselect).
+    if (this.mode.kind !== 'placeClutter') this.clearGhostPathPreview();
     if (this.mode.kind === 'placeClutter') {
       const tile = this.tileAtPointer();
       if (!tile) {
         this.renderer.hideGhost();
+        this.clearGhostPathPreview();
         return;
       }
       const shape = CONTENT.shapes[this.mode.shape];
@@ -1616,6 +1640,14 @@ export class Game {
         !this.level!.spawns.some((sp) => sp.tile.s === t.s && sp.tile.c === t.c && sp.tile.r === t.r),
       );
       this.renderer.showGhost(cells.map((t) => this.sim!.grid.worldOf(t)), valid);
+      // Addendum 2 §4: while hovering a VALID spot, push the hypothetical enemy route as a 2nd,
+      // dashed ghost ribbon so the maze reshape reads before committing. pathVersion in the key
+      // forces a refresh after a place (shift-place keeps the block selected).
+      const key = `${this.mode.shape}:${this.mode.rot}:${tile.s},${tile.c},${tile.r}:${valid}:${this.sim.grid.pathVersion}`;
+      if (key !== this.lastPreviewKey) {
+        this.lastPreviewKey = key;
+        this.renderer.setGhostPathPolylines?.(valid ? this.sim.grid.previewPathWith(cells) : []);
+      }
     } else if (this.mode.kind === 'placeTower' || this.mode.kind === 'carry') {
       const defId = this.mode.kind === 'placeTower' ? this.mode.def : this.sim.state.towers.get(this.mode.towerId)?.def;
       const def = defId ? CONTENT.towers[defId] : null;
@@ -2409,6 +2441,15 @@ export function exposeDebug(game: Game): void {
       if (game.sim) game.sim.state.crumbs += n;
     },
     callWave: () => game.sim?.command({ type: 'callWave' }),
+    // ---- placement / shuttle / path-preview QA hooks (used by throwaway Playwright probes) ----
+    command: (c: import('./sim/types').SimCommand) => game.sim?.command(c),
+    pathVersion: () => game.sim?.grid.pathVersion ?? -1,
+    level: () => game.sim?.level,
+    selectClutter: (shape: string) => (game as unknown as { selectClutter(s: string): void }).selectClutter(shape),
+    previewPath: (cells: import('./sim/types').TileRef[]) => game.sim?.grid.previewPathWith(cells),
+    // empty `extra` reproduces the CURRENT live route exactly — the diff baseline for a preview.
+    livePath: () => game.sim?.grid.previewPathWith([]),
+    ghostPaths: () => (game.renderer as { getGhostPathPolylines?: () => unknown }).getGhostPathPolylines?.() ?? [],
     setSpeed: (n: number) => {
       game.speedMult = n;
     },

@@ -186,6 +186,13 @@ export interface ClutterShape {
   hp: number;
   mountSlots: number;       // how many towers fit on top (usually 1)
   look: string;             // render hint
+  /**
+   * SHUTTLE block only (Addendum 2 §3): makes this clutter PATROL deterministically along its long
+   * axis. Additive + optional — a shape WITHOUT `patrol` is an ordinary static block, byte-identical
+   * to before. `range` = tiles it slides from its anchor before turning back, `speed` = tiles/sec,
+   * `pause` = seconds it rests at each end. Consumed by sim/shuttle.ts; no RNG involved.
+   */
+  patrol?: { range: number; speed: number; pause: number };
 }
 
 // ---------- spells ----------
@@ -363,10 +370,28 @@ export interface ClutterPiece {
   shape: string;
   rot: 0 | 1 | 2 | 3;
   anchor: TileRef;
-  cells: TileRef[];         // resolved world cells
+  cells: TileRef[];         // resolved world cells (a shuttle re-writes these as it slides)
   hp: number;
   maxHp: number;
   mounted: number[];        // tower ids on top
+  /**
+   * SHUTTLE patrol runtime (sim/shuttle.ts) — present ONLY on pieces whose shape has `patrol`.
+   * Undefined for every static block, so ordinary clutter (and every level without a shuttle) is
+   * byte-identical to before. Advanced by a seedless, deterministic tick (no RNG): the block glides
+   * `pos` tiles (0..range) along `axis` at `speed` tiles/sec, pausing `pauseMax`s at each end;
+   * `intOffset` is the current integer tile displacement (round(pos)) — flow fields recompute
+   * whenever it changes (a "cell transition").
+   */
+  shuttle?: {
+    axis: 0 | 1;       // 0 = along columns (world +x), 1 = along rows (world +z)
+    range: number;
+    speed: number;
+    pauseMax: number;
+    pos: number;       // continuous offset in tiles, 0..range
+    dir: 1 | -1;
+    pauseT: number;    // seconds of pause remaining at an end
+    intOffset: number; // current integer tile offset (round(pos))
+  };
 }
 
 export interface HandState {

@@ -79,6 +79,9 @@ export class Renderer2D implements GameView {
   // enemy-path preview — world-space polylines pushed by game.ts (setPathPolylines). No auto-trace:
   // the 2D board no longer holds the sim Grid, so game.ts is the single source of the routes.
   private pathPolylines: readonly (readonly Vec3[])[] = [];
+  // Addendum 2 §4: hypothetical route while placing a clutter block — a 2nd, dashed cyan ribbon
+  // drawn over the live warm chevrons. Pushed by game.ts (setGhostPathPolylines); [] clears it.
+  private ghostPathPolylines: readonly (readonly Vec3[])[] = [];
 
   // latest sim state (syncTick/syncProjectiles feed it; frame(dt) + picking read it).
   private lastState: SimState | null = null;
@@ -148,6 +151,7 @@ export class Renderer2D implements GameView {
     this.hand.reset();
 
     this.pathPolylines = [];
+    this.ghostPathPolylines = [];
     this.lastState = null;
     this.ghostCells = null;
     this.rangeCircle = null;
@@ -274,6 +278,7 @@ export class Renderer2D implements GameView {
     // path chevrons (below entities)
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     if (this.pathPolylines.length) this.board.drawPathChevrons(ctx, this.cam, this.pathPolylines, this.time);
+    if (this.ghostPathPolylines.length) this.drawGhostPath(ctx);
 
     // placement ghost + range circle (on top of the board, below entities)
     if (this.ghostCells) this.drawGhost(ctx);
@@ -492,6 +497,38 @@ export class Renderer2D implements GameView {
   // ---- enemy-path preview ------------------------------------------------
   setPathPolylines(paths: readonly (readonly Vec3[])[]): void {
     this.pathPolylines = paths;
+  }
+
+  setGhostPathPolylines(paths: readonly (readonly Vec3[])[]): void {
+    this.ghostPathPolylines = paths;
+  }
+
+  /** QA/probe hook (not in GameView): current hypothetical ghost route, for Playwright assertions. */
+  getGhostPathPolylines(): readonly (readonly Vec3[])[] {
+    return this.ghostPathPolylines;
+  }
+
+  /** Dashed cool-cyan ribbon = the hypothetical enemy route while placing a block (Addendum 2 §4).
+   *  Drawn just above the live warm chevrons so the two read as clearly different routes. */
+  private drawGhostPath(ctx: CanvasRenderingContext2D): void {
+    const cam = this.cam;
+    const s = cam.scale;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.setLineDash([Math.max(4, s * 0.28), Math.max(3, s * 0.2)]);
+    ctx.lineWidth = Math.max(2, s * 0.09);
+    ctx.strokeStyle = 'rgba(120,214,255,0.92)';
+    ctx.beginPath();
+    for (const line of this.ghostPathPolylines) {
+      for (let i = 0; i < line.length; i++) {
+        const x = cam.worldToScreenX(line[i].x);
+        const y = cam.worldToScreenY(line[i].z);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   // ---- camera intents ----------------------------------------------------

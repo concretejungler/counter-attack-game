@@ -69,8 +69,13 @@ export class Grid {
   pathVersion = 0;
   private climbLinks = new Map<number, number[]>();  // tileKey -> linked tileKeys
   private clutterCells = new Map<number, TileRef[]>(); // clutterId -> cells
+  /** Cake + spawn tiles kept for previewPathWith() (the pure hypothetical-route helper). */
+  private readonly cakeTile: TileRef;
+  private readonly spawnTiles: TileRef[];
 
   constructor(level: LevelDef) {
+    this.cakeTile = level.cakeTile;
+    this.spawnTiles = level.spawns.map((s) => s.tile);
     this.surfaces = level.surfaces.map((def) => {
       const n = def.cols * def.rows;
       const statBlocked = new Uint8Array(n);
@@ -222,6 +227,81 @@ export class Grid {
       seen.add(k);
       out.push(next);
       cur = next;
+    }
+    return out;
+  }
+
+  /**
+   * PURE pre-placement path preview (Addendum 2 §4): the spawn→cake routes critters WOULD walk if
+   * the given `extra` cells were ALSO blocking clutter — computed WITHOUT mutating any live grid
+   * state or consuming a tick (clones the clutter occupancy, runs a throwaway Dijkstra from the
+   * cake, traces steepest descent from every spawn). Returns world-space polylines; a spawn with no
+   * route to the cake is omitted. With an empty `extra` it reproduces the live route exactly, so the
+   * caller can diff "with block" vs "without". Read-only — safe to call every frame while hovering.
+   */
+  previewPathWith(extra: readonly TileRef[]): Vec3[][] {
+    // clone occupancy so the hypothetical block never touches the live cost fields
+    const clut = this.surfaces.map((s) => s.clutterId.slice());
+    for (const t of extra) {
+      if (this.inBounds(t)) clut[t.s][this.idx(t)] = -2; // any non -1 marks "blocking clutter"
+    }
+    const enter = (t: TileRef): number => {
+      if (this.isStaticBlocked(t)) return Infinity;
+      return clut[t.s][this.idx(t)] !== -1 ? CHEW_COST : 1;
+    };
+    // Dijkstra from the cake into a throwaway dist field (mirrors dijkstra(), reading the clone)
+    const dist = this.surfaces.map((s) => new Float64Array(s.dist.length).fill(Infinity));
+    const heap = new Heap();
+    if (this.inBounds(this.cakeTile)) {
+      dist[this.cakeTile.s][this.idx(this.cakeTile)] = 0;
+      heap.push(0, key(this.cakeTile));
+    }
+    while (heap.size > 0) {
+      const [cost, k] = heap.pop();
+      const u = unkey(k);
+      if (cost > dist[u.s][this.idx(u)]) continue;
+      const stepIntoU = enter(u);
+      for (const n of this.neighbors(u)) {
+        if (this.isStaticBlocked(n)) continue;
+        const nd = cost + stepIntoU + (this.isClimbStep(u, n) ? CLIMB_COST : 0);
+        const ni = this.idx(n);
+        if (nd < dist[n.s][ni]) {
+          dist[n.s][ni] = nd;
+          heap.push(nd, key(n));
+        }
+      }
+    }
+    // steepest-descent flow on the cloned field (mirrors flowGeneric)
+    const flow = (t: TileRef): TileRef | null => {
+      if (dist[t.s][this.idx(t)] === 0) return null;
+      let best: TileRef | null = null;
+      let bestCost = Infinity;
+      for (const n of this.neighbors(t)) {
+        const ec = enter(n);
+        if (!Number.isFinite(ec)) continue;
+        const d = dist[n.s][this.idx(n)];
+        if (!Number.isFinite(d)) continue;
+        const total = ec + d + (this.isClimbStep(t, n) ? CLIMB_COST : 0);
+        if (total < bestCost) { bestCost = total; best = n; }
+      }
+      return best;
+    };
+    const out: Vec3[][] = [];
+    for (const start of this.spawnTiles) {
+      if (!this.inBounds(start) || !Number.isFinite(dist[start.s][this.idx(start)])) continue;
+      const tiles: TileRef[] = [start];
+      const seen = new Set<number>([key(start)]);
+      let cur = start;
+      for (let i = 0; i < 500; i++) {
+        const next = flow(cur);
+        if (!next) break;
+        const nk = key(next);
+        if (seen.has(nk)) break;
+        seen.add(nk);
+        tiles.push(next);
+        cur = next;
+      }
+      if (tiles.length >= 2) out.push(tiles.map((t) => this.worldOf(t)));
     }
     return out;
   }

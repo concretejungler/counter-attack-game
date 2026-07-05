@@ -3,6 +3,7 @@ import { Grid } from './grid';
 import { WaveRuntime } from './waves';
 import { damageCritter, spawnCritter, updateCritters } from './critters';
 import { tryPlaceClutter } from './clutter';
+import { updateShuttles } from './shuttle';
 import { towerStats, tryBranchTower, tryPlaceTower, trySellTower, tryUpgradeTower, updateTowers } from './towers';
 import { updateProjectiles } from './projectiles';
 import { applySweep, updateCrumbEating, updateCrumbMagnet } from './crumbs';
@@ -355,6 +356,7 @@ export class Sim implements SimCtx {
 
     // 5. entities & systems
     updateHand(this, dt);
+    updateShuttles(this, dt); // shuttle blocks glide (grid + mounted towers) BEFORE critters path
     updateCritters(this, dt);
     updateTowers(this, dt);
     if (this.eventsOn) applyActiveEventEffectsPost(this);
