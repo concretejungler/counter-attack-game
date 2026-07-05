@@ -2,6 +2,14 @@
 
 Nothing here is abandoned; each entry has a reason and a natural return point.
 
+## Cut in the 2D conversion (2026-07-04 — user directive: the game is now top-down 2D)
+
+| Feature | Reason | Return point |
+|---|---|---|
+| 3D diorama presentation (orbit camera, room walls + wall-fade, tilt-shift DOF, toy-box perspective) | 3D didn't work well on phones; game converted to Canvas-2D top-down per user directive. The full three.js renderer still compiles and runs behind the `?renderer=3d` URL flag (debug fallback, not player-reachable) | If ever desired as an unlockable "diorama mode"; the GameView seam keeps both renderers swappable |
+| Photo Mode focus-band + blur (tilt-shift) sliders in 2D | Pure depth-of-field controls; a flat renderer has no DOF analog. Rows hidden when `renderer=2d`; still live in the 3D fallback. PNG snap works in both | Could fake a blur-band post pass in 2D if photo-sharing becomes a focus |
+| High-five bespoke 2D hand pose | The high-five verb works (sim buff + sfx + gold morale sparkle on the tower) but no dedicated open-palm celebration pose is wired through the GameView seam (`HandPose` has no highFive trigger from game.ts) | Tiny seam addition + hand2d pose next time the hand gets attention |
+
 ## Cut from Phase 2 scope (this build reaches "all 40 levels playable, all 24 towers, full bestiary")
 
 | Feature | Reason | Return point |

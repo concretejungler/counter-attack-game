@@ -194,11 +194,11 @@ const TUTORIAL_PAGES: { icon: string; title: string; lines: string[] }[] = [
   },
   {
     icon: '⛶',
-    title: 'buttons & camera',
+    title: 'buttons & view',
     lines: [
       '<b>⏸</b> pause &nbsp; <b>1× 2× 3×</b> speed &nbsp; <b>📸</b> photo mode',
-      '<b>⛶ overhead view</b> fits the whole board on screen in one tap (or press <b>V</b>).',
-      'drag to orbit, scroll or pinch to zoom. survive every wave to win — fewer bites + the level challenge earn more ⭐!',
+      '<b>⛶ see everything</b> fits the whole board on screen in one tap (or press <b>V</b>).',
+      'drag with two fingers to pan, scroll or pinch to zoom. survive every wave to win — fewer bites + the level challenge earn more ⭐!',
     ],
   },
 ];

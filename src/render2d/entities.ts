@@ -16,9 +16,9 @@
  * the critters that actually have a status.
  */
 
-import type { SimState, Critter, Tower, ContentDB } from '../sim/types';
+import type { SimState, Critter, Tower, TowerDef, DamageType, ContentDB } from '../sim/types';
 import { dprCap } from '../core/device';
-import type { Camera2D } from './camera2d';
+import type { Camera2D, WorldBox } from './camera2d';
 import { getSprite } from './spriteCache';
 import { dmgTypeColor } from './fallback';
 import { critterFallbackColor } from './fallback';
@@ -28,7 +28,29 @@ const SMOOTH = 16;          // exponential smoothing rate (dt*SMOOTH), matches t
 const CRITTER_BOX = 64;
 const BOSS_BOX = 128;
 const TOWER_BOX = 96;
+
+/**
+ * ARACHNOPHOBIA MODE (§20.15/§23) — 2D equivalent of critterModels.ts's `setArachnophobiaMode`.
+ * Every def id here has a spider silhouette; while the mode is on it is drawn as the 'googly-roomba'
+ * sprite (registered by the painter layer) instead of its own sprite. Only the sprite *id* is
+ * substituted — the critter keeps its own size/boss box (grandma-longlegs stays a 128 boss).
+ * Mirrors the 3D list so future spider critters added there pick up the swap here for free.
+ */
+const SPIDER_SPRITE_IDS_2D = new Set<string>(['grandma-longlegs']);
+let arachnophobiaMode2D = false;
+
+/** Called from game.ts at boot and again on every level load (the two `setArachnophobiaMode` call
+ *  sites). Like the 3D side it deliberately does NOT hot-swap already-drawn critters mid-level — the
+ *  entity layer is reset() on loadLevel() so newly-spawned critters pick up the current flag, which
+ *  matches the documented "takes effect next level load" contract. */
+export function setArachnophobiaMode2D(on: boolean): void {
+  arachnophobiaMode2D = on;
+}
 const MAX_PARTICLES = 220;
+// Off-screen cull margin (screen px). Generous enough to keep a partly-visible boss (drawPx clamp
+// 260 -> half 130) and a bobbing flier's altitude lift in-frame; over-inclusion just draws a sprite
+// a hair past the edge, never a pop-in.
+const CULL_MARGIN_PX = 170;
 
 interface CritterRS {
   id: number;
@@ -76,6 +98,11 @@ export class EntityLayer {
   private _ground: CritterRS[] = [];
   private _fliers: CritterRS[] = [];
   private _towers: Tower[] = [];
+  // reused visible-world-rect for off-screen culling (filled once per frame by the camera)
+  private _view: WorldBox = { minX: 0, minZ: 0, maxX: 0, maxZ: 0 };
+  // aura-field sprites: one cached radial disc + dashed rim per (dmgType, range-bucket). Painted once
+  // (radial gradient baked in — never a per-frame gradient), stamped scaled + breathing per aura tower.
+  private auraCache = new Map<string, HTMLCanvasElement>();
   // reused sprite-opts objects — getSprite() reads their fields synchronously (and only calls the
   // painter on a cache miss), so a single mutable object per kind is safe and avoids 300+ allocs/frame.
   private _critterOpts: { variant: string; shiny: boolean } = { variant: '', shiny: false };
@@ -93,6 +120,7 @@ export class EntityLayer {
   reset(): void {
     this.critters.clear();
     for (const p of this.particles) p.active = false;
+    this.auraCache.clear();
     this.time = 0;
   }
 
@@ -106,17 +134,21 @@ export class EntityLayer {
     this.dpr = dprCap();
     this.time += dt;
     this.stamped = 0;
-    this.updateCritters(state, dt);
+    // visible world rect (+margin) computed once — the off-screen cull test for every entity pass.
+    const view = cam.visibleWorldRect(CULL_MARGIN_PX, this._view);
 
+    this.updateCritters(state, dt);
     this.drawCrumbs(ctx, cam, state);
     this.drawShadows(ctx, cam, state);
+    this.drawAuras(ctx, cam, state);
 
-    // partition + sort (reused arrays)
+    // partition + sort (reused arrays) — off-screen critters are dropped here so neither the sort
+    // nor the draw/overlay work touches them.
     this._ground.length = 0;
     this._fliers.length = 0;
     for (const rs of this.critters.values()) {
-      if (rs.c.flying && rs.c.surface < 0) this._fliers.push(rs);
-      else if (rs.c.flying) this._fliers.push(rs);
+      if (rs.x < view.minX || rs.x > view.maxX || rs.z < view.minZ || rs.z > view.maxZ) continue;
+      if (rs.c.flying) this._fliers.push(rs);
       else this._ground.push(rs);
     }
     this._ground.sort(byZ);
@@ -197,7 +229,9 @@ export class EntityLayer {
     if (rs.spr === null || rs.sprFrame !== frame || rs.sprShiny !== c.shiny || rs.sprBox !== box) {
       this._critterOpts.variant = rs.boss ? 'boss' : '';
       this._critterOpts.shiny = c.shiny;
-      rs.spr = getSprite('critter', rs.def, box, frame, this._critterOpts);
+      // Arachnophobia swap: spider-silhouette defs render as the googly roomba (box/variant kept).
+      const sprId = arachnophobiaMode2D && SPIDER_SPRITE_IDS_2D.has(rs.def) ? 'googly-roomba' : rs.def;
+      rs.spr = getSprite('critter', sprId, box, frame, this._critterOpts);
       rs.sprFrame = frame;
       rs.sprShiny = c.shiny;
       rs.sprBox = box;
@@ -360,30 +394,130 @@ export class EntityLayer {
     }
   }
 
+  // ---- aura fields -------------------------------------------------------
+  /**
+   * Aura-kind towers (`def.attack === 'aura'`: Coldfather, DJ Decibel, Eau de NO, Old Stinky,
+   * Stick Rick, Lux, Vroomba, Herr Tick-Tock, the firefly/queen-ant jars) emit no sim events, so
+   * without this they showed zero field presence. Draw a subtle picture-book field: a faint radial
+   * fill + dashed rim in the tower's damage-type color, breathing at ~0.5 Hz off the frame clock.
+   * The disc is a cached sprite per (type,range) (never a per-frame gradient); breathing is pure
+   * globalAlpha/scale modulation at stamp time. Drawn under critters/towers so it reads as a field
+   * painted on the floor.
+   */
+  private drawAuras(ctx: CanvasRenderingContext2D, cam: Camera2D, state: SimState): void {
+    const view = this._view;
+    const dpr = this.dpr;
+    for (const t of state.towers.values()) {
+      if (t.carried) continue;                       // offline in the Hand — no field
+      const def = this.content.towers[t.def];
+      if (!def || def.attack !== 'aura') continue;
+      const range = auraRange(def, t);
+      // cull: skip if the whole field is off-screen (center +/- range outside the padded view)
+      if (t.pos.x + range < view.minX || t.pos.x - range > view.maxX ||
+          t.pos.z + range < view.minZ || t.pos.z - range > view.maxZ) continue;
+
+      const sprite = this.getAuraSprite(def.dmgType, range);
+      if (!sprite) continue;
+      // ~0.5 Hz breathe (period 2s) with a per-tower phase offset so a cluster doesn't pulse in lockstep
+      const breath = Math.sin(this.time * Math.PI + t.id * 1.7);
+      const scaleB = 1 + breath * 0.02;
+      const alphaB = 0.72 + 0.28 * (0.5 + 0.5 * breath);
+      const down = t.downed || t.disabled > 0;
+      const diaPx = range * 2 * cam.scale * scaleB;
+      const half = diaPx / 2;
+      const sx = cam.worldToScreenX(t.pos.x);
+      const sy = cam.worldToScreenY(t.pos.z);
+      ctx.globalAlpha = (down ? 0.4 : 1) * alphaB;
+      ctx.setTransform(dpr, 0, 0, dpr, dpr * sx, dpr * sy);
+      ctx.drawImage(sprite, -half, -half, diaPx, diaPx);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** Cached aura disc for a (dmgType, range). Texture size scales with range so the baked dashed rim
+   *  keeps a constant on-screen dash density and rim weight across every aura tower once stamped. */
+  private getAuraSprite(dmgType: DamageType, range: number): HTMLCanvasElement | null {
+    const bucket = Math.round(range * 10);
+    const key = dmgType + '|' + bucket;
+    const cached = this.auraCache.get(key);
+    if (cached) return cached;
+
+    const tex = Math.max(96, Math.min(400, Math.round(range * 100)));
+    const cv = document.createElement('canvas');
+    cv.width = tex;
+    cv.height = tex;
+    const c = cv.getContext('2d');
+    if (!c) return null;
+    const col = dmgTypeColor(dmgType);
+    const cx = tex / 2;
+    const rimR = (tex / 2) * 0.94;      // leave a hair of margin for the rim stroke
+    c.lineJoin = 'round';
+
+    // faint radial fill — strongest at the emitter, fading to nothing at the rim (baked once)
+    const g = c.createRadialGradient(cx, cx, rimR * 0.08, cx, cx, rimR);
+    g.addColorStop(0, rgba(col, 0.17));
+    g.addColorStop(0.65, rgba(col, 0.09));
+    g.addColorStop(1, rgba(col, 0));
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(cx, cx, rimR, 0, Math.PI * 2);
+    c.fill();
+
+    // soft solid inner halo just inside the rim, then the dashed range boundary
+    c.strokeStyle = rgba(col, 0.28);
+    c.lineWidth = tex * 0.02;
+    c.beginPath();
+    c.arc(cx, cx, rimR * 0.9, 0, Math.PI * 2);
+    c.stroke();
+
+    c.setLineDash([tex * 0.05, tex * 0.038]);
+    c.strokeStyle = rgba(col, 0.75);
+    c.lineWidth = tex * 0.016;
+    c.beginPath();
+    c.arc(cx, cx, rimR, 0, Math.PI * 2);
+    c.stroke();
+    c.setLineDash([]);
+
+    this.auraCache.set(key, cv);
+    return cv;
+  }
+
   // ---- shadows -----------------------------------------------------------
+  /**
+   * Every blob shadow (critters + towers) accumulates into ONE path and lands in a SINGLE fill —
+   * 300 fill() calls collapse to 1. Overlapping shadows now read as a soft union (nonzero winding)
+   * instead of compounding into hard dark clumps where critters pile up, which is the intended
+   * softer look for a swarm. Off-screen critters are culled before touching the path.
+   */
   private drawShadows(ctx: CanvasRenderingContext2D, cam: Camera2D, state: SimState): void {
+    const view = this._view;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.fillStyle = rgba(0x1a120c, 0.22);
+    ctx.beginPath();
     for (const rs of this.critters.values()) {
+      if (rs.x < view.minX || rs.x > view.maxX || rs.z < view.minZ || rs.z > view.maxZ) continue;
       const def = this.content.critters[rs.def];
       if (!def) continue;
       const footprint = rs.boss ? def.size * 1.9 + 0.7 : 0.72 + def.size * 1.5;
       const px = footprint * cam.scale * rs.scale;
       const sx = cam.worldToScreenX(rs.x);
-      const sy = cam.worldToScreenY(rs.z);
+      const sy = cam.worldToScreenY(rs.z) + px * 0.06;
       const flyShrink = rs.c.flying ? 0.6 : 1;
-      ctx.beginPath();
-      ctx.ellipse(sx, sy + px * 0.06, px * 0.34 * flyShrink, px * 0.16 * flyShrink, 0, 0, Math.PI * 2);
-      ctx.fill();
+      const rx = px * 0.34 * flyShrink;
+      const ry = px * 0.16 * flyShrink;
+      ctx.moveTo(sx + rx, sy);            // start subpath at the ellipse's rightmost point (no join line)
+      ctx.ellipse(sx, sy, rx, ry, 0, 0, Math.PI * 2);
     }
     for (const t of state.towers.values()) {
       const px = (1.15 + t.tier * 0.08) * cam.scale;
       const sx = cam.worldToScreenX(t.pos.x);
-      const sy = cam.worldToScreenY(t.pos.z);
-      ctx.beginPath();
-      ctx.ellipse(sx, sy + px * 0.28, px * 0.34, px * 0.15, 0, 0, Math.PI * 2);
-      ctx.fill();
+      const sy = cam.worldToScreenY(t.pos.z) + px * 0.28;
+      const rx = px * 0.34;
+      const ry = px * 0.15;
+      ctx.moveTo(sx + rx, sy);
+      ctx.ellipse(sx, sy, rx, ry, 0, 0, Math.PI * 2);
     }
+    ctx.fill();
   }
 
   // ---- crumbs ------------------------------------------------------------
@@ -391,7 +525,9 @@ export class EntityLayer {
     if (state.crumbEnts.size === 0) return;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     const pulse = 0.5 + 0.5 * Math.sin(this.time * 4);
+    const view = this._view;
     for (const cr of state.crumbEnts.values()) {
+      if (cr.pos.x < view.minX || cr.pos.x > view.maxX || cr.pos.z < view.minZ || cr.pos.z > view.maxZ) continue;
       this.stamped++;
       const sx = cam.worldToScreenX(cr.pos.x);
       const sy = cam.worldToScreenY(cr.pos.z);
@@ -420,7 +556,9 @@ export class EntityLayer {
   private drawProjectiles(ctx: CanvasRenderingContext2D, cam: Camera2D, state: SimState): void {
     if (state.projectiles.length === 0) return;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    const view = this._view;
     for (const p of state.projectiles) {
+      if (p.pos.x < view.minX || p.pos.x > view.maxX || p.pos.z < view.minZ || p.pos.z > view.maxZ) continue;
       this.stamped++;
       const sx = cam.worldToScreenX(p.pos.x);
       const sy = cam.worldToScreenY(p.pos.z);
@@ -494,6 +632,18 @@ export class EntityLayer {
 // ---- helpers --------------------------------------------------------------
 function byZ(a: CritterRS, b: CritterRS): number { return a.z - b.z; }
 function byPosZ(a: Tower, b: Tower): number { return a.pos.z - b.pos.z; }
+
+/** Effective aura range in tiles: tier range with the tower's branch `rangePct` applied (mirrors the
+ *  sim's towerStats; Infestation runMods are omitted — this is a render-only field-presence ring). */
+function auraRange(def: TowerDef, t: Tower): number {
+  let r = def.tiers[t.tier - 1].range;
+  if (t.branch) {
+    const br = def.branches.find((b) => b.id === t.branch);
+    const pct = br?.mod.rangePct;
+    if (typeof pct === 'number') r *= 1 + pct;
+  }
+  return r;
+}
 
 function hasStatus(c: Critter): boolean {
   const s = c.statuses;

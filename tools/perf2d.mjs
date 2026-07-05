@@ -10,7 +10,8 @@ import { serve, launchBrowser } from './serve.mjs';
 
 const BUDGET_MS = 4; // plan §2 perf budget: <=4ms render CPU/frame at 300 critters (throttled)
 const THROTTLE = 4;
-const SAMPLE_MS = 5000;
+const SAMPLE_MS = 8000;   // longer window so a stray GC/OS spike doesn't dominate the average
+const WARMUP_MS = 1500;   // discard the first frames (JIT warmup, sprite-cache cold misses, first paint)
 
 const { url, stop } = await serve();
 const browser = await launchBrowser();
@@ -31,37 +32,44 @@ const staged = await page.evaluate(() => {
 const client = await page.context().newCDPSession(page);
 await client.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
 
-// let it settle a beat, then sample renderMs each rAF for SAMPLE_MS
+// let it settle a beat, then sample renderMs each rAF for SAMPLE_MS (dropping WARMUP_MS of frames)
 await page.waitForTimeout(600);
 const result = await page.evaluate(
-  ({ sampleMs }) =>
+  ({ sampleMs, warmupMs }) =>
     new Promise((resolve) => {
       const samples = [];
       const t0 = performance.now();
       const tick = () => {
         const ms = window.__game.renderMs();
-        if (ms > 0) samples.push(ms);
+        // only bank frames after the warmup window (JIT/sprite-cache cold misses skew the first ~1.5s)
+        if (ms > 0 && performance.now() - t0 >= warmupMs) samples.push(ms);
         if (performance.now() - t0 < sampleMs) requestAnimationFrame(tick);
         else {
           samples.sort((a, b) => a - b);
-          const avg = samples.reduce((s, v) => s + v, 0) / Math.max(1, samples.length);
-          const p95 = samples[Math.floor(samples.length * 0.95)] ?? avg;
-          resolve({ avg, p95, frames: samples.length, critters: window.__game.state()?.critters?.size ?? 0 });
+          const n = Math.max(1, samples.length);
+          const avg = samples.reduce((s, v) => s + v, 0) / n;
+          const median = samples[Math.floor(n * 0.5)] ?? avg;
+          const min = samples[0] ?? avg;
+          const p95 = samples[Math.floor(n * 0.95)] ?? avg;
+          resolve({ avg, median, min, p95, frames: samples.length, critters: window.__game.state()?.critters?.size ?? 0 });
         }
       };
       requestAnimationFrame(tick);
     }),
-  { sampleMs: SAMPLE_MS },
+  { sampleMs: SAMPLE_MS, warmupMs: WARMUP_MS },
 );
 
 await browser.close();
 await stop();
 
+// Verdict keys on the average (the plan's stated metric); median/min are reported so a noisy host
+// (background CPU contention inflating avg/p95) is visible rather than mistaken for a render cost.
 const verdict = result.avg <= BUDGET_MS ? 'PASS' : 'OVER BUDGET';
 console.log(
   `perf2d: staged=${staged} critters, sampled ${result.frames} frames @ ${THROTTLE}x CPU throttle, ` +
     `live=${result.critters}`,
 );
 console.log(
-  `perf2d: avg=${result.avg.toFixed(2)}ms  p95=${result.p95.toFixed(2)}ms  budget=${BUDGET_MS}ms  -> ${verdict}`,
+  `perf2d: avg=${result.avg.toFixed(2)}ms  median=${result.median.toFixed(2)}ms  min=${result.min.toFixed(2)}ms  ` +
+    `p95=${result.p95.toFixed(2)}ms  budget=${BUDGET_MS}ms  -> ${verdict}`,
 );

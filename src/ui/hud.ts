@@ -368,11 +368,19 @@ export class Hud {
   }
 
   /** Reflect the renderer's top-down toggle on the overhead button(s) — desktop cluster AND
-   *  mobile dock. While active, the label flips to "3D" (communicates "tap to go back to 3D"). */
+   *  mobile dock. In 2D (the default) the game has no 3D: the toggle shows ⛶ ("see everything")
+   *  while zoomed-in and 🔍 ("zoom back in") while in the fit-everything view. The legacy ⛶/3D
+   *  labels survive ONLY for the ?renderer=3d debug fallback. */
   setTopDownActive(on: boolean): void {
+    const legacy3d = document.documentElement.dataset.renderer === '3d';
     for (const b of this.topDownBtns) {
       b.classList.toggle('active', on);
-      b.textContent = on ? '3D' : '⛶';
+      if (legacy3d) {
+        b.textContent = on ? '3D' : '⛶';
+      } else {
+        b.textContent = on ? '🔍' : '⛶';
+        b.title = on ? 'zoom back in' : 'see everything';
+      }
     }
   }
 

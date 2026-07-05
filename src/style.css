@@ -867,9 +867,14 @@ body.colorblind .toggle.on::after { content: '✓'; color: #2c7a4b; }
   font-size: 10px; font-weight: bold; color: #6e5a14;
 }
 
-/* speed/pause cluster — scaled 20% down to match the build bar (see .build-bar note). */
+/* speed/pause cluster — scaled 20% down to match the build bar (see .build-bar note). Anchored to
+   the bottom-right via `right` + `transform-origin: bottom right`, so the 6-button row keeps a fixed
+   margin off the viewport edge at any width (verified on-screen at 1280 and 1600). `flex-wrap` is a
+   belt-and-braces guard: if a future button ever can't fit on one row it stacks upward instead of
+   spilling off the right edge, rather than being clipped. */
 .speed-cluster {
-  position: absolute; right: 14px; bottom: 12px; display: flex; gap: 6px;
+  position: absolute; right: 18px; bottom: 14px; display: flex; gap: 6px;
+  flex-wrap: wrap; justify-content: flex-end;
   transform: scale(0.8); transform-origin: bottom right;
 }
 .speed-btn {

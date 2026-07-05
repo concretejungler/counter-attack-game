@@ -2,7 +2,18 @@
 
 > Living status doc. Updated after every task. After context compaction: read this + CLAUDE.md + the plan, then continue.
 
-## 🚧 2D CONVERSION IN PROGRESS (started 2026-07-04) — plan: `docs/superpowers/plans/2026-07-04-2d-conversion.md`
+## ✅ 2D CONVERSION COMPLETE + DEPLOYED (2026-07-04) — plan: `docs/superpowers/plans/2026-07-04-2d-conversion.md`
+
+**P4 QA + polish landed (351/351, tsc/build/smoke green, strict sprite gates 45/45 + 29/29):**
+- **P4-QA critic sweep** (30 scenes ×2 viewports, 10 rooms w/ waves, 74-sprite contact sheets, combat probes): 0 blockers, 2 majors, 4 minors, 10 weak sprites — ALL fixed:
+- **P4-PERF:** shadow pass batched (1.6→0.8ms), sprite-cache hot path allocation-free (nested Map keys), off-screen culling (`Camera2D.visibleWorldRect`, pays off zoomed), **aura rings** synthesized from defs for all aura towers (cached per (dmgType,range), 0.5Hz breathe). **4ms@4×-throttle stress budget NOT met** — the wall is 300 individual `drawImage` calls (~4.3-5.3ms throttled, Canvas-2D floor); host was contended; real-device play is the arbiter. Deferred w/ fix sketch: cached-board re-projects during screen-shake (~2-4ms cliff on big boards) — dirty-check vs unshaken eye + translated blit.
+- **P4-FIX-A (painters):** centipede-bit/termite/silverfish/maggot contrast+silhouette fixes, dust-bunnette red bow, stick-rick now a real tape dispenser, bandolero a crossed-limb ballista, snappy-and-sons a mousetrap w/ baby-trap gag, kitchen rug de-danger-fied (mustard tea-towel, no rings), NEW `googly-roomba` sprite (64+128 sizes).
+- **P4-FIX-B (wiring/UI):** arachnophobia mode now works in 2D (`setArachnophobiaMode2D` in entities.ts, spider ids → googly-roomba, both setters called from game.ts); view-toggle no longer says "3D" (`dataset.renderer` on <html>, 2D shows ⛶"see everything"/🔍"zoom back in", legacy labels only under `?renderer=3d`; `finishLevelBoot` now syncs the initial toggle state); tutorial/photo text de-orbited ("buttons & view", "drag with two fingers to pan"); photo DOF sliders hidden in 2D; speed-cluster "clip" diagnosed as thumbnail artifact (14px real margin) but hardened anyway (right:18px + wrap guard).
+- CUTS.md gained a 2D-conversion section (3D diorama behind ?renderer=3d, photo DOF sliders, high-five pose).
+
+**The conversion, net:** 4 commits (`0207111` P1 seam+core, `adbf8e6` P2 integration+pattern, `c79ddf3` P3 art fan-out, + this P4), ~15k lines added, sim/content untouched throughout (351 tests never broke), 10 Opus packets + 5 Codex jobs, every packet screenshot-verified. The 3D renderer remains compilable as a debug fallback.
+
+## (superseded) 2D conversion progress log
 
 User directive: 3D doesn't work well on phones → the game becomes top-down 2D (Canvas 2D, zero deps, procedural sprites). Sim/content untouched throughout; 3D renderer stays as `?renderer=3d` debug fallback. Orchestrator plans/verifies/commits; Opus 4.8 + Codex agents implement.
 

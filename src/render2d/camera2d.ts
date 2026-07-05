@@ -96,6 +96,22 @@ export class Camera2D {
     return (sy - this.viewH / 2) / this.scale + this.eyeZ;
   }
 
+  /**
+   * World-space rect currently on screen, expanded by `marginPx` screen pixels — the cheap
+   * off-screen cull test the entity layer applies before any per-entity transform/draw work.
+   * Written into the caller's out object (no per-frame allocation in the hot loop).
+   */
+  visibleWorldRect(marginPx: number, out: WorldBox): WorldBox {
+    const halfW = this.viewW / 2 / this.scale;
+    const halfH = this.viewH / 2 / this.scale;
+    const mx = marginPx / this.scale;
+    out.minX = this.eyeX - halfW - mx;
+    out.maxX = this.eyeX + halfW + mx;
+    out.minZ = this.eyeZ - halfH - mx;
+    out.maxZ = this.eyeZ + halfH + mx;
+    return out;
+  }
+
   /** Pan by a screen-pixel delta (drag). */
   panByScreen(dxPx: number, dyPx: number): void {
     this.panX -= dxPx / this.scale;

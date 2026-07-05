@@ -20,6 +20,7 @@ import {
 } from './meta/infestation';
 import { RNG } from './core/rng';
 import { setArachnophobiaMode } from './render/models/critterModels';
+import { setArachnophobiaMode2D } from './render2d/entities';
 import { isMobileViewport } from './core/device';
 
 type Mode =
@@ -110,6 +111,9 @@ export class Game {
 
   constructor(private canvas: HTMLCanvasElement, rendererKind: RendererKind = '2d') {
     this.renderer = createGameView(canvas, rendererKind);
+    // Expose the live renderer to CSS/UI so 2D-only overlays (view-toggle glyph, photo panel) can
+    // branch on it. '2d' is the default; '3d' is the ?renderer=3d debug fallback.
+    document.documentElement.dataset.renderer = rendererKind;
     this.save = loadSave();
     this.ui = new UI(CONTENT, this.save, {
       onSelectTower: (def) => this.selectTower(def),
@@ -300,6 +304,7 @@ export class Game {
     this.renderer.onFlashPulse = (strength) => this.ui.pulseFlash(strength);
     this.applyAccessibilitySettings();
     setArachnophobiaMode(this.save.settings.arachnophobia); // initial boot value; later toggles apply at next finishLevelBoot()
+    setArachnophobiaMode2D(this.save.settings.arachnophobia); // same for the 2D renderer's spider swap
 
     this.bindInput();
     this.music.start();
@@ -538,8 +543,9 @@ export class Game {
     if (!this.sim || !this.level) return;
     this.music.setTheme(this.level.theme);
     // Arachnophobia mode (§20.15) takes effect at level load, not live — see
-    // applyAccessibilitySettings()'s doc comment for why.
+    // applyAccessibilitySettings()'s doc comment for why. Both renderers get the flag.
     setArachnophobiaMode(this.save.settings.arachnophobia);
+    setArachnophobiaMode2D(this.save.settings.arachnophobia);
     this.renderer.loadLevel(this.level, CONTENT);
     this.ui.showHud(this.level);
     this.ui.hud?.refreshClutter(this.sim.state.clutterHand);
@@ -581,6 +587,10 @@ export class Game {
     // the diorama's normal orbit camera is cramped on a small landscape screen. loadLevel() just
     // reset topDownActive to false above, so this only ever ENTERS (never toggles back out).
     if (isMobileViewport() && !this.renderer.isTopDownActive()) this.toggleTopDown();
+    // Sync the view-toggle glyph to the actual starting framing: the 2D camera boots at the
+    // fit-whole-board ("see everything") view, so the button should show 🔍 "zoom back in" from
+    // the start rather than the default ⛶. (3D boots zoomed-in, so this leaves it as ⛶ there.)
+    this.ui.hud?.setTopDownActive(this.renderer.isTopDownActive());
   }
 
   /** Trace the route the critters will walk from each spawn to the cake (the sim's own flow field)

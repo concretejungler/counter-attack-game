@@ -1,7 +1,8 @@
 /**
- * PAINTER - Snappy & Sons (id 'snappy-and-sons'). mousetrap family business.
- * A household object silhouette with a clear face and personality brows.
- * Damage accent comes from its content damage type and tier pips mark upgrades.
+ * PAINTER - Snappy & Sons (id 'snappy-and-sons'). Classic MOUSETRAP family business.
+ * A wooden base plank, a thick U spring-bar snapper held at HALF-COCK by its hold-bar,
+ * a cheese wedge on the trigger pedal — plus one tiny BABY trap beside it (the "& Sons"
+ * gag). Eager family face; damage accent = its swat type; tier pips mark upgrades.
  */
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
@@ -16,12 +17,11 @@ registerTowerPainter('snappy-and-sons', (ctx, size, _frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('swat'));
+  const wood = warm(PAL.wood);
+  const metal = warm(PAL.metal);
+  const cheese = warm(PAL.butter);
 
-  const strokeInk = (w = ink) => {
-    ctx.lineWidth = w;
-    ctx.strokeStyle = COCOA_CSS;
-    ctx.stroke();
-  };
+  const strokeInk = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
   const roundRect = (x: number, y: number, w: number, h: number, r: number) => {
     const rr = Math.min(r, w / 2, h / 2);
     ctx.beginPath();
@@ -32,43 +32,22 @@ registerTowerPainter('snappy-and-sons', (ctx, size, _frame, opts) => {
     ctx.arcTo(x, y, x + w, y, rr);
     ctx.closePath();
   };
-  const drawFace = (fx: number, fy: number, spread: number, eyeR: number, mood: number, mouth: 'smile' | 'flat' | 'frown' | 'smirk') => {
+  const drawFace = (fx: number, fy: number, spread: number, eyeR: number) => {
     for (const sgn of [-1, 1]) {
       const ex = fx + sgn * spread;
+      ctx.beginPath(); ctx.arc(ex, fy, eyeR, 0, Math.PI * 2); ctx.fillStyle = '#ffffff'; ctx.fill(); strokeInk(size * 0.015);
+      ctx.beginPath(); ctx.arc(ex + eyeR * 0.2, fy + eyeR * 0.12, eyeR * 0.5, 0, Math.PI * 2); ctx.fillStyle = COCOA_CSS; ctx.fill();
+      ctx.beginPath(); ctx.arc(ex - eyeR * 0.24, fy - eyeR * 0.28, eyeR * 0.18, 0, Math.PI * 2); ctx.fillStyle = '#ffffff'; ctx.fill();
+      // eager raised brows
+      ctx.strokeStyle = COCOA_CSS; ctx.lineWidth = size * 0.022;
       ctx.beginPath();
-      ctx.arc(ex, fy, eyeR, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      strokeInk(size * 0.015);
-      ctx.beginPath();
-      ctx.arc(ex + eyeR * 0.18, fy + eyeR * 0.1, eyeR * 0.5, 0, Math.PI * 2);
-      ctx.fillStyle = COCOA_CSS;
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(ex - eyeR * 0.23, fy - eyeR * 0.27, eyeR * 0.18, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.strokeStyle = COCOA_CSS;
-      ctx.lineWidth = size * 0.025;
-      ctx.beginPath();
-      ctx.moveTo(ex - sgn * eyeR, fy - eyeR * (1.14 - mood * 0.08));
-      ctx.lineTo(ex + sgn * eyeR, fy - eyeR * (0.96 + mood * 0.16));
+      ctx.arc(ex, fy - eyeR * 1.5, eyeR * 0.9, 1.05 * Math.PI, 1.95 * Math.PI);
       ctx.stroke();
     }
-    ctx.strokeStyle = COCOA_CSS;
-    ctx.lineWidth = size * 0.019;
+    // big eager grin
+    ctx.strokeStyle = COCOA_CSS; ctx.lineWidth = size * 0.02;
     ctx.beginPath();
-    if (mouth === 'flat') {
-      ctx.moveTo(fx - spread * 0.48, fy + eyeR * 1.48);
-      ctx.lineTo(fx + spread * 0.48, fy + eyeR * 1.48);
-    } else if (mouth === 'frown') {
-      ctx.arc(fx, fy + eyeR * 1.55, spread * 0.38, Math.PI, 0);
-    } else if (mouth === 'smirk') {
-      ctx.moveTo(fx - spread * 0.38, fy + eyeR * 1.38);
-      ctx.quadraticCurveTo(fx + spread * 0.1, fy + eyeR * 1.67, fx + spread * 0.5, fy + eyeR * 1.27);
-    } else {
-      ctx.arc(fx, fy + eyeR * 1.15, spread * 0.48, 0.12 * Math.PI, 0.88 * Math.PI);
-    }
+    ctx.arc(fx, fy + eyeR * 1.1, spread * 0.55, 0.1 * Math.PI, 0.9 * Math.PI);
     ctx.stroke();
   };
   const drawPips = (py: number) => {
@@ -76,89 +55,86 @@ registerTowerPainter('snappy-and-sons', (ctx, size, _frame, opts) => {
     const gap = pr * 2.8;
     const px0 = cx - ((tier - 1) * gap) / 2;
     for (let i = 0; i < tier; i++) {
-      ctx.beginPath();
-      ctx.arc(px0 + i * gap, py, pr, 0, Math.PI * 2);
-      ctx.fillStyle = hex(PAL.butter);
-      ctx.fill();
-      strokeInk(size * 0.014);
+      ctx.beginPath(); ctx.arc(px0 + i * gap, py, pr, 0, Math.PI * 2);
+      ctx.fillStyle = hex(PAL.butter); ctx.fill(); strokeInk(size * 0.014);
     }
   };
-  const drawSparkles = (cy: number) => {
+  const drawSparkles = (cyc: number) => {
     ctx.fillStyle = 'rgba(255,240,170,0.95)';
-    for (const [dx, dy] of [[-0.3, 0.0], [0.3, 0.16], [0.2, -0.2]] as [number, number][]) {
-      const sxp = cx + size * dx;
-      const syp = cy + size * dy;
+    for (const [dx, dy] of [[-0.32, 0.0], [0.34, 0.14], [0.22, -0.24]] as [number, number][]) {
+      const sxp = cx + size * dx; const syp = cyc + size * dy;
       ctx.beginPath();
       for (let k = 0; k < 4; k++) {
         const a = (k / 4) * Math.PI * 2;
         ctx.lineTo(sxp + Math.cos(a) * size * 0.03, syp + Math.sin(a) * size * 0.03);
         ctx.lineTo(sxp + Math.cos(a + 0.39) * size * 0.012, syp + Math.sin(a + 0.39) * size * 0.012);
       }
-      ctx.closePath();
-      ctx.fill();
+      ctx.closePath(); ctx.fill();
     }
   };
-  const ascendRect = (x: number, y: number, w: number, h: number, r: number, cy: number) => {
-    if (!ascended) return;
-    roundRect(x, y, w, h, r);
-    ctx.strokeStyle = hex(PAL.butter);
-    ctx.lineWidth = size * 0.03;
-    ctx.stroke();
-    drawSparkles(cy);
-  };
-  const masonJar = (x: number, y: number, w: number, h: number, glass: number) => {
-    roundRect(cx - size * 0.2, y - size * 0.06, size * 0.4, size * 0.09, size * 0.025);
-    ctx.fillStyle = hex(PAL.metalDark);
-    ctx.fill();
-    strokeInk(size * 0.026);
-    roundRect(x, y, w, h, size * 0.1);
-    ctx.fillStyle = rgba(glass, 0.5);
-    ctx.fill();
-    strokeInk();
-  };
-  const jarGlint = (x: number, y: number, h: number) => {
-    ctx.beginPath();
-    ctx.ellipse(x + size * 0.13, y + h * 0.46, size * 0.035, h * 0.34, 0, 0, Math.PI * 2);
-    ctx.fillStyle = rgba(0xffffff, 0.42);
-    ctx.fill();
-  };
-  const ascendJar = (x: number, y: number, w: number, h: number) => {
-    ascendRect(x - ink, y - size * 0.08, w + ink * 2, h + size * 0.1, size * 0.14, y + h * 0.5);
-  };
 
-  const x = cx - size * 0.31, y = size * 0.28, w = size * 0.62, h = size * 0.37;
-  roundRect(x, y, w, h, size * 0.055);
-  ctx.fillStyle = hex(warm(PAL.wood));
-  ctx.fill();
-  strokeInk();
+  // --- tiny BABY trap beside it (the "& Sons") — drawn first, sits lower-east ---
+  const babyX = cx + size * 0.18, babyY = size * 0.62, babyW = size * 0.22, babyH = size * 0.14;
+  roundRect(babyX, babyY, babyW, babyH, size * 0.03);
+  ctx.fillStyle = hex(darken(wood, 0.05)); ctx.fill(); strokeInk(size * 0.03);
+  ctx.strokeStyle = hex(metal); ctx.lineWidth = size * 0.028; ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.arc(cx - size * 0.18, y + h * 0.45, size * 0.06, 0, Math.PI * 2);
-  ctx.strokeStyle = hex(PAL.metalDark);
-  ctx.lineWidth = size * 0.025;
+  ctx.moveTo(babyX + size * 0.03, babyY + size * 0.03);
+  ctx.quadraticCurveTo(babyX + babyW * 0.5, babyY - size * 0.08, babyX + babyW * 0.85, babyY + size * 0.05);
   ctx.stroke();
+  ctx.beginPath(); ctx.arc(babyX + size * 0.03, babyY + size * 0.03, size * 0.018, 0, Math.PI * 2); ctx.fillStyle = hex(PAL.metalDark); ctx.fill();
+
+  // --- main wooden base plank ---
+  const px = cx - size * 0.4, py = size * 0.48, pw = size * 0.56, ph = size * 0.28;
+  roundRect(px, py, pw, ph, size * 0.045);
+  ctx.fillStyle = hex(wood); ctx.fill(); strokeInk();
+  ctx.strokeStyle = rgba(darken(wood, 0.35), 0.5); ctx.lineWidth = size * 0.016;
+  for (const gy of [0.32, 0.6]) { ctx.beginPath(); ctx.moveTo(px + size * 0.04, py + ph * gy); ctx.lineTo(px + pw - size * 0.04, py + ph * gy); ctx.stroke(); }
+
+  // --- spring coil hinge at the back-west corner ---
+  const coilX = px + size * 0.06, coilY = py + size * 0.04;
+  for (const rr of [size * 0.045, size * 0.026]) { ctx.beginPath(); ctx.arc(coilX, coilY, rr, 0, Math.PI * 2); ctx.strokeStyle = hex(PAL.metalDark); ctx.lineWidth = size * 0.02; ctx.stroke(); }
+
+  // --- thick U spring-bar snapper, HALF-COCK (raised, arcing back-west over toward east) ---
+  ctx.strokeStyle = hex(metal); ctx.lineWidth = size * 0.055; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.moveTo(cx - size * 0.18, y + h * 0.45);
-  ctx.lineTo(cx + size * 0.22, y + h * 0.25);
-  ctx.lineTo(cx + size * 0.2, y + h * 0.64);
-  ctx.strokeStyle = hex(accent);
-  ctx.lineWidth = size * 0.03;
+  ctx.moveTo(coilX, coilY);
+  ctx.quadraticCurveTo(cx - size * 0.12, size * 0.2, cx + size * 0.02, size * 0.34);
+  ctx.lineTo(cx + size * 0.12, size * 0.46);
   ctx.stroke();
+  // kill cross-bar at the business end (makes the "U")
+  ctx.strokeStyle = hex(darken(metal, 0.08)); ctx.lineWidth = size * 0.045;
+  ctx.beginPath(); ctx.moveTo(cx + size * 0.05, size * 0.4); ctx.lineTo(cx + size * 0.17, size * 0.52); ctx.stroke();
+  // metal sheen on the snapper
+  ctx.strokeStyle = rgba(lighten(metal, 0.5), 0.6); ctx.lineWidth = size * 0.016;
   ctx.beginPath();
-  ctx.moveTo(cx + size * 0.13, y + h * 0.58);
-  ctx.lineTo(cx + size * 0.2, y + h * 0.7);
-  ctx.lineTo(cx + size * 0.26, y + h * 0.56);
+  ctx.moveTo(coilX, coilY - size * 0.01);
+  ctx.quadraticCurveTo(cx - size * 0.12, size * 0.19, cx + size * 0.01, size * 0.33);
+  ctx.stroke();
+
+  // --- hold-bar pinning the snapper to the trigger (thin), reads as "set" ---
+  ctx.strokeStyle = hex(PAL.metalDark); ctx.lineWidth = size * 0.014;
+  ctx.beginPath(); ctx.moveTo(cx + size * 0.01, size * 0.33); ctx.lineTo(cx + size * 0.04, size * 0.6); ctx.stroke();
+
+  // --- cheese wedge on the trigger pedal ---
+  const chX = cx - size * 0.02, chY = size * 0.6;
+  ctx.beginPath();
+  ctx.moveTo(chX, chY - size * 0.09);
+  ctx.lineTo(chX + size * 0.12, chY + size * 0.02);
+  ctx.lineTo(chX - size * 0.05, chY + size * 0.05);
   ctx.closePath();
-  ctx.fillStyle = hex(PAL.butter);
-  ctx.fill();
-  strokeInk(size * 0.016);
-  for (const sx of [-1, 1]) {
-    roundRect(cx + sx * size * 0.27 - size * 0.08, size * 0.66, size * 0.16, size * 0.06, size * 0.02);
-    ctx.fillStyle = hex(darken(PAL.wood, 0.08));
-    ctx.fill();
-    strokeInk(size * 0.015);
-  }
-  drawFace(cx - size * 0.04, y + h * 0.47, size * 0.075, size * 0.036, 0.35, 'smile');
-  drawPips(size * 0.86);
-  ascendRect(x - ink, y - ink * 0.5, w + ink * 2, h + size * 0.1, size * 0.12, y + h * 0.5);
+  ctx.fillStyle = hex(cheese); ctx.fill(); strokeInk(size * 0.02);
+  ctx.fillStyle = rgba(darken(cheese, 0.3), 0.8);
+  ctx.beginPath(); ctx.arc(chX + size * 0.03, chY - size * 0.005, size * 0.014, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(chX + size * 0.005, chY + size * 0.03, size * 0.011, 0, Math.PI * 2); ctx.fill();
 
+  // --- eager family face on the plank front + tier pips ---
+  drawFace(cx - size * 0.26, py + ph * 0.5, size * 0.062, size * 0.03);
+  drawPips(size * 0.9);
+
+  if (ascended) {
+    roundRect(px - ink, size * 0.14, size * 0.86, size * 0.66, size * 0.13);
+    ctx.strokeStyle = hex(PAL.butter); ctx.lineWidth = size * 0.03; ctx.stroke();
+    drawSparkles(size * 0.46);
+  }
 });

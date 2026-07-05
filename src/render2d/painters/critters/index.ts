@@ -44,6 +44,7 @@ import './dustBunnette';
 import './dustBunny';
 import './earwig';
 import './flyFruit';
+import './googlyRoomba'; // arachnophobia-mode substitute (spider species → this sprite)
 import './grandmaLonglegs';
 import './hornet';
 import './maggot';

@@ -29,18 +29,31 @@ export type SpritePainter = (
   opts: PaintOpts,
 ) => void;
 
-const painters = new Map<string, SpritePainter>();
-const cache = new Map<string, HTMLCanvasElement>();
+// Painters and cache are nested by (kind -> id -> variant -> packedNum) so the per-frame `getSprite`
+// hot path allocates NOTHING: no key-string is built, every lookup is a Map.get on a value that
+// already exists (kind literal, id/variant strings owned by the caller, a packed integer). The old
+// `${kind}|${id}|${variant}|${tier}|${shiny}|${frame}|${size}` template key allocated a string on
+// every call (hundreds/frame). `packKey` folds (size,frame,shiny,tier) into one 32-bit int.
+type VariantMap = Map<string, Map<number, HTMLCanvasElement>>;
+const painters = new Map<SpriteKind, Map<string, SpritePainter>>();
+const cache = new Map<SpriteKind, Map<string, VariantMap>>();
 
-const pkey = (kind: SpriteKind, id: string) => kind + ':' + id;
+/** Pack the cheap discriminants into one int: size[0..4095] | frame<<12 | shiny<<14 | tier<<15. */
+function packKey(size: number, frame: number, shiny: number, tier: number): number {
+  return (size & 0xfff) | (frame << 12) | (shiny << 14) | (tier << 15);
+}
+
+function painterMap(kind: SpriteKind): Map<string, SpritePainter> {
+  let m = painters.get(kind);
+  if (!m) { m = new Map(); painters.set(kind, m); }
+  return m;
+}
 
 /** Register a painter for a (kind,id). Later registrations win (real art overrides fallback). */
 export function registerPainter(kind: SpriteKind, id: string, fn: SpritePainter): void {
-  painters.set(pkey(kind, id), fn);
+  painterMap(kind).set(id, fn);
   // Invalidate any cached frames for this id (id may be re-registered with real art).
-  for (const k of cache.keys()) {
-    if (k.startsWith(kind + '|' + id + '|')) cache.delete(k);
-  }
+  cache.get(kind)?.delete(id);
 }
 
 /** Sugar the extension-point barrels use (plan §3.2: `registerCritterPainter('worker-ant', fn)`). */
@@ -50,7 +63,7 @@ export const registerPropPainter = (id: string, fn: SpritePainter) => registerPa
 export const registerRoomPainter = (id: string, fn: SpritePainter) => registerPainter('room', id, fn);
 
 export function hasPainter(kind: SpriteKind, id: string): boolean {
-  return painters.has(pkey(kind, id));
+  return painters.get(kind)?.has(id) ?? false;
 }
 
 /**
@@ -67,17 +80,24 @@ export function getSprite(
   frame: number,
   opts: PaintOpts,
 ): HTMLCanvasElement | null {
-  const painter = painters.get(pkey(kind, id));
+  const painter = painters.get(kind)?.get(id);
   if (!painter) return null;
   const variant = opts.variant ?? '';
   const tier = opts.tier ?? 0;
   const shiny = opts.shiny ? 1 : 0;
-  const key = `${kind}|${id}|${variant}|${tier}|${shiny}|${frame}|${size}`;
-  let cv = cache.get(key);
-  if (cv) return cv;
+  const packed = packKey(size, frame, shiny, tier);
+
+  let byId = cache.get(kind);
+  if (!byId) { byId = new Map(); cache.set(kind, byId); }
+  let byVariant = byId.get(id);
+  if (!byVariant) { byVariant = new Map(); byId.set(id, byVariant); }
+  let byPacked = byVariant.get(variant);
+  if (!byPacked) { byPacked = new Map(); byVariant.set(variant, byPacked); }
+  const existing = byPacked.get(packed);
+  if (existing) return existing;
 
   const dpr = dprCap();
-  cv = document.createElement('canvas');
+  const cv = document.createElement('canvas');
   cv.width = Math.max(1, Math.ceil(size * dpr));
   cv.height = Math.max(1, Math.ceil(size * dpr));
   const ctx = cv.getContext('2d');
@@ -87,7 +107,7 @@ export function getSprite(
     ctx.lineCap = 'round';
     painter(ctx, size, frame, opts);
   }
-  cache.set(key, cv);
+  byPacked.set(packed, cv);
   return cv;
 }
 
@@ -98,5 +118,9 @@ export function clearSpriteCache(): void {
 
 /** Diagnostics: how many canvases are currently cached. */
 export function spriteCacheSize(): number {
-  return cache.size;
+  let n = 0;
+  for (const byId of cache.values())
+    for (const byVariant of byId.values())
+      for (const byPacked of byVariant.values()) n += byPacked.size;
+  return n;
 }

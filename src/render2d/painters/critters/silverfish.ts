@@ -15,6 +15,9 @@ registerCritterPainter('silverfish', (ctx, size, frame, opts) => {
   const warm = (col: number) => (shiny ? mix(col, PAL.butter, 0.4) : col);
   const body = warm(mix(PAL.metal, PAL.flyWing, 0.38));
   const edge = darken(body, 0.22);
+  // contrast armor (QA P4): a darker slate back-stripe keeps this pale, quick body
+  // legible against light floors without losing its metallic-silver species read.
+  const slate = warm(mix(PAL.flyBody, PAL.metalDark, 0.35));
   const stroke = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
 
   ctx.lineCap = 'round';
@@ -32,6 +35,14 @@ registerCritterPainter('silverfish', (ctx, size, frame, opts) => {
   ctx.closePath();
   ctx.fillStyle = hex(body); ctx.fill(); stroke();
   ctx.beginPath(); ctx.ellipse(cx - size * 0.05, cy - size * 0.03, size * 0.06, size * 0.24, -0.08, 0, Math.PI * 2); ctx.fillStyle = rgba(lighten(body, 0.32), 0.58); ctx.fill();
+  // slate back-stripe (contrast accent) — tapered lens down the travel axis
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - size * 0.29);
+  ctx.quadraticCurveTo(cx + size * 0.075, cy - size * 0.04, cx + size * 0.035, cy + size * 0.27);
+  ctx.quadraticCurveTo(cx, cy + size * 0.33, cx - size * 0.035, cy + size * 0.27);
+  ctx.quadraticCurveTo(cx - size * 0.075, cy - size * 0.04, cx, cy - size * 0.29);
+  ctx.closePath();
+  ctx.fillStyle = rgba(slate, 0.9); ctx.fill();
   ctx.strokeStyle = rgba(edge, 0.75); ctx.lineWidth = size * 0.018;
   for (const dy of [-0.15, -0.05, 0.05, 0.15, 0.25]) { ctx.beginPath(); ctx.ellipse(cx, cy + size * dy, size * 0.105, size * 0.015, 0, 0, Math.PI * 2); ctx.stroke(); }
 

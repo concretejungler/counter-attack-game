@@ -15,7 +15,9 @@ registerCritterPainter('maggot', (ctx, size, frame, opts) => {
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.4) : c);
   const body = warm(mix(PAL.moth, PAL.cakeSponge, 0.42));
   const head = warm(mix(PAL.moth, PAL.flame, 0.18));
-  const crease = darken(body, 0.24);
+  // contrast armor (QA P4): dusty-rose segment shadows give the pale rice-grain
+  // larva readable creases on light floors while staying species-true (soft/pink).
+  const crease = warm(darken(mix(PAL.cakeFrosting, PAL.roach, 0.3), 0.06));
   const stroke = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
 
   ctx.lineCap = 'round'; ctx.strokeStyle = hex(crease); ctx.fillStyle = hex(crease); ctx.lineWidth = size * 0.026;

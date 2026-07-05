@@ -295,17 +295,24 @@ export class UI {
   }): void {
     this.hidePhotoMode();
     const panel = el('div', 'photo-panel');
-    panel.innerHTML = `
-      <div class="photo-panel-head">📸 Photo Mode</div>
+    // The Focus-band / Blur sliders drive the 3D tilt-shift post uniforms, which the Canvas-2D
+    // renderer has no equivalent for — so they'd be dead controls in 2D. Show them only in the
+    // ?renderer=3d fallback; the 2D panel keeps just the working Hide-HUD / Snap / Done controls.
+    const is2d = document.documentElement.dataset.renderer !== '3d';
+    const dofRows = is2d ? '' : `
       <div class="photo-row"><label>Focus band</label><input type="range" min="0" max="1" step="0.01" value="0.45" data-k="focus"></div>
-      <div class="photo-row"><label>Blur</label><input type="range" min="0" max="4" step="0.05" value="1.6" data-k="blur"></div>
+      <div class="photo-row"><label>Blur</label><input type="range" min="0" max="4" step="0.05" value="1.6" data-k="blur"></div>`;
+    panel.innerHTML = `
+      <div class="photo-panel-head">📸 Photo Mode</div>${dofRows}
       <div class="photo-row"><button class="wood-btn small" data-act="hud">🙈 Hide HUD</button></div>
       <div class="photo-row"><button class="wood-btn" data-act="snap">📸 Snap!</button></div>
       <div class="photo-row"><button class="wood-btn small" data-act="close">✕ Done</button></div>
-      <div class="photo-hint">drag to orbit · scroll to zoom · Esc to exit</div>
+      <div class="photo-hint">drag to pan · scroll to zoom · Esc to exit</div>
     `;
-    (panel.querySelector('[data-k=focus]') as HTMLInputElement).oninput = (e) => cb.onFocusY(parseFloat((e.target as HTMLInputElement).value));
-    (panel.querySelector('[data-k=blur]') as HTMLInputElement).oninput = (e) => cb.onBlurStrength(parseFloat((e.target as HTMLInputElement).value));
+    const focusEl = panel.querySelector('[data-k=focus]') as HTMLInputElement | null;
+    if (focusEl) focusEl.oninput = (e) => cb.onFocusY(parseFloat((e.target as HTMLInputElement).value));
+    const blurEl = panel.querySelector('[data-k=blur]') as HTMLInputElement | null;
+    if (blurEl) blurEl.oninput = (e) => cb.onBlurStrength(parseFloat((e.target as HTMLInputElement).value));
     (panel.querySelector('[data-act=hud]') as HTMLElement).onclick = () => cb.onToggleHud();
     (panel.querySelector('[data-act=snap]') as HTMLElement).onclick = () => cb.onSnap();
     (panel.querySelector('[data-act=close]') as HTMLElement).onclick = () => cb.onClose();

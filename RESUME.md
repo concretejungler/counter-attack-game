@@ -11,11 +11,14 @@
 - **What it is:** `COUNTER ATTACK!` — a whimsical 3D tower-defense game. Critters (ants, flies,
   roaches…) invade a house and march for the **birthday cake**; you are the **Hand of the house**
   and defend it with housewares (spray bottles, toasters, gnomes…) placed on "clutter" walls.
-- **Tech:** TypeScript (strict) + Three.js + Vite. Deterministic 30 Hz sim, procedural everything
-  (no asset files), diegetic DOM/CSS UI, WebAudio synth.
+- **Tech:** TypeScript (strict) + Vite. **The game is 2D top-down** (Canvas 2D renderer in
+  `src/render2d/`, default) — converted 2026-07-04 per user directive because 3D played poorly on
+  phones. The original three.js renderer still compiles behind `?renderer=3d` (debug fallback only).
+  Deterministic 30 Hz sim, procedural everything (no asset files), diegetic DOM/CSS UI, WebAudio synth.
 - **Status:** Feature-complete through **Phase 4** (all 40 campaign levels + secret levels + roguelike
-  Infestation mode + Endless + photo mode + easter eggs + accessibility). Phase 5 (WebRTC multiplayer)
-  is NOT built and was NOT requested.
+  Infestation mode + Endless + photo mode + easter eggs + accessibility) **and fully converted to 2D**
+  (plan: `docs/superpowers/plans/2026-07-04-2d-conversion.md`; log: BUILDLOG top entry). Phase 5
+  (WebRTC multiplayer) is NOT built and was NOT requested.
 - **Branch:** work happens directly on **`master`**. Working tree is clean.
 - **Health:** `npm test` → **351 tests green**. `npm run smoke` → OK. `npx tsc --noEmit` → clean.
 - **Deployed (public):** https://concretejungler.github.io/counter-attack-game/ via GitHub Pages
@@ -100,7 +103,19 @@ docs/superpowers/plans/2026-06-12-counter-attack.md   implementation plan
 
 ---
 
-## 4. What changed in the most recent session (2026-07-03, second session — MOBILE UX OVERHAUL)
+## 4a. Most recent session (2026-07-04 — THE 2D CONVERSION)
+
+The whole view layer was replaced: the game now renders top-down 2D via `src/render2d/` (Canvas 2D,
+sprite-cache + code-drawn painters for all 45 critters/29 towers/10 room themes, pooled VFX, 2D hand/
+pets/eggs). `game.ts` talks to a renderer-agnostic `GameView` interface (`src/render/view.ts`);
+`?renderer=3d` boots the old three.js view as a debug fallback. Sim/content untouched — 351 tests
+never broke. Full narrative + P4 punch-list resolution in BUILDLOG's top entry; design law in the
+plan doc. Key operational notes: sprite coverage is gated by `node tools/check-painters.mjs
+<critters|towers> --strict` (run it after touching painters); 2D perf probe is `tools/perf2d.mjs`
+(4ms@4×-throttle stress target unmet — Canvas2D drawImage floor ~5ms at 300 critters; real-device
+play is the arbiter); painters style law lives in `src/render2d/painters/GUIDE.md`.
+
+## 4b. Prior session (2026-07-03 — MOBILE UX OVERHAUL)
 
 One big commit (see the top BUILDLOG entry for full detail). The phone HUD was rethought end-to-end:
 - **Mobile dock + build sheet** (`src/ui/hud.ts`): on the mobile breakpoint the always-visible build
