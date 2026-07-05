@@ -1,18 +1,21 @@
 /**
- * REFERENCE PAINTER — The Crumb King (id 'crumb-king'). THE BOSS REFERENCE.
+ * REFERENCE PAINTER — The Crumb King (id 'crumb-king'). THE BOSS REFERENCE (V2).
  * ========================================================================
  * Bosses paint into the 128 box (opts.variant === 'boss') and should FILL it
  * (~100 of 128) with more detail than a swarmer — the bigger canvas is where
  * bosses earn their menace. This shows Codex how to spend that budget while
- * staying "imposing but cute" (plan §2, GAME-PROMPT §25).
+ * staying "imposing but cute" (plan §B, GUIDE.md "V2 STYLE LAW"): full 3-tone
+ * ramp, ONE belly on the dominant round mass, per-material spec, a rim on the
+ * primary silhouette, and a subtle in-body haloBehind in the signature color.
  *
  * What it demonstrates:
  *  - a compacted-crumb-ball body: one big gold blob whose silhouette is broken
- *    up by a deterministic RING of little crumb lumps, plus interior speckle —
- *    all positioned by a tiny seeded helper (NO Math.random; deterministic per
- *    frame so the cache is stable);
+ *    by a deterministic RING of crumb lumps, each tinted by its facing relative
+ *    to the ONE upper-left light (the crumb crust reads as a lit sphere);
+ *  - belly() volume + celCrescent away-side + rim() toward-light on that mass;
  *  - throne / servant-ant hints behind + below to sell "king" without clutter;
- *  - a comically TINY crown (small relative to the huge body = the joke);
+ *  - a comically TINY crown with a specStreak gold glint (the joke: small on a
+ *    huge body);
  *  - a big boss face: heavy cocoa brows over round friendly eyes, crumb grin,
  *    rosy cheeks;
  *  - 2 frames animate small idle life (crown tilt, servant legs, pupil shift).
@@ -21,6 +24,7 @@
 import { registerCritterPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { ramp, belly, celCrescent, rim, haloBehind, specStreak, aoUnder } from '../../paint';
 
 // deterministic 0..1 from an index — replaces Math.random in a cached painter
 const rnd = (i: number) => {
@@ -35,6 +39,7 @@ registerCritterPainter('crumb-king', (ctx, size, frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const gold = warm(PAL.crumbGold);          // 0xd8a44c compacted-crumb gold
+  const g3 = ramp(gold);                      // V2: 3-tone (never plain darker)
   const wobble = frame ? 1 : -1;
 
   const strokeInk = (w = ink) => {
@@ -44,6 +49,9 @@ registerCritterPainter('crumb-king', (ctx, size, frame, opts) => {
   };
 
   const bodyR = size * 0.4;
+
+  // --- signature gold halo BEHIND the body (subtle, in-box) ---
+  haloBehind(ctx, cx, cy, size * 0.45, gold, 0.24);
 
   // --- throne hints (behind everything) ---
   const throneWood = 0x7a4a2c;
@@ -58,6 +66,18 @@ registerCritterPainter('crumb-king', (ctx, size, frame, opts) => {
   ctx.fillStyle = hex(velvet);
   ctx.fill();
   strokeInk(size * 0.03);
+  // one soft cel on the velvet away-side so the throne isn't dead-flat
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx - size * 0.3, cy + size * 0.2);
+  ctx.lineTo(cx - size * 0.3, cy - size * 0.24);
+  ctx.quadraticCurveTo(cx, cy - size * 0.44, cx + size * 0.3, cy - size * 0.24);
+  ctx.lineTo(cx + size * 0.3, cy + size * 0.2);
+  ctx.closePath();
+  ctx.clip();
+  ctx.fillStyle = rgba(ramp(velvet).shadow, 0.5);
+  ctx.fillRect(cx + size * 0.02, cy - size * 0.44, size * 0.3, size * 0.7);
+  ctx.restore();
   // throne posts with ball finials
   for (const sgn of [-1, 1]) {
     const px = cx + sgn * size * 0.34;
@@ -105,9 +125,13 @@ registerCritterPainter('crumb-king', (ctx, size, frame, opts) => {
     ctx.fillStyle = COCOA_CSS;
     ctx.fill();
   }
+  // ground the crumb ball onto the throne with a soft AO pocket
+  aoUnder(ctx, cx, cy + bodyR * 0.62, bodyR * 0.8, size * 0.05, 0.22);
 
   // --- crumb-ball body ---
-  // rim lumps: deterministic ring of little crumbs breaking the silhouette
+  // rim lumps: deterministic ring of crumbs, each TINTED by how it faces the
+  // one upper-left light (upper-left lumps read lighter, lower-right darker) so
+  // the crust reads as a lit sphere — the "seeded crumb-lump shading".
   const lumps = 16;
   for (let i = 0; i < lumps; i++) {
     const a = (i / lumps) * Math.PI * 2;
@@ -115,9 +139,15 @@ registerCritterPainter('crumb-king', (ctx, size, frame, opts) => {
     const lx = cx + Math.cos(a) * rr;
     const ly = cy + Math.sin(a) * rr * 0.94;
     const lr = size * (0.03 + rnd(i + 7) * 0.025);
+    // facing dot with the light (upper-left = lit); +seeded crumb variation
+    const lit = 0.5 - 0.5 * (Math.cos(a) * 0.6 + Math.sin(a) * 0.8);
+    const jt = (rnd(i + 7) - 0.5) * 0.2;
+    const tone = lit > 0.5
+      ? mix(gold, g3.light, Math.min(1, (lit - 0.5) * 1.5 + jt))
+      : mix(gold, g3.shadow, Math.min(1, (0.5 - lit) * 1.5 - jt));
     ctx.beginPath();
     ctx.arc(lx, ly, lr, 0, Math.PI * 2);
-    ctx.fillStyle = hex(mix(gold, i & 1 ? 0x8a5a2c : 0xe7c477, 0.4));
+    ctx.fillStyle = hex(tone);
     ctx.fill();
     strokeInk(size * 0.02);
   }
@@ -127,23 +157,23 @@ registerCritterPainter('crumb-king', (ctx, size, frame, opts) => {
   ctx.fillStyle = hex(gold);
   ctx.fill();
   strokeInk();
-  // top-left flat sheen
-  ctx.beginPath();
-  ctx.ellipse(cx - size * 0.12, cy - size * 0.14, size * 0.2, size * 0.16, 0, 0, Math.PI * 2);
-  ctx.fillStyle = rgba(lighten(gold, 0.3), 0.4);
-  ctx.fill();
-  // interior crumb speckle (texture)
-  for (let i = 0; i < 22; i++) {
+  // ONE belly gradient (dominant round mass) → cel shadow lens on the away side
+  belly(ctx, cx, cy, bodyR * 0.97, bodyR * 0.91, g3, 0.5);
+  celCrescent(ctx, cx, cy, bodyR, bodyR * 0.94, g3.shadow, 0.42, 0.45);
+  // interior crumb speckle — chunky enough to survive downscale (≤ ~9 flecks)
+  for (let i = 0; i < 9; i++) {
     const a = rnd(i + 30) * Math.PI * 2;
-    const rad = rnd(i + 51) * bodyR * 0.8;
+    const rad = rnd(i + 51) * bodyR * 0.72;
     const sx = cx + Math.cos(a) * rad;
     const sy = cy + Math.sin(a) * rad * 0.9;
-    const sr = size * (0.008 + rnd(i + 70) * 0.014);
+    const sr = size * (0.014 + rnd(i + 70) * 0.016);
     ctx.beginPath();
     ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-    ctx.fillStyle = rgba(rnd(i) > 0.5 ? darken(gold, 0.22) : lighten(gold, 0.28), 0.7);
+    ctx.fillStyle = rgba(rnd(i) > 0.5 ? g3.shadow : lighten(gold, 0.28), 0.55);
     ctx.fill();
   }
+  // toward-light rim band on the crumb ball (boss-tier silhouette pop)
+  rim(ctx, cx, cy, bodyR, bodyR * 0.94, g3.light, size * 0.032, 0.5);
 
   // --- big boss face ---
   const eyeY = cy - size * 0.05;
@@ -211,6 +241,20 @@ registerCritterPainter('crumb-king', (ctx, size, frame, opts) => {
   ctx.fillStyle = hex(PAL.butter);
   ctx.fill();
   strokeInk(size * 0.022);
+  // per-material spec: a bright gold streak across the crown (polished metal)
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cxs, crownY);
+  ctx.lineTo(cxs, crownY - size * 0.06);
+  ctx.lineTo(cxs + crownW * 0.25, crownY - size * 0.02);
+  ctx.lineTo(cxs + crownW * 0.5, crownY - size * 0.09);
+  ctx.lineTo(cxs + crownW * 0.75, crownY - size * 0.02);
+  ctx.lineTo(cxs + crownW, crownY - size * 0.06);
+  ctx.lineTo(cxs + crownW, crownY);
+  ctx.closePath();
+  ctx.clip();
+  specStreak(ctx, cx - crownW * 0.12, crownY - size * 0.04, crownW * 0.9, size * 0.03, 0.6);
+  ctx.restore();
   // crown jewels
   const jewels = [PAL.cherry, PAL.mint, PAL.cherry];
   for (let j = 0; j < 3; j++) {
