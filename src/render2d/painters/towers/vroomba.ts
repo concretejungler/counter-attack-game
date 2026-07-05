@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescent, rim, aoUnder, glossDot, specStreak, rivets, innerInk } from '../../paint';
 
 registerTowerPainter('vroomba', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -16,6 +17,9 @@ registerTowerPainter('vroomba', (ctx, size, _frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('swat'));
+  const plastic = warm(PAL.metal);
+  const plasticR = ramp(plastic);
+  const accentR = ramp(accent);
 
   const strokeInk = (w = ink) => {
     ctx.lineWidth = w;
@@ -127,14 +131,20 @@ registerTowerPainter('vroomba', (ctx, size, _frame, opts) => {
   };
 
   const cy = size * 0.48, rx = size * 0.32, ry = size * 0.26;
+  aoUnder(ctx, cx, cy + ry + size * 0.035, rx * 0.75, size * 0.045, 0.2);
   ctx.beginPath();
   ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fillStyle = hex(warm(PAL.metal));
+  ctx.fillStyle = hex(plastic);
   ctx.fill();
   strokeInk();
+  belly(ctx, cx, cy, rx * 0.95, ry * 0.95, plasticR, 0.42);
+  celCrescent(ctx, cx, cy, rx, ry, plasticR.shadow, 0.45, 0.34);
+  rim(ctx, cx, cy, rx, ry, plasticR.light, size * 0.026, 0.48);
+  specStreak(ctx, cx - size * 0.07, cy - size * 0.11, size * 0.26, size * 0.034, 0.36);
+  glossDot(ctx, cx - size * 0.12, cy - size * 0.11, size * 0.026, 0.66);
   ctx.beginPath();
   ctx.ellipse(cx, cy, rx * 0.78, ry * 0.62, 0, 0, Math.PI * 2);
-  ctx.fillStyle = hex(lighten(PAL.metal, 0.1));
+  ctx.fillStyle = hex(plasticR.light);
   ctx.fill();
   strokeInk(size * 0.02);
   ctx.beginPath();
@@ -152,9 +162,10 @@ registerTowerPainter('vroomba', (ctx, size, _frame, opts) => {
   ctx.beginPath();
   ctx.moveTo(cx - size * 0.18, cy - size * 0.02);
   ctx.quadraticCurveTo(cx, cy + size * 0.07, cx + size * 0.18, cy - size * 0.02);
-  ctx.strokeStyle = rgba(accent, 0.5);
+  ctx.strokeStyle = rgba(accentR.light, 0.5);
   ctx.lineWidth = size * 0.018;
   ctx.stroke();
+  rivets(ctx, [{ x: cx - size * 0.22, y: cy + size * 0.03 }, { x: cx + size * 0.22, y: cy + size * 0.03 }], size * 0.011, innerInk(plastic));
   drawFace(cx, cy + size * 0.03, size * 0.078, size * 0.038, -0.15, 'smirk');
   drawPips(size * 0.86);
   if (ascended) {

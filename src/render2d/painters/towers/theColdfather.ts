@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescentPath, rim, aoUnder, glossDot, specStreak, rivets, innerInk } from '../../paint';
 
 registerTowerPainter('the-coldfather', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -16,6 +17,9 @@ registerTowerPainter('the-coldfather', (ctx, size, _frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('cold'));
+  const body = warm(0xf3f7f8);
+  const bodyR = ramp(body);
+  const frostR = ramp(accent);
 
   const strokeInk = (w = ink) => {
     ctx.lineWidth = w;
@@ -127,10 +131,20 @@ registerTowerPainter('the-coldfather', (ctx, size, _frame, opts) => {
   };
 
   const x = cx - size * 0.24, y = size * 0.17, w = size * 0.48, h = size * 0.58;
+  aoUnder(ctx, cx, y + h + size * 0.025, w * 0.48, size * 0.04, 0.18);
   roundRect(x, y, w, h, size * 0.075);
-  ctx.fillStyle = hex(warm(0xf3f7f8));
+  ctx.fillStyle = hex(body);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  roundRect(x, y, w, h, size * 0.075);
+  ctx.clip();
+  belly(ctx, cx, y + h * 0.5, w * 0.46, h * 0.48, bodyR, 0.32);
+  specStreak(ctx, cx - size * 0.05, y + h * 0.18, size * 0.22, size * 0.03, 0.3);
+  glossDot(ctx, x + w * 0.26, y + h * 0.16, size * 0.022, 0.58);
+  ctx.restore();
+  celCrescentPath(ctx, () => roundRect(x, y, w, h, size * 0.075), cx, y + h * 0.5, w * 0.5, h * 0.5, bodyR.shadow, 0.45, 0.3);
+  rim(ctx, cx, y + h * 0.5, w * 0.5, h * 0.5, bodyR.light, size * 0.024, 0.42);
   ctx.beginPath();
   ctx.moveTo(x, y + h * 0.28);
   ctx.lineTo(x + w, y + h * 0.28);
@@ -145,14 +159,15 @@ registerTowerPainter('the-coldfather', (ctx, size, _frame, opts) => {
   ctx.fillStyle = rgba(accent, 0.42);
   ctx.fill();
   strokeInk(size * 0.014);
-  for (const dx of [-0.07, 0, 0.07]) {
+  for (const dx of [-0.08, 0.08]) {
     ctx.beginPath();
-    ctx.moveTo(cx + size * dx, y + h * 0.74);
-    ctx.lineTo(cx + size * dx, y + h * 0.79);
-    ctx.strokeStyle = hex(darken(accent, 0.18));
-    ctx.lineWidth = size * 0.01;
+    ctx.moveTo(cx + size * dx, y + h * 0.735);
+    ctx.lineTo(cx + size * dx, y + h * 0.795);
+    ctx.strokeStyle = rgba(frostR.shadow, 0.78);
+    ctx.lineWidth = size * 0.012;
     ctx.stroke();
   }
+  rivets(ctx, [{ x: x + w - size * 0.058, y: y + h * 0.43 }], size * 0.011, innerInk(body));
   drawFace(cx - size * 0.02, y + h * 0.5, size * 0.078, size * 0.038, -0.45, 'flat');
   drawPips(size * 0.86);
   ascendRect(x - ink, y - ink * 0.5, w + ink * 2, h + ink, size * 0.12, y + h * 0.52);

@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescentPath, rim, aoUnder, glossDot, specStreak, rivets, innerInk } from '../../paint';
 
 registerTowerPainter('saltimus-prime', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -16,6 +17,11 @@ registerTowerPainter('saltimus-prime', (ctx, size, _frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('gas'));
+  const glass = warm(0xf6f8f2);
+  const glassR = ramp(glass);
+  const metal = warm(PAL.metal);
+  const metalR = ramp(metal);
+  const accentR = ramp(accent);
 
   const strokeInk = (w = ink) => {
     ctx.lineWidth = w;
@@ -127,6 +133,7 @@ registerTowerPainter('saltimus-prime', (ctx, size, _frame, opts) => {
   };
 
   const x = cx - size * 0.19, y = size * 0.19, w = size * 0.38, h = size * 0.55;
+  aoUnder(ctx, cx, y + h + size * 0.025, w * 0.48, size * 0.04, 0.18);
   ctx.beginPath();
   ctx.moveTo(x - size * 0.08, y + size * 0.18);
   ctx.lineTo(x - size * 0.2, y + h * 0.68);
@@ -136,29 +143,39 @@ registerTowerPainter('saltimus-prime', (ctx, size, _frame, opts) => {
   ctx.fill();
   strokeInk(size * 0.021);
   roundRect(x + size * 0.03, y, w - size * 0.06, size * 0.14, size * 0.04);
-  ctx.fillStyle = hex(warm(PAL.metal));
+  ctx.fillStyle = hex(metal);
   ctx.fill();
   strokeInk(size * 0.027);
-  for (let i = 0; i < 5; i++) {
-    ctx.beginPath();
-    ctx.arc(x + w * (0.22 + i * 0.14), y + size * 0.07, size * 0.008, 0, Math.PI * 2);
-    ctx.fillStyle = COCOA_CSS;
-    ctx.fill();
-  }
+  celCrescentPath(ctx, () => roundRect(x + size * 0.03, y, w - size * 0.06, size * 0.14, size * 0.04), cx, y + size * 0.07, w * 0.44, size * 0.08, metalR.shadow, 0.45, 0.42);
+  ctx.save();
+  roundRect(x + size * 0.03, y, w - size * 0.06, size * 0.14, size * 0.04);
+  ctx.clip();
+  specStreak(ctx, cx - size * 0.03, y + size * 0.045, size * 0.2, size * 0.025, 0.38);
+  ctx.restore();
+  rivets(ctx, [{ x: x + w * 0.32, y: y + size * 0.07 }, { x: x + w * 0.68, y: y + size * 0.07 }], size * 0.011, innerInk(metal));
   roundRect(x, y + size * 0.12, w, h, size * 0.11);
-  ctx.fillStyle = rgba(0xf6f8f2, 0.72);
+  ctx.fillStyle = rgba(glass, 0.72);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  roundRect(x, y + size * 0.12, w, h, size * 0.11);
+  ctx.clip();
+  belly(ctx, cx, y + h * 0.54, w * 0.46, h * 0.48, glassR, 0.28);
+  specStreak(ctx, cx - size * 0.04, y + h * 0.32, size * 0.19, size * 0.028, 0.3);
+  glossDot(ctx, x + w * 0.3, y + h * 0.31, size * 0.023, 0.62);
+  ctx.restore();
+  celCrescentPath(ctx, () => roundRect(x, y + size * 0.12, w, h, size * 0.11), cx, y + h * 0.56, w * 0.5, h * 0.5, glassR.shadow, 0.45, 0.28);
+  rim(ctx, cx, y + h * 0.56, w * 0.5, h * 0.5, glassR.light, size * 0.022, 0.42);
   ctx.fillStyle = rgba(0xffffff, 0.86);
-  for (let i = 0; i < 10; i++) {
-    const rx = x + w * (0.2 + ((i * 37) % 60) / 100);
-    const ry = y + h * (0.34 + ((i * 29) % 38) / 100);
+  for (let i = 0; i < 4; i++) {
+    const rx = x + w * (0.28 + ((i * 37) % 44) / 100);
+    const ry = y + h * (0.38 + ((i * 29) % 26) / 100);
     ctx.beginPath();
-    ctx.arc(rx, ry, size * 0.006, 0, Math.PI * 2);
+    ctx.arc(rx, ry, size * 0.012, 0, Math.PI * 2);
     ctx.fill();
   }
   roundRect(x + size * 0.04, y + h * 0.56, w - size * 0.08, size * 0.12, size * 0.03);
-  ctx.fillStyle = rgba(accent, 0.3);
+  ctx.fillStyle = rgba(accentR.light, 0.3);
   ctx.fill();
   strokeInk(size * 0.014);
   drawFace(cx, y + h * 0.47, size * 0.072, size * 0.037, -0.25, 'flat');

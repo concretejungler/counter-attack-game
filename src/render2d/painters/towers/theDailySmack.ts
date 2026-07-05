@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescentPath, rim, aoUnder, fabricTicks } from '../../paint';
 
 registerTowerPainter('the-daily-smack', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -16,6 +17,9 @@ registerTowerPainter('the-daily-smack', (ctx, size, _frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('swat'));
+  const paper = warm(0xe9e3d6);
+  const paperR = ramp(paper);
+  const accentR = ramp(accent);
 
   const strokeInk = (w = ink) => {
     ctx.lineWidth = w;
@@ -126,31 +130,41 @@ registerTowerPainter('the-daily-smack', (ctx, size, _frame, opts) => {
     ascendRect(x - ink, y - size * 0.08, w + ink * 2, h + size * 0.1, size * 0.14, y + h * 0.5);
   };
 
+  aoUnder(ctx, cx, size * 0.69, size * 0.27, size * 0.04, 0.16);
   ctx.save();
   ctx.translate(cx, size * 0.45);
   ctx.rotate(-0.18);
   roundRect(-size * 0.25, -size * 0.22, size * 0.5, size * 0.43, size * 0.06);
-  ctx.fillStyle = hex(warm(0xe9e3d6));
+  ctx.fillStyle = hex(paper);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  roundRect(-size * 0.25, -size * 0.22, size * 0.5, size * 0.43, size * 0.06);
+  ctx.clip();
+  belly(ctx, 0, 0, size * 0.24, size * 0.2, paperR, 0.28);
+  ctx.restore();
+  celCrescentPath(ctx, () => roundRect(-size * 0.25, -size * 0.22, size * 0.5, size * 0.43, size * 0.06), 0, 0, size * 0.25, size * 0.21, paperR.shadow, 0.45, 0.34);
+  rim(ctx, 0, 0, size * 0.26, size * 0.22, paperR.light, size * 0.02, 0.42);
   for (const yy of [-0.11, 0.02, 0.15]) {
     ctx.beginPath();
     ctx.moveTo(-size * 0.18, yy * size);
     ctx.lineTo(size * 0.18, yy * size);
-    ctx.strokeStyle = rgba(0x33211a, 0.45);
+    ctx.strokeStyle = rgba(paperR.shadow, 0.45);
     ctx.lineWidth = size * 0.011;
     ctx.stroke();
   }
   roundRect(-size * 0.26, -size * 0.025, size * 0.52, size * 0.05, size * 0.02);
-  ctx.fillStyle = rgba(accent, 0.48);
+  ctx.fillStyle = rgba(accentR.light, 0.48);
   ctx.fill();
   strokeInk(size * 0.012);
   ctx.restore();
   ctx.beginPath();
   ctx.ellipse(cx + size * 0.24, size * 0.41, size * 0.08, size * 0.19, -0.18, 0, Math.PI * 2);
-  ctx.fillStyle = hex(lighten(0xe9e3d6, 0.05));
+  ctx.fillStyle = hex(paperR.light);
   ctx.fill();
   strokeInk(size * 0.024);
+  celCrescentPath(ctx, () => { ctx.ellipse(cx + size * 0.24, size * 0.41, size * 0.08, size * 0.19, -0.18, 0, Math.PI * 2); }, cx + size * 0.24, size * 0.41, size * 0.08, size * 0.19, paperR.shadow, 0.42, 0.34);
+  fabricTicks(ctx, cx + size * 0.19, size * 0.28, cx + size * 0.28, size * 0.53, paperR.shadow, 4, size * 0.035);
   drawFace(cx - size * 0.02, size * 0.43, size * 0.08, size * 0.038, -0.4, 'flat');
   drawPips(size * 0.86);
   ascendRect(cx - size * 0.31, size * 0.21, size * 0.62, size * 0.46, size * 0.11, size * 0.43);

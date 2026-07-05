@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescentPath, rim, aoUnder, specStreak, woodGrain, innerInk } from '../../paint';
 
 registerTowerPainter('old-smacky', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -16,6 +17,10 @@ registerTowerPainter('old-smacky', (ctx, size, _frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('swat'));
+  const wood = warm(PAL.wood);
+  const woodR = ramp(wood);
+  const paddle = ramp(accent).light;
+  const paddleR = ramp(paddle);
 
   const strokeInk = (w = ink) => {
     ctx.lineWidth = w;
@@ -127,25 +132,39 @@ registerTowerPainter('old-smacky', (ctx, size, _frame, opts) => {
   };
 
   const paddleX = cx - size * 0.2, paddleY = size * 0.16, paddleW = size * 0.4, paddleH = size * 0.43;
+  aoUnder(ctx, cx, size * 0.82, size * 0.18, size * 0.035, 0.18);
   roundRect(cx - size * 0.045, size * 0.54, size * 0.09, size * 0.26, size * 0.035);
-  ctx.fillStyle = hex(warm(PAL.wood));
+  ctx.fillStyle = hex(wood);
   ctx.fill();
   strokeInk(size * 0.027);
+  ctx.save();
+  roundRect(cx - size * 0.045, size * 0.54, size * 0.09, size * 0.26, size * 0.035);
+  ctx.clip();
+  woodGrain(ctx, cx - size * 0.045, size * 0.54, size * 0.09, size * 0.26, woodR.shadow, 11, 2);
+  ctx.restore();
   roundRect(paddleX, paddleY, paddleW, paddleH, size * 0.08);
-  ctx.fillStyle = hex(lighten(accent, 0.08));
+  ctx.fillStyle = hex(paddle);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  roundRect(paddleX, paddleY, paddleW, paddleH, size * 0.08);
+  ctx.clip();
+  belly(ctx, cx, paddleY + paddleH * 0.48, paddleW * 0.46, paddleH * 0.46, paddleR, 0.32);
+  specStreak(ctx, cx - size * 0.06, paddleY + paddleH * 0.18, size * 0.22, size * 0.032, 0.3);
+  ctx.restore();
+  celCrescentPath(ctx, () => roundRect(paddleX, paddleY, paddleW, paddleH, size * 0.08), cx, paddleY + paddleH * 0.5, paddleW * 0.5, paddleH * 0.5, paddleR.shadow, 0.46, 0.35);
+  rim(ctx, cx, paddleY + paddleH * 0.5, paddleW * 0.5, paddleH * 0.5, paddleR.light, size * 0.024, 0.45);
   ctx.fillStyle = rgba(0xffffff, 0.38);
-  for (let row = 0; row < 4; row++) for (let col = 0; col < 3; col++) {
+  for (let row = 0; row < 2; row++) for (let col = 0; col < 3; col++) {
     ctx.beginPath();
-    ctx.arc(paddleX + paddleW * (0.25 + col * 0.25), paddleY + paddleH * (0.2 + row * 0.18), size * 0.017, 0, Math.PI * 2);
+    ctx.arc(paddleX + paddleW * (0.25 + col * 0.25), paddleY + paddleH * (0.3 + row * 0.24), size * 0.026, 0, Math.PI * 2);
     ctx.fill();
     strokeInk(size * 0.007);
   }
   ctx.beginPath();
   ctx.moveTo(cx - size * 0.04, size * 0.63);
   ctx.quadraticCurveTo(cx, size * 0.7, cx + size * 0.04, size * 0.63);
-  ctx.strokeStyle = hex(darken(PAL.wood, 0.24));
+  ctx.strokeStyle = innerInk(wood);
   ctx.lineWidth = size * 0.014;
   ctx.stroke();
   drawFace(cx, size * 0.39, size * 0.085, size * 0.04, -0.5, 'flat');

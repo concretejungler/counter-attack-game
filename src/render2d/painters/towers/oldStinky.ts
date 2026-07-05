@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescentPath, rim, aoUnder, fabricTicks } from '../../paint';
 
 registerTowerPainter('old-stinky', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -16,6 +17,7 @@ registerTowerPainter('old-stinky', (ctx, size, _frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('gas'));
+  const gasR = ramp(accent);
 
   const strokeInk = (w = ink) => {
     ctx.lineWidth = w;
@@ -127,6 +129,8 @@ registerTowerPainter('old-stinky', (ctx, size, _frame, opts) => {
   };
 
   const cloth = warm(0xd8d0c6);
+  const clothR = ramp(cloth);
+  aoUnder(ctx, cx + size * 0.06, size * 0.8, size * 0.23, size * 0.04, 0.18);
   for (const [dx, dy] of [[-0.2, 0.16], [0.24, 0], [0.14, -0.18]] as [number, number][]) {
     ctx.beginPath();
     ctx.arc(cx + size * dx, size * (0.35 + dy), size * 0.035, 0, Math.PI * 2);
@@ -134,27 +138,35 @@ registerTowerPainter('old-stinky', (ctx, size, _frame, opts) => {
     ctx.fill();
   }
   roundRect(cx - size * 0.14, size * 0.18, size * 0.28, size * 0.16, size * 0.04);
-  ctx.fillStyle = hex(lighten(cloth, 0.05));
+  ctx.fillStyle = hex(clothR.light);
   ctx.fill();
   strokeInk(size * 0.028);
-  for (const dx of [-0.08, 0, 0.08]) {
-    ctx.beginPath();
-    ctx.moveTo(cx + size * dx, size * 0.2);
-    ctx.lineTo(cx + size * dx, size * 0.32);
-    ctx.strokeStyle = hex(darken(cloth, 0.2));
-    ctx.lineWidth = size * 0.012;
-    ctx.stroke();
-  }
+  celCrescentPath(ctx, () => roundRect(cx - size * 0.14, size * 0.18, size * 0.28, size * 0.16, size * 0.04), cx, size * 0.26, size * 0.14, size * 0.08, clothR.shadow, 0.48, 0.35);
+  fabricTicks(ctx, cx - size * 0.11, size * 0.21, cx + size * 0.11, size * 0.21, clothR.shadow, 4, size * 0.045);
+  const traceSock = () => {
+    ctx.moveTo(cx - size * 0.14, size * 0.31);
+    ctx.quadraticCurveTo(cx - size * 0.16, size * 0.57, cx - size * 0.03, size * 0.65);
+    ctx.quadraticCurveTo(cx + size * 0.22, size * 0.8, cx + size * 0.28, size * 0.63);
+    ctx.quadraticCurveTo(cx + size * 0.2, size * 0.5, cx + size * 0.08, size * 0.53);
+    ctx.quadraticCurveTo(cx + size * 0.12, size * 0.41, cx + size * 0.14, size * 0.31);
+    ctx.closePath();
+  };
   ctx.beginPath();
-  ctx.moveTo(cx - size * 0.14, size * 0.31);
-  ctx.quadraticCurveTo(cx - size * 0.16, size * 0.57, cx - size * 0.03, size * 0.65);
-  ctx.quadraticCurveTo(cx + size * 0.22, size * 0.8, cx + size * 0.28, size * 0.63);
-  ctx.quadraticCurveTo(cx + size * 0.2, size * 0.5, cx + size * 0.08, size * 0.53);
-  ctx.quadraticCurveTo(cx + size * 0.12, size * 0.41, cx + size * 0.14, size * 0.31);
-  ctx.closePath();
+  traceSock();
   ctx.fillStyle = hex(cloth);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  ctx.beginPath();
+  traceSock();
+  ctx.clip();
+  belly(ctx, cx + size * 0.06, size * 0.58, size * 0.22, size * 0.24, clothR, 0.34);
+  ctx.fillStyle = rgba(gasR.light, 0.18);
+  ctx.fill();
+  ctx.restore();
+  celCrescentPath(ctx, traceSock, cx + size * 0.06, size * 0.58, size * 0.24, size * 0.26, clothR.shadow, 0.45, 0.4);
+  rim(ctx, cx + size * 0.06, size * 0.58, size * 0.25, size * 0.25, clothR.light, size * 0.023, 0.42);
+  fabricTicks(ctx, cx - size * 0.05, size * 0.68, cx + size * 0.17, size * 0.73, clothR.shadow, 4, size * 0.04);
   ctx.beginPath();
   ctx.arc(cx + size * 0.17, size * 0.63, size * 0.025, 0, Math.PI * 2);
   ctx.fillStyle = rgba(accent, 0.55);

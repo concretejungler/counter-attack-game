@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescent, rim, aoUnder, glossDot, specStreak, woodGrain } from '../../paint';
 
 registerTowerPainter('professor-scorch', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -16,6 +17,11 @@ registerTowerPainter('professor-scorch', (ctx, size, _frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('light'));
+  const lens = warm(PAL.windowSky);
+  const lensR = ramp(lens);
+  const wood = warm(PAL.wood);
+  const woodR = ramp(wood);
+  const accentR = ramp(accent);
 
   const strokeInk = (w = ink) => {
     ctx.lineWidth = w;
@@ -126,41 +132,56 @@ registerTowerPainter('professor-scorch', (ctx, size, _frame, opts) => {
     ascendRect(x - ink, y - size * 0.08, w + ink * 2, h + size * 0.1, size * 0.14, y + h * 0.5);
   };
 
-  const lensY = size * 0.36, lensR = size * 0.23;
+  const lensY = size * 0.36, lensRad = size * 0.23;
+  aoUnder(ctx, cx + size * 0.11, size * 0.78, size * 0.2, size * 0.035, 0.16);
   ctx.save();
   ctx.translate(cx + size * 0.14, size * 0.58);
   ctx.rotate(-0.75);
   roundRect(-size * 0.045, -size * 0.02, size * 0.09, size * 0.27, size * 0.035);
-  ctx.fillStyle = hex(warm(PAL.wood));
+  ctx.fillStyle = hex(wood);
   ctx.fill();
   strokeInk(size * 0.026);
+  ctx.save();
+  roundRect(-size * 0.045, -size * 0.02, size * 0.09, size * 0.27, size * 0.035);
+  ctx.clip();
+  woodGrain(ctx, -size * 0.045, -size * 0.02, size * 0.09, size * 0.27, woodR.shadow, 17, 2);
+  ctx.restore();
   ctx.restore();
   ctx.beginPath();
-  ctx.arc(cx, lensY, lensR, 0, Math.PI * 2);
-  ctx.fillStyle = rgba(PAL.windowSky, 0.55);
+  ctx.arc(cx, lensY, lensRad, 0, Math.PI * 2);
+  ctx.fillStyle = rgba(lens, 0.55);
   ctx.fill();
   strokeInk();
   ctx.beginPath();
-  ctx.arc(cx, lensY, lensR * 0.82, 0, Math.PI * 2);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, lensY, lensRad * 0.93, 0, Math.PI * 2);
+  ctx.clip();
+  belly(ctx, cx, lensY, lensRad * 0.88, lensRad * 0.88, lensR, 0.24);
+  specStreak(ctx, cx - size * 0.04, lensY - size * 0.09, size * 0.22, size * 0.034, 0.32);
+  glossDot(ctx, cx - size * 0.08, lensY - size * 0.09, size * 0.03, 0.72);
+  ctx.restore();
+  celCrescent(ctx, cx, lensY, lensRad * 0.92, lensRad * 0.92, lensR.shadow, 0.42, 0.24);
+  rim(ctx, cx, lensY, lensRad, lensRad, lensR.light, size * 0.025, 0.5);
+  ctx.beginPath();
+  ctx.arc(cx, lensY, lensRad * 0.82, 0, Math.PI * 2);
   ctx.strokeStyle = hex(accent);
   ctx.lineWidth = size * 0.025;
   ctx.stroke();
   ctx.beginPath();
-  ctx.ellipse(cx - size * 0.08, lensY - size * 0.08, size * 0.05, size * 0.12, 0.7, 0, Math.PI * 2);
-  ctx.fillStyle = rgba(0xffffff, 0.5);
-  ctx.fill();
+  // Glass shine is handled by glossDot/specStreak above.
   ctx.beginPath();
   ctx.moveTo(cx + size * 0.1, lensY - size * 0.02);
   ctx.lineTo(cx + size * 0.28, lensY - size * 0.08);
   ctx.lineTo(cx + size * 0.14, lensY + size * 0.08);
   ctx.closePath();
-  ctx.fillStyle = rgba(lighten(accent, 0.08), 0.42);
+  ctx.fillStyle = rgba(accentR.light, 0.42);
   ctx.fill();
   drawFace(cx, lensY + size * 0.03, size * 0.078, size * 0.038, -0.15, 'smirk');
   drawPips(size * 0.85);
   if (ascended) {
     ctx.beginPath();
-    ctx.arc(cx, lensY, lensR + ink, 0, Math.PI * 2);
+    ctx.arc(cx, lensY, lensRad + ink, 0, Math.PI * 2);
     ctx.strokeStyle = hex(PAL.butter);
     ctx.lineWidth = size * 0.03;
     ctx.stroke();

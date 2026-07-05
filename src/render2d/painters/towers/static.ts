@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescent, rim, aoUnder, glossDot } from '../../paint';
 
 registerTowerPainter('static', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -16,6 +17,7 @@ registerTowerPainter('static', (ctx, size, _frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('zap'));
+  const balloonR = ramp(accent);
 
   const strokeInk = (w = ink) => {
     ctx.lineWidth = w;
@@ -127,23 +129,24 @@ registerTowerPainter('static', (ctx, size, _frame, opts) => {
   };
 
   const cy = size * 0.39, r = size * 0.25;
+  aoUnder(ctx, cx, cy + r + size * 0.39, r * 0.42, size * 0.035, 0.16);
   ctx.beginPath();
   ctx.moveTo(cx, cy + r * 0.96);
   ctx.lineTo(cx - size * 0.045, cy + r + size * 0.07);
   ctx.lineTo(cx + size * 0.045, cy + r + size * 0.07);
   ctx.closePath();
-  ctx.fillStyle = hex(darken(accent, 0.12));
+  ctx.fillStyle = hex(balloonR.shadow);
   ctx.fill();
   strokeInk(size * 0.02);
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = hex(lighten(accent, 0.14));
+  ctx.fillStyle = hex(balloonR.light);
   ctx.fill();
   strokeInk();
-  ctx.beginPath();
-  ctx.ellipse(cx - size * 0.08, cy - size * 0.1, size * 0.045, size * 0.105, 0.55, 0, Math.PI * 2);
-  ctx.fillStyle = rgba(0xffffff, 0.45);
-  ctx.fill();
+  belly(ctx, cx, cy, r * 0.96, r * 0.96, balloonR, 0.45);
+  celCrescent(ctx, cx, cy, r, r, balloonR.shadow, 0.45, 0.35);
+  rim(ctx, cx, cy, r, r, balloonR.light, size * 0.026, 0.5);
+  glossDot(ctx, cx - size * 0.08, cy - size * 0.1, size * 0.04, 0.76);
   ctx.beginPath();
   ctx.moveTo(cx, cy + r + size * 0.07);
   ctx.quadraticCurveTo(cx + size * 0.09, cy + r + size * 0.14, cx - size * 0.02, cy + r + size * 0.22);

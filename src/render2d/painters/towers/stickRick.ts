@@ -8,7 +8,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescent, celCrescentPath, rim, aoUnder, glossDot, specStreak } from '../../paint';
 
 registerTowerPainter('stick-rick', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -20,6 +21,9 @@ registerTowerPainter('stick-rick', (ctx, size, _frame, opts) => {
   const accent = warm(dmgTypeColor('spray'));       // blue adhesive plastic
   const bodyCol = warm(mix(dmgTypeColor('spray'), PAL.metal, 0.35));
   const tape = warm(mix(PAL.cakeSponge, PAL.wood, 0.22)); // warm tan roll
+  const bodyR = ramp(bodyCol);
+  const tapeR = ramp(tape);
+  const metalR = ramp(PAL.metal);
 
   const strokeInk = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
   const roundRect = (x: number, y: number, w: number, h: number, r: number) => {
@@ -76,6 +80,7 @@ registerTowerPainter('stick-rick', (ctx, size, _frame, opts) => {
   };
 
   // --- serrated cutter nose (EAST), drawn behind the body edge ---
+  aoUnder(ctx, cx, size * 0.81, size * 0.34, size * 0.045, 0.2);
   const noseX = cx + size * 0.34;
   const noseY = size * 0.6;
   ctx.beginPath();
@@ -87,6 +92,7 @@ registerTowerPainter('stick-rick', (ctx, size, _frame, opts) => {
   ctx.lineTo(cx + size * 0.24, noseY + size * 0.05);
   ctx.closePath();
   ctx.fillStyle = hex(PAL.metal); ctx.fill(); strokeInk(size * 0.022);
+  specStreak(ctx, noseX - size * 0.01, noseY - size * 0.04, size * 0.13, size * 0.022, 0.38);
 
   // --- heavy weighted wedge body (tall at back-west, sloping to nose-east) ---
   ctx.beginPath();
@@ -98,27 +104,32 @@ registerTowerPainter('stick-rick', (ctx, size, _frame, opts) => {
   ctx.lineTo(cx + size * 0.28, size * 0.77);
   ctx.closePath();
   ctx.fillStyle = hex(bodyCol); ctx.fill(); strokeInk();
+  celCrescentPath(ctx, () => { ctx.moveTo(cx - size * 0.34, size * 0.77); ctx.lineTo(cx - size * 0.34, size * 0.52); ctx.quadraticCurveTo(cx - size * 0.34, size * 0.43, cx - size * 0.25, size * 0.43); ctx.lineTo(cx + size * 0.08, size * 0.5); ctx.quadraticCurveTo(cx + size * 0.32, size * 0.54, cx + size * 0.36, size * 0.66); ctx.lineTo(cx + size * 0.28, size * 0.77); ctx.closePath(); }, cx, size * 0.62, size * 0.36, size * 0.2, bodyR.shadow, 0.45, 0.35);
+  rim(ctx, cx - size * 0.02, size * 0.61, size * 0.36, size * 0.2, bodyR.light, size * 0.022, 0.42);
   // front lip highlight
   ctx.beginPath();
   ctx.moveTo(cx - size * 0.3, size * 0.55);
   ctx.lineTo(cx + size * 0.02, size * 0.6);
-  ctx.strokeStyle = rgba(lighten(bodyCol, 0.35), 0.6); ctx.lineWidth = size * 0.02; ctx.stroke();
+  ctx.strokeStyle = rgba(bodyR.light, 0.6); ctx.lineWidth = size * 0.02; ctx.stroke();
 
   // --- BIG tape roll on top (the dominant silhouette) ---
   const rollX = cx - size * 0.04, rollY = size * 0.37, rollR = size * 0.25;
   ctx.beginPath(); ctx.arc(rollX, rollY, rollR, 0, Math.PI * 2);
   ctx.fillStyle = hex(tape); ctx.fill(); strokeInk();
+  belly(ctx, rollX, rollY, rollR * 0.94, rollR * 0.94, tapeR, 0.45);
+  celCrescent(ctx, rollX, rollY, rollR, rollR, tapeR.shadow, 0.42, 0.35);
+  rim(ctx, rollX, rollY, rollR, rollR, tapeR.light, size * 0.024, 0.48);
   // wound-tape layer rings
-  ctx.strokeStyle = rgba(darken(tape, 0.22), 0.7); ctx.lineWidth = size * 0.012;
+  ctx.strokeStyle = rgba(tapeR.shadow, 0.7); ctx.lineWidth = size * 0.012;
   for (const rr of [rollR * 0.78, rollR * 0.58]) { ctx.beginPath(); ctx.arc(rollX, rollY, rr, 0, Math.PI * 2); ctx.stroke(); }
   // roll sheen
   ctx.beginPath(); ctx.ellipse(rollX - rollR * 0.36, rollY - rollR * 0.38, rollR * 0.3, rollR * 0.2, -0.5, 0, Math.PI * 2);
-  ctx.fillStyle = rgba(lighten(tape, 0.4), 0.5); ctx.fill();
+  glossDot(ctx, rollX - rollR * 0.34, rollY - rollR * 0.34, size * 0.032, 0.68);
   // hub hole
   ctx.beginPath(); ctx.arc(rollX, rollY, rollR * 0.4, 0, Math.PI * 2);
-  ctx.fillStyle = hex(darken(bodyCol, 0.16)); ctx.fill(); strokeInk(size * 0.03);
+  ctx.fillStyle = hex(bodyR.shadow); ctx.fill(); strokeInk(size * 0.03);
   ctx.beginPath(); ctx.arc(rollX, rollY, rollR * 0.18, 0, Math.PI * 2);
-  ctx.fillStyle = hex(lighten(accent, 0.1)); ctx.fill(); strokeInk(size * 0.016);
+  ctx.fillStyle = hex(ramp(accent).light); ctx.fill(); strokeInk(size * 0.016);
 
   // --- translucent tape strip trailing off the roll over the cutter (east) ---
   ctx.beginPath();
@@ -127,8 +138,8 @@ registerTowerPainter('stick-rick', (ctx, size, _frame, opts) => {
   ctx.lineTo(cx + size * 0.36, noseY + size * 0.02);
   ctx.quadraticCurveTo(cx + size * 0.26, size * 0.54, rollX + rollR * 0.7, rollY + size * 0.08);
   ctx.closePath();
-  ctx.fillStyle = rgba(lighten(tape, 0.35), 0.6); ctx.fill();
-  ctx.strokeStyle = rgba(darken(tape, 0.2), 0.6); ctx.lineWidth = size * 0.012; ctx.stroke();
+  ctx.fillStyle = rgba(tapeR.light, 0.6); ctx.fill();
+  ctx.strokeStyle = rgba(tapeR.shadow, 0.6); ctx.lineWidth = size * 0.012; ctx.stroke();
 
   // --- face on the body front + tier pips ---
   drawFace(cx - size * 0.12, size * 0.64, size * 0.08, size * 0.036, 0.1);

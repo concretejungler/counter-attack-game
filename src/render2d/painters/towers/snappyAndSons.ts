@@ -7,7 +7,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescentPath, rim, aoUnder, specStreak, woodGrain, rivets, innerInk } from '../../paint';
 
 registerTowerPainter('snappy-and-sons', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -20,6 +21,9 @@ registerTowerPainter('snappy-and-sons', (ctx, size, _frame, opts) => {
   const wood = warm(PAL.wood);
   const metal = warm(PAL.metal);
   const cheese = warm(PAL.butter);
+  const woodR = ramp(wood);
+  const metalR = ramp(metal);
+  const cheeseR = ramp(cheese);
 
   const strokeInk = (w = ink) => { ctx.lineWidth = w; ctx.strokeStyle = COCOA_CSS; ctx.stroke(); };
   const roundRect = (x: number, y: number, w: number, h: number, r: number) => {
@@ -75,8 +79,10 @@ registerTowerPainter('snappy-and-sons', (ctx, size, _frame, opts) => {
 
   // --- tiny BABY trap beside it (the "& Sons") — drawn first, sits lower-east ---
   const babyX = cx + size * 0.18, babyY = size * 0.62, babyW = size * 0.22, babyH = size * 0.14;
+  aoUnder(ctx, cx - size * 0.11, size * 0.79, size * 0.35, size * 0.045, 0.2);
   roundRect(babyX, babyY, babyW, babyH, size * 0.03);
-  ctx.fillStyle = hex(darken(wood, 0.05)); ctx.fill(); strokeInk(size * 0.03);
+  ctx.fillStyle = hex(woodR.shadow); ctx.fill(); strokeInk(size * 0.03);
+  ctx.save(); roundRect(babyX, babyY, babyW, babyH, size * 0.03); ctx.clip(); woodGrain(ctx, babyX, babyY, babyW, babyH, woodR.shadow, 31, 2); ctx.restore();
   ctx.strokeStyle = hex(metal); ctx.lineWidth = size * 0.028; ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(babyX + size * 0.03, babyY + size * 0.03);
@@ -88,8 +94,14 @@ registerTowerPainter('snappy-and-sons', (ctx, size, _frame, opts) => {
   const px = cx - size * 0.4, py = size * 0.48, pw = size * 0.56, ph = size * 0.28;
   roundRect(px, py, pw, ph, size * 0.045);
   ctx.fillStyle = hex(wood); ctx.fill(); strokeInk();
-  ctx.strokeStyle = rgba(darken(wood, 0.35), 0.5); ctx.lineWidth = size * 0.016;
-  for (const gy of [0.32, 0.6]) { ctx.beginPath(); ctx.moveTo(px + size * 0.04, py + ph * gy); ctx.lineTo(px + pw - size * 0.04, py + ph * gy); ctx.stroke(); }
+  ctx.save();
+  roundRect(px, py, pw, ph, size * 0.045);
+  ctx.clip();
+  belly(ctx, px + pw * 0.5, py + ph * 0.5, pw * 0.46, ph * 0.46, woodR, 0.28);
+  woodGrain(ctx, px + size * 0.02, py + size * 0.02, pw - size * 0.04, ph - size * 0.04, woodR.shadow, 32, 3);
+  ctx.restore();
+  celCrescentPath(ctx, () => roundRect(px, py, pw, ph, size * 0.045), px + pw * 0.5, py + ph * 0.5, pw * 0.5, ph * 0.5, woodR.shadow, 0.45, 0.32);
+  rim(ctx, px + pw * 0.5, py + ph * 0.5, pw * 0.5, ph * 0.5, woodR.light, size * 0.022, 0.42);
 
   // --- spring coil hinge at the back-west corner ---
   const coilX = px + size * 0.06, coilY = py + size * 0.04;
@@ -103,10 +115,11 @@ registerTowerPainter('snappy-and-sons', (ctx, size, _frame, opts) => {
   ctx.lineTo(cx + size * 0.12, size * 0.46);
   ctx.stroke();
   // kill cross-bar at the business end (makes the "U")
-  ctx.strokeStyle = hex(darken(metal, 0.08)); ctx.lineWidth = size * 0.045;
+  specStreak(ctx, cx - size * 0.07, size * 0.28, size * 0.18, size * 0.032, 0.36);
+  ctx.strokeStyle = hex(metalR.shadow); ctx.lineWidth = size * 0.045;
   ctx.beginPath(); ctx.moveTo(cx + size * 0.05, size * 0.4); ctx.lineTo(cx + size * 0.17, size * 0.52); ctx.stroke();
   // metal sheen on the snapper
-  ctx.strokeStyle = rgba(lighten(metal, 0.5), 0.6); ctx.lineWidth = size * 0.016;
+  ctx.strokeStyle = rgba(metalR.light, 0.6); ctx.lineWidth = size * 0.016;
   ctx.beginPath();
   ctx.moveTo(coilX, coilY - size * 0.01);
   ctx.quadraticCurveTo(cx - size * 0.12, size * 0.19, cx + size * 0.01, size * 0.33);
@@ -124,7 +137,9 @@ registerTowerPainter('snappy-and-sons', (ctx, size, _frame, opts) => {
   ctx.lineTo(chX - size * 0.05, chY + size * 0.05);
   ctx.closePath();
   ctx.fillStyle = hex(cheese); ctx.fill(); strokeInk(size * 0.02);
-  ctx.fillStyle = rgba(darken(cheese, 0.3), 0.8);
+  celCrescentPath(ctx, () => { ctx.moveTo(chX, chY - size * 0.09); ctx.lineTo(chX + size * 0.12, chY + size * 0.02); ctx.lineTo(chX - size * 0.05, chY + size * 0.05); ctx.closePath(); }, chX + size * 0.03, chY, size * 0.09, size * 0.07, cheeseR.shadow, 0.35, 0.35);
+  rivets(ctx, [{ x: coilX, y: coilY }], size * 0.013, innerInk(metal));
+  ctx.fillStyle = rgba(cheeseR.shadow, 0.8);
   ctx.beginPath(); ctx.arc(chX + size * 0.03, chY - size * 0.005, size * 0.014, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.arc(chX + size * 0.005, chY + size * 0.03, size * 0.011, 0, Math.PI * 2); ctx.fill();
 

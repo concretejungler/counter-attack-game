@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescentPath, rim, aoUnder, specStreak, rivets, woodGrain, innerInk } from '../../paint';
 
 registerTowerPainter('sir-toastsalot', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -16,6 +17,10 @@ registerTowerPainter('sir-toastsalot', (ctx, size, _frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('heat'));
+  const metal = warm(PAL.metal);
+  const metalR = ramp(metal);
+  const toastR = ramp(PAL.cakeSponge);
+  const accentR = ramp(accent);
 
   const strokeInk = (w = ink) => {
     ctx.lineWidth = w;
@@ -127,19 +132,35 @@ registerTowerPainter('sir-toastsalot', (ctx, size, _frame, opts) => {
   };
 
   const x = cx - size * 0.27, y = size * 0.29, w = size * 0.54, h = size * 0.43;
+  aoUnder(ctx, cx, y + h + size * 0.025, w * 0.45, size * 0.04, 0.2);
   for (const sx of [-1, 1]) {
     roundRect(cx + sx * size * 0.085 - size * 0.06, size * 0.17, size * 0.12, size * 0.22, size * 0.045);
     ctx.fillStyle = hex(PAL.cakeSponge);
     ctx.fill();
     strokeInk(size * 0.021);
+    celCrescentPath(ctx, () => roundRect(cx + sx * size * 0.085 - size * 0.06, size * 0.17, size * 0.12, size * 0.22, size * 0.045), cx + sx * size * 0.085, size * 0.28, size * 0.06, size * 0.11, toastR.shadow, 0.35, 0.35);
+    ctx.save();
+    roundRect(cx + sx * size * 0.085 - size * 0.06, size * 0.17, size * 0.12, size * 0.22, size * 0.045);
+    ctx.clip();
+    woodGrain(ctx, cx + sx * size * 0.085 - size * 0.052, size * 0.19, size * 0.104, size * 0.17, toastR.shadow, sx < 0 ? 21 : 22, 2);
+    ctx.restore();
   }
   roundRect(x, y, w, h, size * 0.09);
-  ctx.fillStyle = hex(warm(PAL.metal));
+  ctx.fillStyle = hex(metal);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  roundRect(x, y, w, h, size * 0.09);
+  ctx.clip();
+  belly(ctx, cx, y + h * 0.5, w * 0.46, h * 0.46, metalR, 0.3);
+  specStreak(ctx, cx - size * 0.08, y + size * 0.08, size * 0.25, size * 0.032, 0.36);
+  ctx.restore();
+  celCrescentPath(ctx, () => roundRect(x, y, w, h, size * 0.09), cx, y + h * 0.5, w * 0.5, h * 0.48, metalR.shadow, 0.46, 0.35);
+  rim(ctx, cx, y + h * 0.5, w * 0.52, h * 0.5, metalR.light, size * 0.024, 0.45);
+  rivets(ctx, [{ x: x + w * 0.16, y: y + h * 0.78 }, { x: x + w * 0.84, y: y + h * 0.78 }], size * 0.012, innerInk(metal));
   for (const sx of [-1, 1]) {
     roundRect(cx + sx * size * 0.11 - size * 0.08, y - size * 0.055, size * 0.16, size * 0.05, size * 0.02);
-    ctx.fillStyle = hex(darken(PAL.metalDark, 0.08));
+    ctx.fillStyle = hex(metalR.shadow);
     ctx.fill();
     strokeInk(size * 0.015);
   }
@@ -148,7 +169,7 @@ registerTowerPainter('sir-toastsalot', (ctx, size, _frame, opts) => {
   ctx.fill();
   strokeInk(size * 0.018);
   roundRect(x + size * 0.08, y + h * 0.68, w - size * 0.16, size * 0.07, size * 0.025);
-  ctx.fillStyle = rgba(accent, 0.45);
+  ctx.fillStyle = rgba(accentR.light, 0.45);
   ctx.fill();
   strokeInk(size * 0.014);
   drawFace(cx, y + h * 0.42, size * 0.085, size * 0.04, 0.2, 'smile');

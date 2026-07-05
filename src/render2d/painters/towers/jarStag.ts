@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescent, rim, aoUnder, glossDot, specStreak, innerInk } from '../../paint';
 
 registerTowerPainter('jar-stag', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -128,8 +129,16 @@ registerTowerPainter('jar-stag', (ctx, size, _frame, opts) => {
 
   const glass = warm(0xbfe3f7);
   const shell = warm(0x4f3328);
+  const glassR = ramp(glass);
+  const shellR = ramp(shell);
   const x = cx - size * 0.23, y = size * 0.23, w = size * 0.46, h = size * 0.5;
+  aoUnder(ctx, cx, y + h + size * 0.02, w * 0.48, size * 0.04, 0.18);
   masonJar(x, y, w, h, glass);
+  ctx.save();
+  roundRect(x, y, w, h, size * 0.1);
+  ctx.clip();
+  belly(ctx, cx, y + h * 0.5, w * 0.46, h * 0.46, glassR, 0.22);
+  ctx.restore();
   for (const sx of [-1, 1]) {
     ctx.beginPath();
     ctx.moveTo(cx + sx * size * 0.055, y + h * 0.31);
@@ -149,20 +158,25 @@ registerTowerPainter('jar-stag', (ctx, size, _frame, opts) => {
   ctx.fillStyle = hex(shell);
   ctx.fill();
   strokeInk(size * 0.027);
+  celCrescent(ctx, cx, y + h * 0.47, size * 0.14, size * 0.18, shellR.shadow, 0.45, 0.45);
   ctx.beginPath();
   ctx.arc(cx, y + h * 0.29, size * 0.09, 0, Math.PI * 2);
-  ctx.fillStyle = hex(lighten(shell, 0.12));
+  ctx.fillStyle = hex(shellR.light);
   ctx.fill();
   strokeInk(size * 0.021);
+  celCrescent(ctx, cx, y + h * 0.29, size * 0.09, size * 0.09, shellR.shadow, 0.35, 0.35);
   for (const dx of [-0.07, 0, 0.07]) {
     ctx.beginPath();
     ctx.moveTo(cx + size * dx, y + h * 0.33);
     ctx.lineTo(cx + size * dx, y + h * 0.59);
-    ctx.strokeStyle = hex(darken(shell, 0.32));
+    ctx.strokeStyle = innerInk(shell);
     ctx.lineWidth = size * 0.013;
     ctx.stroke();
   }
   jarGlint(x, y, h);
+  specStreak(ctx, x + w * 0.42, y + h * 0.18, size * 0.24, size * 0.035, 0.32);
+  glossDot(ctx, x + w * 0.28, y + h * 0.15, size * 0.026, 0.72);
+  rim(ctx, cx, y + h * 0.5, w * 0.5, h * 0.5, glassR.light, size * 0.024, 0.45);
   drawFace(cx, y + h * 0.66, size * 0.085, size * 0.04, 0.05, 'flat');
   drawPips(y + h + size * 0.065);
   ascendJar(x, y, w, h);

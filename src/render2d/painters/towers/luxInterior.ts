@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescentPath, rim, aoUnder, specStreak, rivets, haloBehind, innerInk } from '../../paint';
 
 registerTowerPainter('lux-interior', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -16,6 +17,10 @@ registerTowerPainter('lux-interior', (ctx, size, _frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('light'));
+  const shade = ramp(accent).light;
+  const shadeR = ramp(shade);
+  const metal = warm(PAL.metal);
+  const metalR = ramp(metal);
 
   const strokeInk = (w = ink) => {
     ctx.lineWidth = w;
@@ -127,29 +132,49 @@ registerTowerPainter('lux-interior', (ctx, size, _frame, opts) => {
   };
 
   const shadeY = size * 0.18;
+  const traceShade = () => {
+    ctx.moveTo(cx - size * 0.22, shadeY);
+    ctx.lineTo(cx + size * 0.22, shadeY);
+    ctx.lineTo(cx + size * 0.29, size * 0.5);
+    ctx.quadraticCurveTo(cx, size * 0.56, cx - size * 0.29, size * 0.5);
+    ctx.closePath();
+  };
+  haloBehind(ctx, cx, size * 0.39, size * 0.29, accent, 0.16);
+  aoUnder(ctx, cx, size * 0.8, size * 0.22, size * 0.035, 0.18);
   ctx.beginPath();
-  ctx.moveTo(cx - size * 0.22, shadeY);
-  ctx.lineTo(cx + size * 0.22, shadeY);
-  ctx.lineTo(cx + size * 0.29, size * 0.5);
-  ctx.quadraticCurveTo(cx, size * 0.56, cx - size * 0.29, size * 0.5);
-  ctx.closePath();
-  ctx.fillStyle = hex(warm(lighten(accent, 0.22)));
+  traceShade();
+  ctx.fillStyle = hex(shade);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  ctx.beginPath();
+  traceShade();
+  ctx.clip();
+  belly(ctx, cx, size * 0.38, size * 0.28, size * 0.2, shadeR, 0.28);
+  ctx.restore();
+  celCrescentPath(ctx, traceShade, cx, size * 0.38, size * 0.3, size * 0.21, shadeR.shadow, 0.45, 0.42);
+  rim(ctx, cx, size * 0.37, size * 0.29, size * 0.2, shadeR.light, size * 0.024, 0.45);
   ctx.beginPath();
   ctx.moveTo(cx - size * 0.18, size * 0.48);
   ctx.quadraticCurveTo(cx, size * 0.53, cx + size * 0.18, size * 0.48);
-  ctx.strokeStyle = hex(darken(accent, 0.12));
+  ctx.strokeStyle = rgba(shadeR.shadow, 0.75);
   ctx.lineWidth = size * 0.018;
   ctx.stroke();
   roundRect(cx - size * 0.045, size * 0.53, size * 0.09, size * 0.17, size * 0.03);
-  ctx.fillStyle = hex(PAL.metalDark);
+  ctx.fillStyle = hex(metalR.shadow);
   ctx.fill();
   strokeInk(size * 0.022);
   roundRect(cx - size * 0.2, size * 0.69, size * 0.4, size * 0.1, size * 0.05);
-  ctx.fillStyle = hex(warm(PAL.metal));
+  ctx.fillStyle = hex(metal);
   ctx.fill();
   strokeInk(size * 0.028);
+  celCrescentPath(ctx, () => roundRect(cx - size * 0.2, size * 0.69, size * 0.4, size * 0.1, size * 0.05), cx, size * 0.74, size * 0.2, size * 0.07, metalR.shadow, 0.5, 0.45);
+  ctx.save();
+  roundRect(cx - size * 0.2, size * 0.69, size * 0.4, size * 0.1, size * 0.05);
+  ctx.clip();
+  specStreak(ctx, cx - size * 0.04, size * 0.72, size * 0.24, size * 0.028, 0.38);
+  ctx.restore();
+  rivets(ctx, [{ x: cx - size * 0.15, y: size * 0.735 }, { x: cx + size * 0.15, y: size * 0.735 }], size * 0.014, innerInk(metal));
   ctx.beginPath();
   ctx.moveTo(cx + size * 0.22, size * 0.42);
   ctx.lineTo(cx + size * 0.22, size * 0.61);

@@ -6,7 +6,8 @@
 import { registerTowerPainter } from '../../spriteCache';
 import { PAL } from '../../../render/palette';
 import { dmgTypeColor } from '../../fallback';
-import { COCOA_CSS, hex, rgba, mix, lighten, darken } from '../../colors';
+import { COCOA_CSS, hex, rgba, mix } from '../../colors';
+import { ramp, belly, celCrescentPath, rim, aoUnder, glossDot, specStreak, rivets, innerInk } from '../../paint';
 
 registerTowerPainter('mike-rowave', (ctx, size, _frame, opts) => {
   const cx = size / 2;
@@ -16,6 +17,9 @@ registerTowerPainter('mike-rowave', (ctx, size, _frame, opts) => {
   const shiny = !!opts.shiny;
   const warm = (c: number) => (shiny ? mix(c, PAL.butter, 0.35) : c);
   const accent = warm(dmgTypeColor('zap'));
+  const metal = warm(PAL.metal);
+  const metalR = ramp(metal);
+  const windowR = ramp(accent);
 
   const strokeInk = (w = ink) => {
     ctx.lineWidth = w;
@@ -127,30 +131,46 @@ registerTowerPainter('mike-rowave', (ctx, size, _frame, opts) => {
   };
 
   const x = cx - size * 0.31, y = size * 0.24, w = size * 0.62, h = size * 0.5;
+  aoUnder(ctx, cx, y + h + size * 0.025, w * 0.45, size * 0.045, 0.2);
   roundRect(x, y, w, h, size * 0.07);
-  ctx.fillStyle = hex(warm(PAL.metal));
+  ctx.fillStyle = hex(metal);
   ctx.fill();
   strokeInk();
+  ctx.save();
+  roundRect(x, y, w, h, size * 0.07);
+  ctx.clip();
+  belly(ctx, cx, y + h * 0.5, w * 0.46, h * 0.46, metalR, 0.3);
+  specStreak(ctx, cx - size * 0.08, y + size * 0.08, size * 0.28, size * 0.034, 0.38);
+  ctx.restore();
+  celCrescentPath(ctx, () => roundRect(x, y, w, h, size * 0.07), cx, y + h * 0.5, w * 0.5, h * 0.45, metalR.shadow, 0.45, 0.35);
+  rim(ctx, cx, y + h * 0.5, w * 0.52, h * 0.46, metalR.light, size * 0.025, 0.45);
   roundRect(x + size * 0.06, y + size * 0.08, w * 0.62, h * 0.68, size * 0.04);
-  ctx.fillStyle = rgba(darken(accent, 0.18), 0.78);
+  ctx.fillStyle = rgba(windowR.shadow, 0.78);
   ctx.fill();
   strokeInk(size * 0.026);
   ctx.beginPath();
   ctx.ellipse(x + w * 0.37, y + h * 0.55, size * 0.13, size * 0.035, 0, 0, Math.PI * 2);
-  ctx.strokeStyle = rgba(lighten(accent, 0.25), 0.9);
+  ctx.strokeStyle = rgba(windowR.light, 0.9);
   ctx.lineWidth = size * 0.016;
   ctx.stroke();
   roundRect(x + w * 0.76, y + size * 0.09, w * 0.16, h * 0.62, size * 0.025);
-  ctx.fillStyle = hex(darken(PAL.metal, 0.12));
+  ctx.fillStyle = hex(metalR.shadow);
   ctx.fill();
   strokeInk(size * 0.022);
+  rivets(ctx, [{ x: x + w * 0.84, y: y + size * 0.5 }], size * 0.013, innerInk(metal));
   for (let i = 0; i < 4; i++) {
     ctx.beginPath();
     ctx.arc(x + w * 0.84, y + size * (0.18 + i * 0.08), size * 0.017, 0, Math.PI * 2);
-    ctx.fillStyle = hex(i === 0 ? accent : lighten(PAL.metalDark, 0.12));
+    ctx.fillStyle = hex(i === 0 ? accent : metalR.shadow);
     ctx.fill();
     strokeInk(size * 0.009);
   }
+  ctx.save();
+  roundRect(x + size * 0.06, y + size * 0.08, w * 0.62, h * 0.68, size * 0.04);
+  ctx.clip();
+  glossDot(ctx, x + w * 0.2, y + h * 0.23, size * 0.022, 0.72);
+  specStreak(ctx, x + w * 0.29, y + h * 0.24, size * 0.22, size * 0.03, 0.32);
+  ctx.restore();
   roundRect(x + w * 0.95, y + size * 0.13, size * 0.035, h * 0.5, size * 0.018);
   ctx.fillStyle = hex(PAL.metalDark);
   ctx.fill();
